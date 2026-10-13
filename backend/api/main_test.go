@@ -88,6 +88,79 @@ func TestIPCClientRejectsUnexpectedResponse(t *testing.T) {
 	}
 }
 
+func TestIPCClientNotifyEvent(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "event.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+		line, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 5 || fields[0] != protocolVersion ||
+			fields[2] != "EVENT" ||
+			fields[3] != "018f2f5e-7a2b-7c4d-8e9f-0123456789ab" ||
+			fields[4] != "content.published" {
+			serverDone <- fmt.Errorf("unexpected event request: %q", line)
+			return
+		}
+		_, err = fmt.Fprintf(conn, "%s %s OK ACCEPTED\n", fields[0], fields[1])
+		serverDone <- err
+	}()
+
+	client := IPCClient{SocketPath: socketPath, Timeout: time.Second}
+	if err := client.NotifyEvent(context.Background(),
+		"018f2f5e-7a2b-7c4d-8e9f-0123456789ab", "content.published"); err != nil {
+		t.Fatalf("NotifyEvent() returned error: %v", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("fake event core: %v", err)
+	}
+}
+
+func TestIPCClientNotifyEventRejectsUnexpectedResponse(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "event.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		line, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			return
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return
+		}
+		_, _ = fmt.Fprintf(conn, "%s %s OK RUNNING\n", fields[0], fields[1])
+	}()
+	client := IPCClient{SocketPath: socketPath, Timeout: time.Second}
+	if err := client.NotifyEvent(context.Background(),
+		"018f2f5e-7a2b-7c4d-8e9f-0123456789ab", "content.published"); err == nil {
+		t.Fatal("NotifyEvent() accepted an unexpected response")
+	}
+}
+
 func TestLoadDatabaseURLFromFile(t *testing.T) {
 	t.Setenv("PERSONAL_PORTAL_DATABASE_URL", "")
 	path := filepath.Join(t.TempDir(), "database-url")

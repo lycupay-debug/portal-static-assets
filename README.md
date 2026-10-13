@@ -6,7 +6,7 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 
 - 前端：Vue 3、TypeScript、Vite；生产环境只提供构建后的静态文件。
 - 事件驱动核心：必须使用 C 语言实现，并优先利用 FreeBSD 原生 `kqueue` / `kevent`。
-- 后端：Go API 使用 `database/sql` + pgx 连接 PostgreSQL；`POST /events` 已实现持久化事件接收与按 UUID 幂等。
+- 后端：Go API 使用 `database/sql` + pgx 连接 PostgreSQL；`POST /events` 持久化接收事件，后台分发器带租约和退避重试，通过 Unix Socket 通知 C 核心。
 - 服务管理：FreeBSD `rc.d`。
 - 内容：初期由项目自身管理，不接入 Notion。
 - 依赖原则：优先标准库和系统原生能力；没有明确需求时不增加第三方服务。
@@ -15,7 +15,7 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 
 - `frontend/`：Vue + TypeScript 前端。
 - `backend/api/`：Go HTTP API 与持久化事件接收入口。
-- `event-core/`：C 语言 `kqueue` 事件核心；当前 IPC v1 提供 PING/STATUS，业务事件分发尚未接入。
+- `event-core/`：C 语言 `kqueue` 事件核心；IPC v1 提供 PING/STATUS/EVENT 元数据通知。EVENT 的 ACCEPTED 不是业务处理完成确认。
 - `deploy/freebsd/`：FreeBSD 部署与 `rc.d` 脚本。
 - `docs/`：产品、架构、安全和运维文档。
 
@@ -34,4 +34,4 @@ npm run build
 
 ## 当前状态
 
-当前已具备 FreeBSD 服务骨架、C IPC v1、Go API、PostgreSQL 基础迁移及 `portal.event_inbox` 持久化收件表。`POST /events` 只保证事件被数据库接收，不代表 C 核心已调度或处理事件。生产服务开机自启仍保持关闭。
+当前已具备 FreeBSD 服务骨架、C IPC v1、Go API、PostgreSQL 事件收件箱与带租约/退避重试的通知分发器。`dispatch_state=notified` 只代表 C 核心接受了事件 ID/类型元数据；不代表 payload 已交给 C、事件已持久化在 C 侧或业务已完成。生产服务仍保持停止且开机自启关闭。

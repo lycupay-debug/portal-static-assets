@@ -185,6 +185,171 @@ func (c IPCClient) Status(ctx context.Context) error {
 	return nil
 }
 
+func (c IPCClient) NotifyEvent(ctx context.Context, eventID, eventType string) error {
+	timeout := c.Timeout
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "unix", c.SocketPath)
+	if err != nil {
+		return fmt.Errorf("connect event core: %w", err)
+	}
+	defer conn.Close()
+	deadline := time.Now().Add(timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("set IPC deadline: %w", err)
+	}
+	id := fmt.Sprintf("evt%d", requestSequence.Add(1))
+	if _, err := fmt.Fprintf(conn, "%s %s EVENT %s %s\n",
+		protocolVersion, id, eventID, eventType); err != nil {
+		return fmt.Errorf("write IPC event notification: %w", err)
+	}
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("read IPC event response: %w", err)
+	}
+	if len(line) > 255 {
+		return errors.New("IPC response exceeds limit")
+	}
+	fields := strings.Fields(strings.TrimSuffix(line, "\n"))
+	if len(fields) != 4 || fields[0] != protocolVersion ||
+		fields[1] != id || fields[2] != "OK" || fields[3] != "ACCEPTED" {
+		return fmt.Errorf("unexpected IPC event response %q", strings.TrimSpace(line))
+	}
+	return nil
+}
+
+type pendingNotification struct {
+	EventID   string
+	EventType string
+	Attempts  int
+}
+
+type EventDispatcher struct {
+	DB       *sql.DB
+	IPC      IPCClient
+	Batch    int
+	Interval time.Duration
+}
+
+func (d EventDispatcher) claim(ctx context.Context) ([]pendingNotification, error) {
+	batch := d.Batch
+	if batch <= 0 || batch > 64 {
+		batch = 16
+	}
+	rows, err := d.DB.QueryContext(ctx, `
+		WITH candidates AS (
+			SELECT event_id
+			FROM portal.event_inbox
+			WHERE status = 'received'
+			  AND ((dispatch_state = 'pending' AND next_dispatch_at <= now())
+			       OR (dispatch_state = 'leased' AND dispatch_lease_until < now()))
+			ORDER BY next_dispatch_at, received_at, event_id
+			FOR UPDATE SKIP LOCKED
+			LIMIT $1
+		)
+		UPDATE portal.event_inbox AS e
+		SET dispatch_state = 'leased',
+		    dispatch_attempts = e.dispatch_attempts + 1,
+		    dispatch_lease_until = now() + interval '30 seconds',
+		    dispatch_error = NULL
+		FROM candidates AS c
+		WHERE e.event_id = c.event_id
+		RETURNING e.event_id::text, e.event_type, e.dispatch_attempts
+	`, batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var events []pendingNotification
+	for rows.Next() {
+		var event pendingNotification
+		if err := rows.Scan(&event.EventID, &event.EventType, &event.Attempts); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
+func (d EventDispatcher) markNotified(ctx context.Context, eventID string) error {
+	_, err := d.DB.ExecContext(ctx, `
+		UPDATE portal.event_inbox
+		SET dispatch_state = 'notified', dispatch_lease_until = NULL,
+		    dispatch_notified_at = now(), dispatch_error = NULL
+		WHERE event_id = $1::uuid AND dispatch_state = 'leased'
+	`, eventID)
+	return err
+}
+
+func (d EventDispatcher) markRetry(ctx context.Context, event pendingNotification, cause error) error {
+	exponent := event.Attempts - 1
+	if exponent < 0 {
+		exponent = 0
+	}
+	if exponent > 6 {
+		exponent = 6
+	}
+	delay := time.Duration(1<<exponent) * time.Second
+	message := cause.Error()
+	if len(message) > 1000 {
+		message = message[:1000]
+	}
+	_, err := d.DB.ExecContext(ctx, `
+		UPDATE portal.event_inbox
+		SET dispatch_state = 'pending', dispatch_lease_until = NULL,
+		    next_dispatch_at = now() + ($2 * interval '1 second'),
+		    dispatch_error = $3
+		WHERE event_id = $1::uuid AND dispatch_state = 'leased'
+	`, event.EventID, delay.Seconds(), message)
+	return err
+}
+
+func (d EventDispatcher) Run(ctx context.Context) {
+	interval := d.Interval
+	if interval <= 0 {
+		interval = 500 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		claimCtx, claimCancel := context.WithTimeout(ctx, 3*time.Second)
+		events, err := d.claim(claimCtx)
+		claimCancel()
+		if err == nil {
+			for _, event := range events {
+				if ctx.Err() != nil {
+					return
+				}
+				notifyCtx, notifyCancel := context.WithTimeout(ctx, d.IPC.Timeout)
+				notifyErr := d.IPC.NotifyEvent(notifyCtx, event.EventID, event.EventType)
+				notifyCancel()
+				if notifyErr != nil {
+					retryCtx, retryCancel := context.WithTimeout(context.Background(), 2*time.Second)
+					_ = d.markRetry(retryCtx, event, notifyErr)
+					retryCancel()
+					continue
+				}
+				markCtx, markCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				_ = d.markNotified(markCtx, event.EventID)
+				markCancel()
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func loadDatabaseURL() (string, error) {
 	if value := strings.TrimSpace(os.Getenv("PERSONAL_PORTAL_DATABASE_URL")); value != "" {
 		return value, nil
@@ -231,6 +396,7 @@ func main() {
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	ipc := IPCClient{SocketPath: socketPath, Timeout: 750 * time.Millisecond}
+	go (EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 500 * time.Millisecond}).Run(context.Background())
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

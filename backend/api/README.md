@@ -9,7 +9,9 @@
 - 默认监听 `127.0.0.1:8081`，不对外网开放。
 - 可通过 `PERSONAL_PORTAL_HTTP_ADDR` 和 `PERSONAL_PORTAL_EVENT_SOCKET` 覆盖监听地址和 socket 路径。
 - IPC 客户端设有连接/读写超时，并验证协议版本、请求 ID、状态和响应载荷。
-- `api/main_test.go` 包含 IPC 成功响应和异常响应测试。
+- `POST /events` 将事件持久化到 `portal.event_inbox`；后台 `EventDispatcher` 使用 `FOR UPDATE SKIP LOCKED` 领取待通知事件，租约超时后可恢复，并在 IPC 失败时以 1–64 秒指数退避重试。
+- IPC `EVENT` 仅传送 event ID/type 元数据。数据库 `dispatch_state=notified` 不代表业务完成，也不应修改事件的业务 `status`。
+- `api/main_test.go` 包含 IPC 状态、事件通知成功/异常响应及 HTTP 接收幂等测试。
 
 ## 本地开发
 
@@ -40,4 +42,4 @@ go run ./api
 
 ## Durable event intake
 
-`POST /events` accepts `{ "event_id": "<UUID>", "event_type": "lowercase.name", "payload": {} }` and persists it to `portal.event_inbox`. Apply `backend/migrations/002_event_inbox.sql` explicitly before deploying this API version. The endpoint guarantees durable receipt and idempotent duplicate handling only; event dispatch/processing is not implemented yet.
+`POST /events` accepts `{ "event_id": "<UUID>", "event_type": "lowercase.name", "payload": {} }` and persists it to `portal.event_inbox`. Apply `backend/migrations/002_event_inbox.sql` and `backend/migrations/003_event_dispatch_state.sql` explicitly before deploying this API version. The endpoint guarantees durable receipt and idempotent duplicate handling. The background dispatcher sends a metadata notification and retries failures; it does not claim business processing or completion.

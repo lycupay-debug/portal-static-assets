@@ -91,5 +91,6 @@ Request JSON:
 - `payload` must be a JSON object. The HTTP request body is limited to 1 MiB.
 - First receipt returns HTTP 202. An identical replay with the same ID/type/payload returns HTTP 200 and `duplicate: true`.
 - Reusing an event ID with different type or payload returns HTTP 409. Invalid requests return HTTP 400; persistence failures return HTTP 503.
-- `portal.event_inbox` stores receipt status and basic processing fields, but phase 1 does not yet claim dispatch, retries, worker leases, or completion semantics.
+- Migration 003 adds independent dispatch state (`pending`, `leased`, `notified`), attempt count, lease expiry, retry schedule, last error, and notification timestamp. The Go dispatcher claims rows with `FOR UPDATE SKIP LOCKED`, sends the EVENT metadata envelope, retries failures with exponential backoff capped at 64 seconds, and reclaims expired leases after process interruption.
+- `notified` means the C IPC endpoint returned `OK ACCEPTED` for event ID/type metadata only. It does not mean the payload reached C, was durably stored by C, or business work completed. Business completion remains a separate concern and must not be inferred from notification.
 - The endpoint is loopback-bound along with the existing API. It is not an authenticated public ingress endpoint.

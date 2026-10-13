@@ -47,7 +47,7 @@ install -o root -g wheel -m 0644 /opt/personal-portal/deploy/freebsd/newsyslog/p
 - `pg_hba.conf` 对 `personal_portal_app` 的本地 Unix socket、IPv4 loopback 和 IPv6 loopback 连接使用 SCRAM-SHA-256；其他既有角色规则保持原样。
 - Go API 使用 pgx 的 `database/sql` 驱动与有限连接池。`/dbz` 检查数据库连通性；`/readyz` 同时检查 C 核心与数据库。
 - 数据库迁移文件位于 `backend/migrations/`。业务迁移应由管理员/部署步骤显式执行，不在 API 启动时自动执行。
-- `portal.schema_migrations` 记录迁移版本；迁移 002 创建持久化事件收件表 `portal.event_inbox`。当前尚未创建门户内容表。
+- `portal.schema_migrations` 记录迁移版本；迁移 002 创建 `portal.event_inbox`，迁移 003 增加通知分发状态、租约和重试字段。当前尚未创建门户内容表。
 
 应用基础迁移时，避免把包含密码的 URL 放在命令行参数中。可使用 Python 将密码放入子进程环境，再调用 `psql`：
 
@@ -99,7 +99,7 @@ personal_portal_api_enable="YES"
 - 日志轮转配置安装在 `/usr/local/etc/newsyslog.conf.d/personal-portal.conf`。日志达到 1 MiB 时轮转，保留 7 份压缩归档，并向 daemon supervisor 发送 `SIGHUP`，使其重新打开日志文件。归档与当前日志权限为 `0600`。
 - 尚未配置资源限制、外部反向代理或 HTTPS；当前 API 仅监听 `127.0.0.1:8081`。
 - `/healthz` 只检查 HTTP 进程；`/dbz` 检查 PostgreSQL；`/readyz` 同时检查 C 核心 IPC 与 PostgreSQL。
-- C IPC v1 仍仅支持 PING/STATUS。Go API 的 `POST /events` 将业务事件先写入 `portal.event_inbox`；该阶段仅保证接收持久化和按 event_id 幂等，不代表事件已分发给 C 核心或完成处理。
+- C IPC v1 支持 PING/STATUS/EVENT 元数据通知。Go API 将事件持久化后由后台分发器领取，通过 Unix Socket 发送 ID/type 元数据；失败时退避重试，租约过期后可恢复。`notified` 只表示 C 返回 `ACCEPTED`，不代表 C 持久化了事件、收到了 payload 或完成业务处理。
 - 开机自启仍保持关闭，直到完成后续部署与安全检查。
 
 ## 服务可靠性验证记录
@@ -128,4 +128,6 @@ personal_portal_api_enable="YES"
 # replace the migration path with backend/migrations/002_event_inbox.sql.
 ```
 
-迁移不会由 API 自动执行。部署新 API 前先备份数据库并应用迁移；回滚代码不应自动删除已收到的事件数据。
+迁移不会由 API 自动执行。部署新 API 前先备份数据库并依次应用迁移 002、003；回滚代码不应自动删除已收到的事件数据。
+
+迁移 003 文件：`backend/migrations/003_event_dispatch_state.sql`。该迁移已在当前 `personal_portal` 数据库应用并记录为版本 3。
