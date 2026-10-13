@@ -68,3 +68,18 @@ personal_portal_api_enable="YES"
 - `/healthz` 只检查 HTTP 进程；`/readyz` 检查 C 核心 IPC。
 - 当前 IPC 仅支持 PING/STATUS，不是持久化业务事件队列。
 - 初次验证通过前不要设置开机自启。
+
+## 服务可靠性验证记录
+
+以下生命周期与故障路径测试已在 FreeBSD 主机上执行：
+
+- 两个服务均能正常启动和停止；测试结束后状态均为停止。
+- API 执行服务重启后恢复正常，`/readyz` 返回 `ready`。
+- 对 API 进程发送 `SIGKILL` 后，`service ... status` 能识别其已停止，PID 文件被清理；随后可以重新启动 API。
+- 对 C 事件核心发送 `SIGKILL` 后，Unix socket 路径会残留。服务脚本拒绝在遗留 socket 存在时启动。确认没有 `event-core` 进程后，手动移除遗留 socket，核心即可重新启动。
+- 保持 API 运行并停止 C 事件核心时，`/healthz` 仍返回 `ok`，`/readyz` 返回 HTTP 503。重新启动核心后，`/readyz` 恢复为 `ready`，无需重启 API。
+- 正常停止后，PID 文件和 socket 均被清理。运行目录为 `personalportal:personalportal`、权限 `0750`；日志目录为 `root:wheel`、权限 `0750`；日志文件为 `root:wheel`、权限 `0600`。
+- 服务脚本和已安装二进制均为 `root:wheel`、权限 `0555`。
+- `/etc/rc.conf` 中没有启用这两个服务，开机自启仍处于关闭状态。
+
+仍待处理的运维限制：C 核心遭遇 `SIGKILL` 后，需要管理员确认进程不存在，再手动删除遗留 socket；目前尚未配置自动进程监控/重启和日志轮转。这些测试验证的是服务生命周期与故障路径，不代表已具备公网生产环境的上线条件。
