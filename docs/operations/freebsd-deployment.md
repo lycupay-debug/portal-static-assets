@@ -33,6 +33,8 @@ chmod 0555 /usr/local/libexec/personal-portal/api
 pw useradd personalportal -d /nonexistent -s /usr/sbin/nologin -c "Personal Portal service" -w no
 install -o root -g wheel -m 0555 /opt/personal-portal/deploy/freebsd/personal_portal_event_core /usr/local/etc/rc.d/personal_portal_event_core
 install -o root -g wheel -m 0555 /opt/personal-portal/deploy/freebsd/personal_portal_api /usr/local/etc/rc.d/personal_portal_api
+install -d -o root -g wheel -m 0755 /usr/local/etc/newsyslog.conf.d
+install -o root -g wheel -m 0644 /opt/personal-portal/deploy/freebsd/newsyslog/personal-portal.conf /usr/local/etc/newsyslog.conf.d/personal-portal.conf
 ```
 
 如果服务用户已存在，跳过 `pw useradd`。二进制安装前先运行测试；不要把仓库目录直接作为生产运行目录。

@@ -28,7 +28,7 @@ personal_portal_event_core_prestart()
 {
     install -d -o "${personal_portal_user}" -g "${personal_portal_user}" -m 0750 /var/run/personal-portal
     install -d -o root -g wheel -m 0750 /var/log/personal-portal
-    if [ -S "${socket_path}" ] && ! pgrep -x event-core >/dev/null 2>&1; then
+    if [ -S "${socket_path}" ]; then
         echo "${name}: stale socket exists; refusing to remove it automatically: ${socket_path}" >&2
         return 1
     fi
