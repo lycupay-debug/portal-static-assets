@@ -13,9 +13,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "event_protocol.h"
+
 #define DEFAULT_SOCKET_PATH "/var/run/personal-portal/event.sock"
-#define MAX_CLIENTS 64
-#define INPUT_CAP 256
+#define MAX_CLIENTS PP_IPC_MAX_CLIENTS
+#define INPUT_CAP (PP_IPC_REQUEST_MAX_BYTES + 2)
 #define OUTPUT_CAP 256
 #define EVENT_BATCH 32
 
