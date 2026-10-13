@@ -36,3 +36,8 @@ go run ./api
 - 两个服务的 `onestart`、`onestop` 和状态检查均已验证；测试结束后服务均已停止，未启用开机自启。
 
 服务配置源文件位于 `deploy/freebsd/`，部署步骤见 `docs/operations/freebsd-deployment.md`。这些验证不代表业务事件投递、持久化或重试机制已实现。
+
+
+## Durable event intake
+
+`POST /events` accepts `{ "event_id": "<UUID>", "event_type": "lowercase.name", "payload": {} }` and persists it to `portal.event_inbox`. Apply `backend/migrations/002_event_inbox.sql` explicitly before deploying this API version. The endpoint guarantees durable receipt and idempotent duplicate handling only; event dispatch/processing is not implemented yet.

@@ -69,3 +69,26 @@ Status is `OK` or `ERROR`. Payload values for the current commands and errors ar
 ## Current implementation note
 
 The current C implementation accepts a 255-byte input buffer including a maximum of 255 bytes before the line terminator in the intended contract, but the implementation's read buffer is 256 bytes and reserves a NUL terminator. Keep tests authoritative and reconcile the exact boundary if this limit changes. The Go backend is not implemented yet; this document defines the contract it must follow.
+
+
+## Durable event intake (phase 1)
+
+Business event intake is currently exposed by the Go API, not by the local C IPC v1 protocol. `POST /events` validates an event and commits it to `portal.event_inbox` before returning `202 Accepted`. The C process is still only a local event/health core at this stage; dispatch/notification from PostgreSQL-backed intake into the C event loop is a subsequent phase and must not be implied by a successful HTTP receipt.
+
+Request JSON:
+
+```json
+{
+  "event_id": "018f2f5e-7a2b-7c4d-8e9f-0123456789ab",
+  "event_type": "content.published",
+  "payload": {"source": "local", "record_id": "example"}
+}
+```
+
+- `event_id` is a caller-generated UUID and is the idempotency key.
+- `event_type` must start with a lowercase letter and contain only lowercase letters, digits, `.`, `_`, and `-` (maximum 100 characters).
+- `payload` must be a JSON object. The HTTP request body is limited to 1 MiB.
+- First receipt returns HTTP 202. An identical replay with the same ID/type/payload returns HTTP 200 and `duplicate: true`.
+- Reusing an event ID with different type or payload returns HTTP 409. Invalid requests return HTTP 400; persistence failures return HTTP 503.
+- `portal.event_inbox` stores receipt status and basic processing fields, but phase 1 does not yet claim dispatch, retries, worker leases, or completion semantics.
+- The endpoint is loopback-bound along with the existing API. It is not an authenticated public ingress endpoint.

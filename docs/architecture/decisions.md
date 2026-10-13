@@ -41,3 +41,11 @@
 - SQL schema 变更通过 `backend/migrations/` 中的版本化 SQL 管理；应用启动时不自动修改 schema。
 - `portal.schema_migrations` 记录已应用的迁移版本。当前仅建立基础结构，不预设门户内容或业务事件表。
 - C `kqueue` 核心仍负责 IPC/事件通知；持久化事务与后续业务数据由 PostgreSQL 管理。
+
+
+## ADR-0007：持久化事件接收
+- 状态：第一阶段实现中；分发与处理语义仍待实现。
+- Go API 先验证并将业务事件写入 `portal.event_inbox`，成功提交后才返回接收成功。
+- 调用方提供 UUID `event_id` 作为幂等键；同 ID 同内容为重放，同 ID 不同内容返回冲突。
+- C IPC v1 暂不承载任意业务 payload；事件持久化与 C 核心通知分开，避免把内存通知误当作可靠队列。
+- 不在 API 启动时自动执行数据库迁移。

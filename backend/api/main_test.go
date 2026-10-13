@@ -5,8 +5,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -111,4 +114,80 @@ func TestLoadDatabaseURLRejectsEmptyFile(t *testing.T) {
 	if _, err := loadDatabaseURL(); err == nil {
 		t.Fatal("loadDatabaseURL() accepted an empty file")
 	}
+}
+
+type fakeEventStore struct {
+	events map[string]EventInput
+}
+
+func (s *fakeEventStore) ReceiveEvent(_ context.Context, event EventInput) (bool, error) {
+	if s.events == nil {
+		s.events = make(map[string]EventInput)
+	}
+	if previous, ok := s.events[event.EventID]; ok {
+		if previous.EventType != event.EventType || string(previous.Payload) != string(event.Payload) {
+			return false, errEventConflict
+		}
+		return true, nil
+	}
+	s.events[event.EventID] = event
+	return false, nil
+}
+
+func TestReceiveEventHandlerAcceptsAndDeduplicates(t *testing.T) {
+	store := &fakeEventStore{}
+	handler := receiveEventHandler(store)
+	body := `{"event_id":"018f2f5e-7a2b-7c4d-8e9f-0123456789ab","event_type":"content.published","payload":{"record_id":"x"}}`
+
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body)))
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first status = %d, want %d; body=%s", first.Code, http.StatusAccepted, first.Body.String())
+	}
+	if !strings.Contains(first.Body.String(), `"duplicate":false`) {
+		t.Fatalf("first response should not be marked duplicate: %s", first.Body.String())
+	}
+
+	second := httptest.NewRecorder()
+	handler.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body)))
+	if second.Code != http.StatusOK {
+		t.Fatalf("duplicate status = %d, want %d; body=%s", second.Code, http.StatusOK, second.Body.String())
+	}
+	if !strings.Contains(second.Body.String(), `"duplicate":true`) {
+		t.Fatalf("duplicate response not marked duplicate: %s", second.Body.String())
+	}
+}
+
+func TestReceiveEventHandlerRejectsInvalidAndConflictingEvents(t *testing.T) {
+	t.Run("invalid UUID", func(t *testing.T) {
+		handler := receiveEventHandler(&fakeEventStore{})
+		recorder := httptest.NewRecorder()
+		body := `{"event_id":"not-a-uuid","event_type":"content.published","payload":{}}`
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body)))
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", recorder.Code)
+		}
+	})
+	t.Run("payload must be object", func(t *testing.T) {
+		handler := receiveEventHandler(&fakeEventStore{})
+		recorder := httptest.NewRecorder()
+		body := `{"event_id":"018f2f5e-7a2b-7c4d-8e9f-0123456789ab","event_type":"content.published","payload":[]}`
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body)))
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", recorder.Code)
+		}
+	})
+	t.Run("conflicting replay", func(t *testing.T) {
+		store := &fakeEventStore{}
+		handler := receiveEventHandler(store)
+		firstBody := `{"event_id":"018f2f5e-7a2b-7c4d-8e9f-0123456789ab","event_type":"content.published","payload":{"n":1}}`
+		secondBody := `{"event_id":"018f2f5e-7a2b-7c4d-8e9f-0123456789ab","event_type":"content.deleted","payload":{"n":2}}`
+		first := httptest.NewRecorder()
+		handler.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(firstBody)))
+		second := httptest.NewRecorder()
+		handler.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(secondBody)))
+		if second.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409", second.Code)
+		}
+	})
 }
