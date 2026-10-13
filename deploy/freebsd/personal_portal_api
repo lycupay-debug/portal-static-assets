@@ -15,12 +15,14 @@ load_rc_config "$name"
 : ${personal_portal_api_enable:="NO"}
 : ${personal_portal_api_addr:="127.0.0.1:8081"}
 : ${personal_portal_event_socket:="/var/run/personal-portal/event.sock"}
+: ${personal_portal_api_restart_delay:="2"}
 
 command="/usr/sbin/daemon"
-procname="/usr/local/libexec/personal-portal/api"
-pidfile="/var/run/personal-portal/api.pid"
+procname="/usr/sbin/daemon"
+pidfile="/var/run/personal-portal/api-supervisor.pid"
+child_pidfile="/var/run/personal-portal/api.pid"
 logfile="/var/log/personal-portal/api.log"
-command_args="-f -p ${pidfile} -u ${personal_portal_user} -o ${logfile} env PERSONAL_PORTAL_HTTP_ADDR=${personal_portal_api_addr} PERSONAL_PORTAL_EVENT_SOCKET=${personal_portal_event_socket} ${procname}"
+command_args="-f -P ${pidfile} -p ${child_pidfile} -R ${personal_portal_api_restart_delay} -H -M 0600 -u ${personal_portal_user} -o ${logfile} env PERSONAL_PORTAL_HTTP_ADDR=${personal_portal_api_addr} PERSONAL_PORTAL_EVENT_SOCKET=${personal_portal_event_socket} /usr/local/libexec/personal-portal/api"
 
 start_precmd="personal_portal_api_prestart"
 personal_portal_api_prestart()

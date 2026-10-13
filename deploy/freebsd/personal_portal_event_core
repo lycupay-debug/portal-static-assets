@@ -13,20 +13,22 @@ load_rc_config "$name"
 
 : ${personal_portal_user:="personalportal"}
 : ${personal_portal_event_core_enable:="NO"}
+: ${personal_portal_event_core_restart_delay:="2"}
 
 command="/usr/sbin/daemon"
-procname="/usr/local/libexec/personal-portal/event-core"
-pidfile="/var/run/personal-portal/event-core.pid"
+procname="/usr/sbin/daemon"
+pidfile="/var/run/personal-portal/event-core-supervisor.pid"
+child_pidfile="/var/run/personal-portal/event-core.pid"
 socket_path="/var/run/personal-portal/event.sock"
 logfile="/var/log/personal-portal/event-core.log"
-command_args="-f -p ${pidfile} -u ${personal_portal_user} -o ${logfile} ${procname} ${socket_path}"
+command_args="-f -P ${pidfile} -p ${child_pidfile} -R ${personal_portal_event_core_restart_delay} -H -M 0600 -u ${personal_portal_user} -o ${logfile} /usr/local/libexec/personal-portal/event-core ${socket_path}"
 
 start_precmd="personal_portal_event_core_prestart"
 personal_portal_event_core_prestart()
 {
     install -d -o "${personal_portal_user}" -g "${personal_portal_user}" -m 0750 /var/run/personal-portal
     install -d -o root -g wheel -m 0750 /var/log/personal-portal
-    if [ -S "${socket_path}" ]; then
+    if [ -S "${socket_path}" ] && ! pgrep -x event-core >/dev/null 2>&1; then
         echo "${name}: stale socket exists; refusing to remove it automatically: ${socket_path}" >&2
         return 1
     fi

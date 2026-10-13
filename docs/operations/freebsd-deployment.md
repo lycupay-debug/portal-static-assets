@@ -63,23 +63,26 @@ personal_portal_api_enable="YES"
 
 ## 运维边界
 
-- 当前部署脚本不会自动删除遗留 socket；若启动报告 stale socket，应先确认对应进程不存在，再由管理员手动清理，避免误删活跃 socket。
-- 目前尚未设置自动重启、资源限制、日志轮转和外部反向代理。
+- 两个服务由 FreeBSD 原生 `daemon` 监督，子进程异常退出后默认等待 2 秒再重启。可分别通过 `personal_portal_event_core_restart_delay` 和 `personal_portal_api_restart_delay` 调整重启间隔。
+- rc.d 控制使用 supervisor PID 文件，避免向受监督的子进程直接发送停止信号、继而触发自动重启。子进程 PID 文件仅用于诊断。
+- 首次启动若发现遗留 socket 且没有运行中的 `event-core` 进程，脚本会拒绝自动删除；管理员应确认没有活跃进程后再清理。受监督的核心进程异常退出后，重启的 C 程序会在绑定前清理其 socket 路径。
+- 日志轮转配置安装在 `/usr/local/etc/newsyslog.conf.d/personal-portal.conf`。日志达到 1 MiB 时轮转，保留 7 份压缩归档，并向 daemon supervisor 发送 `SIGHUP`，使其重新打开日志文件。归档与当前日志权限为 `0600`。
+- 尚未配置资源限制、外部反向代理或 HTTPS；当前 API 仅监听 `127.0.0.1:8081`。
 - `/healthz` 只检查 HTTP 进程；`/readyz` 检查 C 核心 IPC。
 - 当前 IPC 仅支持 PING/STATUS，不是持久化业务事件队列。
-- 初次验证通过前不要设置开机自启。
+- 开机自启仍保持关闭，直到完成后续部署与安全检查。
 
 ## 服务可靠性验证记录
 
-以下生命周期与故障路径测试已在 FreeBSD 主机上执行：
+以下测试已在 FreeBSD 15.1 主机上执行：
 
-- 两个服务均能正常启动和停止；测试结束后状态均为停止。
-- API 执行服务重启后恢复正常，`/readyz` 返回 `ready`。
-- 对 API 进程发送 `SIGKILL` 后，`service ... status` 能识别其已停止，PID 文件被清理；随后可以重新启动 API。
-- 对 C 事件核心发送 `SIGKILL` 后，Unix socket 路径会残留。服务脚本拒绝在遗留 socket 存在时启动。确认没有 `event-core` 进程后，手动移除遗留 socket，核心即可重新启动。
-- 保持 API 运行并停止 C 事件核心时，`/healthz` 仍返回 `ok`，`/readyz` 返回 HTTP 503。重新启动核心后，`/readyz` 恢复为 `ready`，无需重启 API。
-- 正常停止后，PID 文件和 socket 均被清理。运行目录为 `personalportal:personalportal`、权限 `0750`；日志目录为 `root:wheel`、权限 `0750`；日志文件为 `root:wheel`、权限 `0600`。
-- 服务脚本和已安装二进制均为 `root:wheel`、权限 `0555`。
-- `/etc/rc.conf` 中没有启用这两个服务，开机自启仍处于关闭状态。
+- 两个服务均可启动、停止；停止后 supervisor/child PID 文件、socket 和相关进程均清理完毕。
+- API 正常重启后 `/readyz` 返回 `ready`。
+- 对 API 子进程发送 `SIGKILL` 后，daemon 在设定间隔后启动新子进程；API 的 `/healthz` 和 `/readyz` 随后恢复正常。
+- 对 C 核心子进程发送 `SIGKILL` 后，daemon 启动新子进程；新核心清理遗留 socket 并恢复监听，API `/readyz` 恢复为 `ready`。
+- 保持 API 运行并正常停止 C 核心时，`/healthz` 返回 `ok`、`/readyz` 返回 HTTP 503；重新启动核心后，`/readyz` 恢复为 `ready`。
+- 使用 `newsyslog` 强制轮转两份日志成功；已创建压缩归档，当前日志 inode 已变化，daemon 重新打开日志文件，轮转后健康检查仍正常。
+- 日志文件和归档均为 `root:wheel`、权限 `0600`；服务脚本和已安装二进制均为 `root:wheel`、权限 `0555`。
+- `/etc/rc.conf` 中未启用两个服务，开机自启仍关闭。
 
-仍待处理的运维限制：C 核心遭遇 `SIGKILL` 后，需要管理员确认进程不存在，再手动删除遗留 socket；目前尚未配置自动进程监控/重启和日志轮转。这些测试验证的是服务生命周期与故障路径，不代表已具备公网生产环境的上线条件。
+这些测试验证了服务生命周期、子进程自动恢复和日志轮转；不代表网站已具备公网生产上线条件。当前没有验证主机重启后的完整启动顺序，也没有配置反向代理、HTTPS、资源限制或业务事件持久化。
