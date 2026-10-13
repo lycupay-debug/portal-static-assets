@@ -1,0 +1,379 @@
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/stat.h>
+
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#define DEFAULT_SOCKET_PATH "/var/run/personal-portal/event.sock"
+#define MAX_CLIENTS 64
+#define INPUT_CAP 256
+#define OUTPUT_CAP 256
+#define EVENT_BATCH 32
+
+struct client {
+    int fd;
+    char input[INPUT_CAP];
+    size_t input_len;
+    char output[OUTPUT_CAP];
+    size_t output_len;
+    size_t output_sent;
+};
+
+static struct client clients[MAX_CLIENTS];
+static int kq = -1;
+static int listener = -1;
+static int stopping;
+static const char *socket_path = DEFAULT_SOCKET_PATH;
+
+static int
+set_nonblocking(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    return flags == -1 ? -1 : fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static int
+change_event(uintptr_t ident, int16_t filter, uint16_t flags, void *udata)
+{
+    struct kevent event;
+    EV_SET(&event, ident, filter, flags, 0, 0, udata);
+    return kevent(kq, &event, 1, NULL, 0, NULL);
+}
+
+static void
+close_client(struct client *client)
+{
+    if (client->fd >= 0) {
+        if (kq >= 0) {
+            (void)change_event((uintptr_t)client->fd, EVFILT_READ,
+                EV_DELETE, client);
+            (void)change_event((uintptr_t)client->fd, EVFILT_WRITE,
+                EV_DELETE, client);
+        }
+        (void)close(client->fd);
+    }
+    memset(client, 0, sizeof(*client));
+    client->fd = -1;
+}
+
+static struct client *
+find_free_client(void)
+{
+    for (size_t i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].fd == -1)
+            return &clients[i];
+    }
+    return NULL;
+}
+
+static int
+queue_response(struct client *client, const char *request_id,
+    const char *status, const char *payload)
+{
+    int length = snprintf(client->output, sizeof(client->output),
+        "v1 %s %s %s\n", request_id, status, payload);
+
+    if (length < 0 || (size_t)length >= sizeof(client->output))
+        return -1;
+
+    client->output_len = (size_t)length;
+    client->output_sent = 0;
+
+    if (change_event((uintptr_t)client->fd, EVFILT_READ, EV_DELETE,
+        client) == -1 && errno != ENOENT)
+        return -1;
+
+    return change_event((uintptr_t)client->fd, EVFILT_WRITE,
+        EV_ADD | EV_ENABLE, client);
+}
+
+static int
+valid_request_id(const char *value)
+{
+    if (*value == '\0')
+        return 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (!((*p >= '0' && *p <= '9') ||
+            (*p >= 'A' && *p <= 'Z') ||
+            (*p >= 'a' && *p <= 'z') || *p == '-' || *p == '_'))
+            return 0;
+    }
+    return 1;
+}
+
+static int
+handle_request(struct client *client, char *line)
+{
+    char version[8] = {0};
+    char request_id[32] = {0};
+    char command[32] = {0};
+    char extra[2] = {0};
+    int fields = sscanf(line, "%7s %31s %31s %1s",
+        version, request_id, command, extra);
+
+    if (fields != 3 || strcmp(version, "v1") != 0 ||
+        !valid_request_id(request_id))
+        return queue_response(client, "0", "ERROR", "BAD_REQUEST");
+
+    if (strcmp(command, "PING") == 0)
+        return queue_response(client, request_id, "OK", "PONG");
+    if (strcmp(command, "STATUS") == 0)
+        return queue_response(client, request_id, "OK", "RUNNING");
+    return queue_response(client, request_id, "ERROR", "UNKNOWN_COMMAND");
+}
+
+static void
+accept_clients(void)
+{
+    for (;;) {
+        int fd = accept(listener, NULL, NULL);
+        if (fd == -1) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return;
+            perror("accept");
+            return;
+        }
+
+        if (set_nonblocking(fd) == -1) {
+            close(fd);
+            continue;
+        }
+
+        struct client *client = find_free_client();
+        if (client == NULL) {
+            close(fd);
+            continue;
+        }
+
+        memset(client, 0, sizeof(*client));
+        client->fd = fd;
+        if (change_event((uintptr_t)fd, EVFILT_READ,
+            EV_ADD | EV_ENABLE, client) == -1) {
+            perror("kevent add client");
+            close_client(client);
+        }
+    }
+}
+
+static void
+read_client(struct client *client)
+{
+    for (;;) {
+        if (client->input_len >= sizeof(client->input) - 1) {
+            if (queue_response(client, "0", "ERROR",
+                "REQUEST_TOO_LARGE") == -1)
+                close_client(client);
+            return;
+        }
+
+        ssize_t count = read(client->fd,
+            client->input + client->input_len,
+            sizeof(client->input) - 1 - client->input_len);
+
+        if (count == 0) {
+            close_client(client);
+            return;
+        }
+        if (count == -1) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return;
+            close_client(client);
+            return;
+        }
+
+        client->input_len += (size_t)count;
+        client->input[client->input_len] = '\0';
+
+        if (memchr(client->input, '\0', client->input_len) != NULL) {
+            if (queue_response(client, "0", "ERROR", "BAD_REQUEST") == -1)
+                close_client(client);
+            return;
+        }
+
+        char *newline = memchr(client->input, '\n', client->input_len);
+        if (newline != NULL) {
+            *newline = '\0';
+            if (handle_request(client, client->input) == -1)
+                close_client(client);
+            return;
+        }
+    }
+}
+
+static void
+write_client(struct client *client)
+{
+    while (client->output_sent < client->output_len) {
+        ssize_t count = write(client->fd,
+            client->output + client->output_sent,
+            client->output_len - client->output_sent);
+
+        if (count == -1) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return;
+            close_client(client);
+            return;
+        }
+        if (count == 0) {
+            close_client(client);
+            return;
+        }
+        client->output_sent += (size_t)count;
+    }
+    close_client(client);
+}
+
+static int
+start_listener(void)
+{
+    struct sockaddr_un address;
+
+    if (strlen(socket_path) >= sizeof(address.sun_path)) {
+        fprintf(stderr, "socket path is too long\n");
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    listener = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (listener == -1)
+        return -1;
+    if (set_nonblocking(listener) == -1)
+        return -1;
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    memcpy(address.sun_path, socket_path, strlen(socket_path) + 1);
+
+    (void)unlink(socket_path);
+    if (bind(listener, (struct sockaddr *)&address, sizeof(address)) == -1)
+        return -1;
+    if (chmod(socket_path, S_IRUSR | S_IWUSR) == -1)
+        return -1;
+    if (listen(listener, 32) == -1)
+        return -1;
+    return 0;
+}
+
+static void
+cleanup(void)
+{
+    for (size_t i = 0; i < MAX_CLIENTS; i++)
+        close_client(&clients[i]);
+
+    if (listener >= 0) {
+        close(listener);
+        listener = -1;
+    }
+    if (kq >= 0) {
+        close(kq);
+        kq = -1;
+    }
+    if (socket_path != NULL)
+        (void)unlink(socket_path);
+}
+
+int
+main(int argc, char **argv)
+{
+    if (argc == 2) {
+        socket_path = argv[1];
+    } else if (argc > 2) {
+        fprintf(stderr, "usage: %s [socket-path]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    for (size_t i = 0; i < MAX_CLIENTS; i++)
+        clients[i].fd = -1;
+
+    if (start_listener() == -1) {
+        perror("start listener");
+        cleanup();
+        return EXIT_FAILURE;
+    }
+
+    kq = kqueue();
+    if (kq == -1) {
+        perror("kqueue");
+        cleanup();
+        return EXIT_FAILURE;
+    }
+
+    if (change_event((uintptr_t)listener, EVFILT_READ,
+        EV_ADD | EV_ENABLE, NULL) == -1) {
+        perror("kevent add listener");
+        cleanup();
+        return EXIT_FAILURE;
+    }
+
+    (void)signal(SIGPIPE, SIG_IGN);
+    (void)signal(SIGINT, SIG_IGN);
+    (void)signal(SIGTERM, SIG_IGN);
+
+    if (change_event(SIGINT, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, NULL) == -1 ||
+        change_event(SIGTERM, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, NULL) == -1) {
+        perror("kevent add signal");
+        cleanup();
+        return EXIT_FAILURE;
+    }
+
+    printf("event-core listening on %s\n", socket_path);
+    fflush(stdout);
+
+    while (!stopping) {
+        struct kevent events[EVENT_BATCH];
+        int count = kevent(kq, NULL, 0, events, EVENT_BATCH, NULL);
+
+        if (count == -1) {
+            if (errno == EINTR)
+                continue;
+            perror("kevent wait");
+            stopping = 1;
+            break;
+        }
+
+        for (int i = 0; i < count; i++) {
+            struct kevent *event = &events[i];
+
+            if (event->filter == EVFILT_SIGNAL) {
+                stopping = 1;
+                break;
+            }
+            if ((int)event->ident == listener &&
+                event->filter == EVFILT_READ) {
+                accept_clients();
+                continue;
+            }
+
+            struct client *client = event->udata;
+            if (client == NULL || client->fd != (int)event->ident)
+                continue;
+            if (event->flags & EV_ERROR) {
+                close_client(client);
+                continue;
+            }
+            if (event->filter == EVFILT_READ)
+                read_client(client);
+            else if (event->filter == EVFILT_WRITE)
+                write_client(client);
+        }
+    }
+
+    cleanup();
+    puts("event-core stopped");
+    return EXIT_SUCCESS;
+}
