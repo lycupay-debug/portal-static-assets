@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# PROVIDE: personal_portal_api
+# REQUIRE: LOGIN personal_portal_event_core
+# KEYWORD: shutdown
+#
+. /etc/rc.subr
+
+name="personal_portal_api"
+rcvar="${name}_enable"
+
+load_rc_config "$name"
+
+: ${personal_portal_user:="personalportal"}
+: ${personal_portal_api_enable:="NO"}
+: ${personal_portal_api_addr:="127.0.0.1:8081"}
+: ${personal_portal_event_socket:="/var/run/personal-portal/event.sock"}
+
+command="/usr/sbin/daemon"
+procname="/usr/local/libexec/personal-portal/api"
+pidfile="/var/run/personal-portal/api.pid"
+logfile="/var/log/personal-portal/api.log"
+command_args="-f -p ${pidfile} -u ${personal_portal_user} -o ${logfile} env PERSONAL_PORTAL_HTTP_ADDR=${personal_portal_api_addr} PERSONAL_PORTAL_EVENT_SOCKET=${personal_portal_event_socket} ${procname}"
+
+start_precmd="personal_portal_api_prestart"
+personal_portal_api_prestart()
+{
+    install -d -o "${personal_portal_user}" -g "${personal_portal_user}" -m 0750 /var/run/personal-portal
+    install -d -o root -g wheel -m 0750 /var/log/personal-portal
+    if [ ! -S "${personal_portal_event_socket}" ]; then
+        echo "${name}: event-core socket is not available: ${personal_portal_event_socket}" >&2
+        return 1
+    fi
+    return 0
+}
+
+run_rc_command "$1"

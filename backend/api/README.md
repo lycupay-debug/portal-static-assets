@@ -23,4 +23,16 @@ go vet ./...
 go run ./api
 ```
 
-当前 FreeBSD 主机尚未安装/验证 Go 工具链，因此 Go 代码目前尚未实际编译或运行测试，也没有部署 API 服务。必须先在可用的 Go 环境中完成格式检查、单元测试和 vet，再在目标 FreeBSD 主机验证工具链、IPC 集成与运行方式。
+## FreeBSD 验证记录
+
+在目标 FreeBSD 15.1-RELEASE-p4 amd64 主机上安装了 `go127` 包（Go 1.27.2，仅作为编译/验证工具），并完成以下检查：
+
+- `gofmt127 -w api/main.go api/main_test.go`：完成。
+- `go127 test -race ./...`：通过。
+- `go127 vet ./...`：通过。
+- `go127 build -o /var/tmp/personal-portal-api ./api`：通过，生成 FreeBSD amd64 可执行文件。
+- IPC 集成测试：C 事件核心运行时，`GET /healthz` 返回 200、`GET /readyz` 返回 200；停止 C 事件核心后，`GET /readyz` 返回 503。
+- API 安装至 `/usr/local/libexec/personal-portal/api`，并通过 FreeBSD `rc.d` 临时启动验证正式默认地址 `127.0.0.1:8081` 的 `/healthz` 与 `/readyz`。
+- 两个服务的 `onestart`、`onestop` 和状态检查均已验证；测试结束后服务均已停止，未启用开机自启。
+
+服务配置源文件位于 `deploy/freebsd/`，部署步骤见 `docs/operations/freebsd-deployment.md`。这些验证不代表业务事件投递、持久化或重试机制已实现。

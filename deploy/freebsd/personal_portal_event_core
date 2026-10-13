@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# PROVIDE: personal_portal_event_core
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+#
+. /etc/rc.subr
+
+name="personal_portal_event_core"
+rcvar="${name}_enable"
+
+load_rc_config "$name"
+
+: ${personal_portal_user:="personalportal"}
+: ${personal_portal_event_core_enable:="NO"}
+
+command="/usr/sbin/daemon"
+procname="/usr/local/libexec/personal-portal/event-core"
+pidfile="/var/run/personal-portal/event-core.pid"
+socket_path="/var/run/personal-portal/event.sock"
+logfile="/var/log/personal-portal/event-core.log"
+command_args="-f -p ${pidfile} -u ${personal_portal_user} -o ${logfile} ${procname} ${socket_path}"
+
+start_precmd="personal_portal_event_core_prestart"
+personal_portal_event_core_prestart()
+{
+    install -d -o "${personal_portal_user}" -g "${personal_portal_user}" -m 0750 /var/run/personal-portal
+    install -d -o root -g wheel -m 0750 /var/log/personal-portal
+    if [ -S "${socket_path}" ]; then
+        echo "${name}: stale socket exists; refusing to remove it automatically: ${socket_path}" >&2
+        return 1
+    fi
+    return 0
+}
+
+run_rc_command "$1"
