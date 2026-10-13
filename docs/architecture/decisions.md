@@ -32,3 +32,12 @@
 - 暂不接入 Notion。
 - 初期以版本管理的 Markdown/JSON 内容为主；只有出现事务、并发写入或查询需求时再评估数据库。
 - 公开内容和私人数据必须在目录、构建产物、索引和权限层面隔离。
+
+## ADR-0006：PostgreSQL 持久化基础
+- 状态：已在 FreeBSD 主机完成基础接入与连通性验证；业务表待需求确定。
+- 复用主机已有 PostgreSQL 17，不新建数据库服务。
+- 门户使用独立数据库 `personal_portal` 与登录角色 `personal_portal_app`；不得访问 `n8n_db` 或 `host_mcp_oauth`。
+- Go API 使用 `database/sql` 与 pgx stdlib 驱动；连接 URL 从主机受限权限文件读取，不提交到 Git。
+- SQL schema 变更通过 `backend/migrations/` 中的版本化 SQL 管理；应用启动时不自动修改 schema。
+- `portal.schema_migrations` 记录已应用的迁移版本。当前仅建立基础结构，不预设门户内容或业务事件表。
+- C `kqueue` 核心仍负责 IPC/事件通知；持久化事务与后续业务数据由 PostgreSQL 管理。

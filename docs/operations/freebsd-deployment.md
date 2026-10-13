@@ -39,6 +39,34 @@ install -o root -g wheel -m 0644 /opt/personal-portal/deploy/freebsd/newsyslog/p
 
 如果服务用户已存在，跳过 `pw useradd`。二进制安装前先运行测试；不要把仓库目录直接作为生产运行目录。
 
+## PostgreSQL 数据库
+
+- 复用主机 PostgreSQL 17，数据库为 `personal_portal`，应用角色为 `personal_portal_app`。
+- `n8n_db`、`host_mcp_oauth` 与 `personal_portal` 相互隔离；应用角色仅获准连接 `personal_portal`。
+- 数据库连接 URL 存放在 `/usr/local/etc/personal-portal/database-url`，属主 `root:personalportal`，权限 `0640`；不得提交到 Git、写入日志或复制到公开构建产物。
+- `pg_hba.conf` 对 `personal_portal_app` 的本地 Unix socket、IPv4 loopback 和 IPv6 loopback 连接使用 SCRAM-SHA-256；其他既有角色规则保持原样。
+- Go API 使用 pgx 的 `database/sql` 驱动与有限连接池。`/dbz` 检查数据库连通性；`/readyz` 同时检查 C 核心与数据库。
+- 数据库迁移文件位于 `backend/migrations/`。业务迁移应由管理员/部署步骤显式执行，不在 API 启动时自动执行。
+- 当前只建立 `portal` schema 和 `portal.schema_migrations` 迁移台账；尚未创建业务数据表。
+
+应用基础迁移时，避免把包含密码的 URL 放在命令行参数中。可使用 Python 将密码放入子进程环境，再调用 `psql`：
+
+```python
+import os, subprocess
+from urllib.parse import urlparse, unquote
+
+url = open("/usr/local/etc/personal-portal/database-url", encoding="utf-8").read().strip()
+parsed = urlparse(url)
+env = os.environ.copy()
+env["PGPASSWORD"] = unquote(parsed.password or "")
+subprocess.run([
+    "/usr/local/bin/psql", "-X", "-v", "ON_ERROR_STOP=1",
+    "-h", parsed.hostname, "-p", str(parsed.port or 5432),
+    "-U", unquote(parsed.username or ""), "-d", parsed.path.lstrip("/"),
+    "-f", "/opt/personal-portal/backend/migrations/001_portal_foundation.sql",
+], env=env, check=True)
+```
+
 ## 试运行与验证
 
 先只启用 C 事件核心，再启动 API：
@@ -70,8 +98,8 @@ personal_portal_api_enable="YES"
 - 首次启动若发现遗留 socket 且没有运行中的 `event-core` 进程，脚本会拒绝自动删除；管理员应确认没有活跃进程后再清理。受监督的核心进程异常退出后，重启的 C 程序会在绑定前清理其 socket 路径。
 - 日志轮转配置安装在 `/usr/local/etc/newsyslog.conf.d/personal-portal.conf`。日志达到 1 MiB 时轮转，保留 7 份压缩归档，并向 daemon supervisor 发送 `SIGHUP`，使其重新打开日志文件。归档与当前日志权限为 `0600`。
 - 尚未配置资源限制、外部反向代理或 HTTPS；当前 API 仅监听 `127.0.0.1:8081`。
-- `/healthz` 只检查 HTTP 进程；`/readyz` 检查 C 核心 IPC。
-- 当前 IPC 仅支持 PING/STATUS，不是持久化业务事件队列。
+- `/healthz` 只检查 HTTP 进程；`/dbz` 检查 PostgreSQL；`/readyz` 同时检查 C 核心 IPC 与 PostgreSQL。
+- 当前 IPC 仅支持 PING/STATUS，不是持久化业务事件队列。数据库已接入，但尚未定义业务事件表或内容表。
 - 开机自启仍保持关闭，直到完成后续部署与安全检查。
 
 ## 服务可靠性验证记录
@@ -84,7 +112,8 @@ personal_portal_api_enable="YES"
 - 对 C 核心子进程发送 `SIGKILL` 后，daemon 启动新子进程；新核心清理遗留 socket 并恢复监听，API `/readyz` 恢复为 `ready`。
 - 保持 API 运行并正常停止 C 核心时，`/healthz` 返回 `ok`、`/readyz` 返回 HTTP 503；重新启动核心后，`/readyz` 恢复为 `ready`。
 - 使用 `newsyslog` 强制轮转两份日志成功；已创建压缩归档，当前日志 inode 已变化，daemon 重新打开日志文件，轮转后健康检查仍正常。
+- 已执行主机重启验证：C 核心与 API 均按 rcorder 顺序自动启动，`/healthz` 返回 `ok`、`/readyz` 返回 `ready`；随后将自启动配置恢复为 `NO`。
 - 日志文件和归档均为 `root:wheel`、权限 `0600`；服务脚本和已安装二进制均为 `root:wheel`、权限 `0555`。
 - `/etc/rc.conf` 中未启用两个服务，开机自启仍关闭。
 
-这些测试验证了服务生命周期、子进程自动恢复和日志轮转；不代表网站已具备公网生产上线条件。当前没有验证主机重启后的完整启动顺序，也没有配置反向代理、HTTPS、资源限制或业务事件持久化。
+这些测试验证了服务生命周期、子进程自动恢复和日志轮转；不代表网站已具备公网生产上线条件。尚未配置反向代理、HTTPS、资源限制或业务事件持久化。

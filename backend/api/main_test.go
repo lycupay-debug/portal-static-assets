@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -81,5 +82,33 @@ func TestIPCClientRejectsUnexpectedResponse(t *testing.T) {
 	client := IPCClient{SocketPath: socketPath, Timeout: time.Second}
 	if err := client.Status(context.Background()); err == nil {
 		t.Fatal("Status() accepted an unexpected response")
+	}
+}
+
+func TestLoadDatabaseURLFromFile(t *testing.T) {
+	t.Setenv("PERSONAL_PORTAL_DATABASE_URL", "")
+	path := filepath.Join(t.TempDir(), "database-url")
+	if err := os.WriteFile(path, []byte("postgres://test:secret@127.0.0.1/testdb?sslmode=disable\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PERSONAL_PORTAL_DATABASE_URL_FILE", path)
+	got, err := loadDatabaseURL()
+	if err != nil {
+		t.Fatalf("loadDatabaseURL() error: %v", err)
+	}
+	if got != "postgres://test:secret@127.0.0.1/testdb?sslmode=disable" {
+		t.Fatalf("loadDatabaseURL() = %q, want configured URL", got)
+	}
+}
+
+func TestLoadDatabaseURLRejectsEmptyFile(t *testing.T) {
+	t.Setenv("PERSONAL_PORTAL_DATABASE_URL", "")
+	path := filepath.Join(t.TempDir(), "database-url")
+	if err := os.WriteFile(path, []byte("  \n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PERSONAL_PORTAL_DATABASE_URL_FILE", path)
+	if _, err := loadDatabaseURL(); err == nil {
+		t.Fatal("loadDatabaseURL() accepted an empty file")
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -11,12 +12,15 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const (
-	defaultHTTPAddr = "127.0.0.1:8081"
-	defaultSocket   = "/var/run/personal-portal/event.sock"
-	protocolVersion = "v1"
+	defaultHTTPAddr        = "127.0.0.1:8081"
+	defaultSocket          = "/var/run/personal-portal/event.sock"
+	defaultDatabaseURLFile = "/usr/local/etc/personal-portal/database-url"
+	protocolVersion        = "v1"
 )
 
 var requestSequence atomic.Uint64
@@ -67,6 +71,25 @@ func (c IPCClient) Status(ctx context.Context) error {
 	return nil
 }
 
+func loadDatabaseURL() (string, error) {
+	if value := strings.TrimSpace(os.Getenv("PERSONAL_PORTAL_DATABASE_URL")); value != "" {
+		return value, nil
+	}
+	path := strings.TrimSpace(os.Getenv("PERSONAL_PORTAL_DATABASE_URL_FILE"))
+	if path == "" {
+		path = defaultDatabaseURLFile
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read database URL file: %w", err)
+	}
+	value := strings.TrimSpace(string(data))
+	if value == "" {
+		return "", errors.New("database URL file is empty")
+	}
+	return value, nil
+}
+
 func main() {
 	httpAddr := os.Getenv("PERSONAL_PORTAL_HTTP_ADDR")
 	if httpAddr == "" {
@@ -77,9 +100,36 @@ func main() {
 		socketPath = defaultSocket
 	}
 
+	databaseURL, err := loadDatabaseURL()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "backend API database configuration failed: %v\n", err)
+		os.Exit(1)
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "backend API database initialization failed\n")
+		os.Exit(1)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4)
+	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
+
 	ipc := IPCClient{SocketPath: socketPath, Timeout: 750 * time.Millisecond}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("GET /dbz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+		defer cancel()
+		if err := db.PingContext(ctx); err != nil {
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
@@ -89,6 +139,12 @@ func main() {
 		defer cancel()
 		if err := ipc.Status(ctx); err != nil {
 			http.Error(w, "event core unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		dbCtx, dbCancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+		defer dbCancel()
+		if err := db.PingContext(dbCtx); err != nil {
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
