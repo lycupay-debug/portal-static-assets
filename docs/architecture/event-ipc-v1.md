@@ -2,7 +2,7 @@
 
 ## Status
 
-Version 1 is the first local connectivity contract between the C event core and future backend clients. It currently supports only health/connectivity commands; it is not yet a business event submission protocol.
+Version 1 is the first local connectivity contract between the C event core and future backend clients. It supports health/connectivity commands plus an EVENT metadata envelope. EVENT acceptance validates metadata only; it is not durable delivery or business processing.
 
 ## Transport
 
@@ -23,7 +23,7 @@ Fields are separated by one or more ASCII whitespace characters when parsed by t
 
 - `v1`: protocol version. Unsupported versions are rejected.
 - `request_id`: 1–31 ASCII characters from `[A-Za-z0-9_-]`. The server echoes valid IDs in responses.
-- `command`: command token, currently `PING` or `STATUS`.
+- `command`: `PING`, `STATUS`, or `EVENT`. EVENT adds two arguments: a UUID event ID and a lowercase event type (up to 100 characters).
 - Maximum request content before LF: 254 bytes (the LF itself is not counted). Larger/incomplete requests are rejected.
 
 ## Response format
@@ -38,6 +38,7 @@ Status is `OK` or `ERROR`. Payload values for the current commands and errors ar
 |---|---|
 | `PING` | `v1 <request_id> OK PONG\n` |
 | `STATUS` | `v1 <request_id> OK RUNNING\n` |
+| `EVENT <event_id> <event_type>` | `v1 <request_id> OK ACCEPTED\n` when metadata validates |
 | unknown command | `v1 <request_id> ERROR UNKNOWN_COMMAND\n` |
 | invalid version/shape/ID or embedded NUL | `v1 0 ERROR BAD_REQUEST\n` |
 | oversized request | `v1 0 ERROR REQUEST_TOO_LARGE\n` |
@@ -73,7 +74,7 @@ The current C implementation accepts a 255-byte input buffer including a maximum
 
 ## Durable event intake (phase 1)
 
-Business event intake is currently exposed by the Go API, not by the local C IPC v1 protocol. `POST /events` validates an event and commits it to `portal.event_inbox` before returning `202 Accepted`. The C process is still only a local event/health core at this stage; dispatch/notification from PostgreSQL-backed intake into the C event loop is a subsequent phase and must not be implied by a successful HTTP receipt.
+Business event intake is exposed by the Go API. `POST /events` validates an event and commits it to `portal.event_inbox` before returning `202 Accepted`. The IPC EVENT command currently validates event ID/type metadata only. It does not carry payload, claim an inbox row, persist the event in C, or execute business work. A durable dispatcher/replay policy is still required; neither HTTP receipt nor IPC ACCEPTED implies business completion.
 
 Request JSON:
 

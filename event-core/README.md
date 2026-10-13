@@ -36,6 +36,7 @@ v1 <request_id> <command>\n
 
 - PING → v1 <request_id> OK PONG
 - STATUS → v1 <request_id> OK RUNNING
+- EVENT <event_id> <event_type> → v1 <request_id> OK ACCEPTED（仅表示元数据校验通过）
 
 错误响应形如：
 

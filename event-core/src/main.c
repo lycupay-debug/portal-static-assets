@@ -113,23 +113,79 @@ valid_request_id(const char *value)
 }
 
 static int
+valid_event_id(const char *value)
+{
+    if (strlen(value) != 36)
+        return 0;
+    for (size_t i = 0; i < 36; i++) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (value[i] != '-')
+                return 0;
+        } else {
+            unsigned char ch = (unsigned char)value[i];
+            if (!((ch >= '0' && ch <= '9') ||
+                (ch >= 'a' && ch <= 'f') ||
+                (ch >= 'A' && ch <= 'F')))
+                return 0;
+        }
+    }
+    if (value[14] < '1' || value[14] > '8')
+        return 0;
+    return value[19] == '8' || value[19] == '9' ||
+        value[19] == 'a' || value[19] == 'A' ||
+        value[19] == 'b' || value[19] == 'B';
+}
+
+static int
+valid_event_type(const char *value)
+{
+    size_t length = strlen(value);
+    if (length == 0 || length > 100 ||
+        value[0] < 'a' || value[0] > 'z')
+        return 0;
+    for (size_t i = 1; i < length; i++) {
+        unsigned char ch = (unsigned char)value[i];
+        if (!((ch >= 'a' && ch <= 'z') ||
+            (ch >= '0' && ch <= '9') || ch == '.' ||
+            ch == '_' || ch == '-'))
+            return 0;
+    }
+    return 1;
+}
+
+static int
 handle_request(struct client *client, char *line)
 {
     char version[8] = {0};
     char request_id[32] = {0};
     char command[32] = {0};
+    char event_id[37] = {0};
+    char event_type[101] = {0};
     char extra[2] = {0};
-    int fields = sscanf(line, "%7s %31s %31s %1s",
-        version, request_id, command, extra);
+    int fields = sscanf(line, "%7s %31s %31s %36s %100s %1s",
+        version, request_id, command, event_id, event_type, extra);
 
-    if (fields != 3 || strcmp(version, "v1") != 0 ||
-        !valid_request_id(request_id))
+    if (strcmp(version, "v1") != 0 || !valid_request_id(request_id))
         return queue_response(client, "0", "ERROR", "BAD_REQUEST");
 
-    if (strcmp(command, "PING") == 0)
-        return queue_response(client, request_id, "OK", "PONG");
-    if (strcmp(command, "STATUS") == 0)
+    if (strcmp(command, "PING") == 0 || strcmp(command, "STATUS") == 0) {
+        if (fields != 3)
+            return queue_response(client, "0", "ERROR", "BAD_REQUEST");
+        if (strcmp(command, "PING") == 0)
+            return queue_response(client, request_id, "OK", "PONG");
         return queue_response(client, request_id, "OK", "RUNNING");
+    }
+
+    if (strcmp(command, "EVENT") == 0) {
+        if (fields != 5 || !valid_event_id(event_id) ||
+            !valid_event_type(event_type))
+            return queue_response(client, "0", "ERROR", "BAD_REQUEST");
+        /* ACCEPTED validates metadata only; it is not business completion. */
+        return queue_response(client, request_id, "OK", "ACCEPTED");
+    }
+
+    if (fields != 3)
+        return queue_response(client, "0", "ERROR", "BAD_REQUEST");
     return queue_response(client, request_id, "ERROR", "UNKNOWN_COMMAND");
 }
 

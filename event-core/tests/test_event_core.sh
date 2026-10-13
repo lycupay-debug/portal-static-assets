@@ -52,6 +52,14 @@ def request(data):
 checks = [
     (b"v1 ping1 PING\n", "v1 ping1 OK PONG\n"),
     (b"v1 stat1 STATUS\n", "v1 stat1 OK RUNNING\n"),
+    (b"v1 evt1 EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab content.published\n",
+     "v1 evt1 OK ACCEPTED\n"),
+    (b"v1 evbad EVENT not-a-uuid content.published\n",
+     "v1 0 ERROR BAD_REQUEST\n"),
+    (b"v1 evtype EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab Content.Published\n",
+     "v1 0 ERROR BAD_REQUEST\n"),
+    (b"v1 evextra EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab content.published extra\n",
+     "v1 0 ERROR BAD_REQUEST\n"),
     (b"v1 unk1 NOPE\n", "v1 unk1 ERROR UNKNOWN_COMMAND\n"),
     (b"v2 ping1 PING\n", "v1 0 ERROR BAD_REQUEST\n"),
     (b"v1 bad.id PING\n", "v1 0 ERROR BAD_REQUEST\n"),
@@ -84,7 +92,7 @@ for thread in threads:
 if errors:
     raise SystemExit(f"FAIL: concurrent requests: {errors!r}")
 
-print("PASS: PING, STATUS, unknown command, protocol validation, request limit, 24 concurrent clients")
+print("PASS: PING, STATUS, EVENT validation, unknown command, protocol validation, request limit, 24 concurrent clients")
 PY
 
 kill -TERM "$PID"
