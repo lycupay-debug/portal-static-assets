@@ -245,8 +245,7 @@ func (d EventDispatcher) claim(ctx context.Context) ([]pendingNotification, erro
 		WITH candidates AS (
 			SELECT event_id
 			FROM portal.event_inbox
-			WHERE status = 'received'
-			  AND ((dispatch_state = 'pending' AND next_dispatch_at <= now())
+			WHERE ((dispatch_state = 'pending' AND next_dispatch_at <= now())
 			       OR (dispatch_state = 'leased' AND dispatch_lease_until < now()))
 			ORDER BY next_dispatch_at, received_at, event_id
 			FOR UPDATE SKIP LOCKED

@@ -42,9 +42,9 @@ func TestContentValidationHTTPToPostgresIntegration(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "DELETE FROM portal.event_inbox WHERE event_id = $1::uuid", eventID); err != nil {
 		t.Fatal(err)
 	}
-	// processOne claims the oldest eligible event of a registered type. Refuse
-	// to run against this shared database if another validation event is eligible,
-	// so this test cannot accidentally process unrelated work.
+	// processOne claims the oldest eligible event of a registered type. The
+	// dispatcher also claims the oldest eligible notification. Refuse to run
+	// against this shared database if either query could pick unrelated work.
 	var otherEligible int
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(*)
@@ -58,6 +58,19 @@ func TestContentValidationHTTPToPostgresIntegration(t *testing.T) {
 	}
 	if otherEligible != 0 {
 		t.Fatalf("refusing to run: found %d other eligible content validation events", otherEligible)
+	}
+	var otherDispatchEligible int
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM portal.event_inbox
+		WHERE event_id <> $1::uuid
+		  AND ((dispatch_state = 'pending' AND next_dispatch_at <= now())
+		       OR (dispatch_state = 'leased' AND dispatch_lease_until < now()))
+	`, eventID).Scan(&otherDispatchEligible); err != nil {
+		t.Fatal(err)
+	}
+	if otherDispatchEligible != 0 {
+		t.Fatalf("refusing to run: found %d other eligible dispatch events", otherDispatchEligible)
 	}
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -121,6 +134,20 @@ func TestContentValidationHTTPToPostgresIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Fatalf("event was not completed; status=%q last_error=%q", status, lastError.String)
+	}
+
+	// Dispatch is independent of business status: a fast processor may finish
+	// the event before the dispatcher runs, but the notification must remain eligible.
+	dispatcher := EventDispatcher{DB: db, Batch: 1}
+	notifications, err := dispatcher.claim(ctx)
+	if err != nil {
+		t.Fatalf("claim completed event for dispatch: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("dispatch claim returned %d events, want 1", len(notifications))
+	}
+	if notifications[0].EventID != eventID || notifications[0].EventType != "portal.content.validate" {
+		t.Fatalf("dispatch claim returned unrelated event: %#v", notifications[0])
 	}
 
 	var status string
