@@ -397,6 +397,7 @@ func main() {
 
 	ipc := IPCClient{SocketPath: socketPath, Timeout: 750 * time.Millisecond}
 	go (EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 500 * time.Millisecond}).Run(context.Background())
+	go (EventProcessor{DB: db, Handlers: registeredEventHandlers(), Interval: 500 * time.Millisecond}).Run(context.Background())
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

@@ -34,4 +34,4 @@ npm run build
 
 ## 当前状态
 
-当前已具备 FreeBSD 服务骨架、C IPC v1、Go API、PostgreSQL 事件收件箱与带租约/退避重试的通知分发器。`dispatch_state=notified` 只代表 C 核心接受了事件 ID/类型元数据；不代表 payload 已交给 C、事件已持久化在 C 侧或业务已完成。生产服务仍保持停止且开机自启关闭。
+当前已具备 FreeBSD 服务骨架、C IPC v1、Go API、PostgreSQL 事件收件箱、通知分发器，以及独立的 Go 业务处理器执行框架。`dispatch_state=notified` 只代表 C 核心接受了事件 ID/类型元数据；不代表 payload 已交给 C、事件已持久化在 C 侧或业务已完成。业务处理框架使用独立租约和重试状态，但当前没有注册生产业务 handler，因此尚无实际业务事件执行。生产服务仍保持停止且开机自启关闭。
