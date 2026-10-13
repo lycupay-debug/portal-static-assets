@@ -49,3 +49,13 @@
 - 调用方提供 UUID `event_id` 作为幂等键；同 ID 同内容为重放，同 ID 不同内容返回冲突。
 - C IPC v1 暂不承载任意业务 payload；事件持久化与 C 核心通知分开，避免把内存通知误当作可靠队列。
 - 不在 API 启动时自动执行数据库迁移。
+
+
+## 当前事件处理契约：`portal.content.validate`
+
+- 事件负责编校验内容草稿，不负责发布、写入 Markdown/JSON 文件或建立内容索引。
+- 输入字段：`title`、`slug`、`content_type`、`visibility`、`summary`、`body`。内容类型限定为 `article`、`tool`、`resource`、`project`；可见性限定为 `public`、`private`。
+- 校验结果保存在 `portal.event_inbox.processing_result`，与 `status='completed'` 在同一条 SQL 更新中写入。`completed` 表示校验处理已执行完，不代表内容通过校验；以结果中的 `valid` 字段为准。
+- 可预期的输入错误（必填字段、格式、长度、未知字段或字段类型不符）返回 `valid=false` 和错误列表，不进入重试。仅处理器实际错误进入事件重试路径。
+- 私人/公开可见性仅作字段合法性校验；此事件不会发布内容、生成公开产物或改变任何公开索引。
+- 迁移 `005_event_processing_result.sql` 为事件收件箱添加结果字段。

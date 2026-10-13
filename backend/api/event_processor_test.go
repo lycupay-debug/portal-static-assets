@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -9,10 +10,10 @@ import (
 func TestEventProcessorSupportedTypes(t *testing.T) {
 	processor := EventProcessor{
 		Handlers: map[string]EventHandler{
-			"content.updated": func(context.Context, EventInput) error { return nil },
-			"content.created": func(context.Context, EventInput) error { return nil },
+			"content.updated": func(context.Context, EventInput) (json.RawMessage, error) { return nil, nil },
+			"content.created": func(context.Context, EventInput) (json.RawMessage, error) { return nil, nil },
 			"ignored.nil":     nil,
-			"":                func(context.Context, EventInput) error { return nil },
+			"":                func(context.Context, EventInput) (json.RawMessage, error) { return nil, nil },
 		},
 	}
 	got := processor.supportedTypes()

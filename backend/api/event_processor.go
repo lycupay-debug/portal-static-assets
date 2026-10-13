@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -17,12 +18,14 @@ const (
 	maxProcessingAttempts     = 10
 )
 
-type EventHandler func(context.Context, EventInput) error
+type EventHandler func(context.Context, EventInput) (json.RawMessage, error)
 
 // registeredEventHandlers is the single registry for production business handlers.
-// Keep it empty until an event type has an explicitly defined, tested business contract.
+// Only register handlers whose input and result contracts are explicit and tested.
 func registeredEventHandlers() map[string]EventHandler {
-	return map[string]EventHandler{}
+	return map[string]EventHandler{
+		"portal.content.validate": validateContentEvent,
+	}
 }
 
 type EventProcessor struct {
@@ -87,14 +90,14 @@ func (p EventProcessor) claim(ctx context.Context, eventTypes []string) (*pendin
 	return &event, nil
 }
 
-func (p EventProcessor) complete(ctx context.Context, event pendingEvent) error {
+func (p EventProcessor) complete(ctx context.Context, event pendingEvent, processingResult json.RawMessage) error {
 	result, err := p.DB.ExecContext(ctx, `
 		UPDATE portal.event_inbox
-		SET status = 'completed', processed_at = now(),
+		SET status = 'completed', processed_at = now(), processing_result = NULLIF($3, '')::jsonb,
 		    processing_lease_until = NULL, processing_worker_id = NULL,
 		    last_error = NULL
 		WHERE event_id = $1::uuid AND status = 'processing' AND processing_worker_id = $2
-	`, event.EventID, p.WorkerID)
+	`, event.EventID, p.WorkerID, string(processingResult))
 	if err != nil {
 		return err
 	}
@@ -176,7 +179,7 @@ func (p EventProcessor) processOne(ctx context.Context, eventTypes []string) boo
 
 	handler := p.Handlers[event.EventType]
 	handlerCtx, cancelHandler := context.WithTimeout(ctx, processingTimeout)
-	handlerErr := handler(handlerCtx, EventInput{
+	processingResult, handlerErr := handler(handlerCtx, EventInput{
 		EventID: event.EventID, EventType: event.EventType, Payload: event.Payload,
 	})
 	cancelHandler()
@@ -189,7 +192,7 @@ func (p EventProcessor) processOne(ctx context.Context, eventTypes []string) boo
 		}
 		return true
 	}
-	if err := p.complete(updateCtx, *event); err != nil {
+	if err := p.complete(updateCtx, *event, processingResult); err != nil {
 		log.Printf("event processor completion update failed for %s: %v", event.EventID, err)
 	}
 	return true

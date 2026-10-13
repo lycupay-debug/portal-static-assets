@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -38,7 +39,9 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 	const retryID = "018f2f5e-7a2b-7c4d-8e9f-0123456789ad"
 	const expiredID = "018f2f5e-7a2b-7c4d-8e9f-0123456789ae"
 	const terminalID = "018f2f5e-7a2b-7c4d-8e9f-0123456789af"
-	ids := []string{successID, retryID, expiredID, terminalID}
+	const validContentID = "018f2f5e-7a2b-7c4d-8e9f-0123456789b0"
+	const invalidContentID = "018f2f5e-7a2b-7c4d-8e9f-0123456789b1"
+	ids := []string{successID, retryID, expiredID, terminalID, validContentID, invalidContentID}
 	for _, id := range ids {
 		if _, err := db.ExecContext(ctx, "DELETE FROM portal.event_inbox WHERE event_id = $1::uuid", id); err != nil {
 			t.Fatal(err)
@@ -60,14 +63,22 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		{retryID, "test.processor.retry", "received", 0},
 		{expiredID, "test.processor.recovery", "processing", 1},
 		{terminalID, "test.processor.terminal", "received", maxProcessingAttempts - 1},
+		{validContentID, contentValidationEventType, "received", 0},
+		{invalidContentID, contentValidationEventType, "received", 0},
 	} {
+		payload := `{"value":7}`
+		if event.id == validContentID {
+			payload = `{"title":"Valid draft","slug":"valid-draft","content_type":"article","visibility":"public","summary":"Summary","body":"Body"}`
+		} else if event.id == invalidContentID {
+			payload = `{"title":"","slug":"Bad Slug","content_type":"article","visibility":"private","body":"Body"}`
+		}
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO portal.event_inbox
 				(event_id, event_type, payload, status, attempts, processing_lease_until, processing_worker_id)
-			VALUES ($1::uuid, $2, '{"value":7}'::jsonb, $3, $4,
+			VALUES ($1::uuid, $2, $5::jsonb, $3, $4,
 			        CASE WHEN $3 = 'processing' THEN now() - interval '1 second' ELSE NULL END,
 			        CASE WHEN $3 = 'processing' THEN 'dead-worker' ELSE NULL END)
-		`, event.id, event.kind, event.status, event.attempts)
+		`, event.id, event.kind, event.status, event.attempts, payload)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,11 +88,11 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		DB:       db,
 		WorkerID: "integration-worker-success",
 		Handlers: map[string]EventHandler{
-			"test.processor.success": func(_ context.Context, event EventInput) error {
+			"test.processor.success": func(_ context.Context, event EventInput) (json.RawMessage, error) {
 				if event.EventID != successID || string(event.Payload) != "{\"value\": 7}" {
 					t.Errorf("handler received unexpected event: %#v", event)
 				}
-				return nil
+				return json.RawMessage(`{"ok":true}`), nil
 			},
 		},
 	}
@@ -89,13 +100,20 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		t.Fatal("processor did not claim success event")
 	}
 	assertEventState(t, ctx, db, successID, "completed", 1)
+	var storedResult string
+	if err := db.QueryRowContext(ctx, "SELECT processing_result::text FROM portal.event_inbox WHERE event_id=$1::uuid", successID).Scan(&storedResult); err != nil {
+		t.Fatal(err)
+	}
+	if storedResult != `{"ok": true}` {
+		t.Fatalf("stored processing result = %s, want JSON result", storedResult)
+	}
 
 	retryProcessor := EventProcessor{
 		DB:       db,
 		WorkerID: "integration-worker-retry",
 		Handlers: map[string]EventHandler{
-			"test.processor.retry": func(context.Context, EventInput) error {
-				return errors.New("expected test failure")
+			"test.processor.retry": func(context.Context, EventInput) (json.RawMessage, error) {
+				return nil, errors.New("expected test failure")
 			},
 		},
 	}
@@ -115,7 +133,7 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		DB:       db,
 		WorkerID: "integration-worker-recovery",
 		Handlers: map[string]EventHandler{
-			"test.processor.recovery": func(context.Context, EventInput) error { return nil },
+			"test.processor.recovery": func(context.Context, EventInput) (json.RawMessage, error) { return nil, nil },
 		},
 	}
 	if !recoveryProcessor.processOne(ctx, recoveryProcessor.supportedTypes()) {
@@ -127,8 +145,8 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		DB:       db,
 		WorkerID: "integration-worker-terminal",
 		Handlers: map[string]EventHandler{
-			"test.processor.terminal": func(context.Context, EventInput) error {
-				return errors.New("terminal test failure")
+			"test.processor.terminal": func(context.Context, EventInput) (json.RawMessage, error) {
+				return nil, errors.New("terminal test failure")
 			},
 		},
 	}
@@ -136,6 +154,31 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		t.Fatal("processor did not claim terminal failure event")
 	}
 	assertEventState(t, ctx, db, terminalID, "failed", maxProcessingAttempts)
+
+	contentProcessor := EventProcessor{DB: db, WorkerID: "integration-content-validation", Handlers: registeredEventHandlers()}
+	for range 2 {
+		if !contentProcessor.processOne(ctx, contentProcessor.supportedTypes()) {
+			t.Fatal("content validator did not claim queued validation event")
+		}
+	}
+	assertEventState(t, ctx, db, validContentID, "completed", 1)
+	assertEventState(t, ctx, db, invalidContentID, "completed", 1)
+	for _, check := range []struct {
+		id    string
+		valid bool
+	}{{validContentID, true}, {invalidContentID, false}} {
+		var raw []byte
+		if err := db.QueryRowContext(ctx, "SELECT processing_result FROM portal.event_inbox WHERE event_id=$1::uuid", check.id).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		var result contentValidationResult
+		if err := json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Valid != check.valid {
+			t.Fatalf("validation result for %s valid=%v, want %v", check.id, result.Valid, check.valid)
+		}
+	}
 }
 
 func assertEventState(t *testing.T, ctx context.Context, db *sql.DB, eventID, wantStatus string, wantAttempts int) {
