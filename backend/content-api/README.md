@@ -1,0 +1,48 @@
+# Content API
+
+内容管理是独立的业务模块，由现有 Node.js API 进程挂载路由，复用认证会话、数据库连接池、JSON 响应和请求体解析，不额外启动第二个服务。
+
+## Responsibilities
+
+- `handlers.mjs`: 内容业务规则、输入校验、内容 CRUD、发布状态与公开读取。
+- `backend/auth-api/server.mjs`: HTTP 服务、会话认证、共享数据库连接和通用响应能力。
+- `backend/migrations/007_portal_content.sql`: 内容表、约束、索引和迁移登记。
+- `backend/api`: Go 事件接收、分发、处理。公开内容发布时，内容更新与 `portal.content.validate` 事件在同一 PostgreSQL 事务中提交。
+
+## Endpoints
+
+这些路径经过 Caddy 的 `/api/*` 前缀代理后，由 Node.js 收到去掉 `/api` 的路径。
+
+| Method | Public path | Purpose |
+|---|---|---|
+| GET | `/api/content` | 列出当前登录用户的内容，最多 500 条 |
+| GET | `/api/content/:id` | 读取本人内容详情 |
+| POST | `/api/content` | 创建草稿 |
+| PATCH | `/api/content/:id` | 更新标题、别名、类型、摘要、正文、可见范围 |
+| DELETE | `/api/content/:id` | 软删除本人内容 |
+| POST | `/api/content/:id/publish` | 将公开内容发布，并在同一事务写入验证事件 |
+| POST | `/api/content/:id/unpublish` | 下架本人内容 |
+| GET | `/api/public/content` | 列出公开、已发布且未删除的内容 |
+| GET | `/api/public/content/:slug` | 读取公开内容详情 |
+
+管理端所有接口都要求有效登录会话，并按作者 ID 过滤。公开读取接口只返回 `status=published`、`visibility=public` 且未软删除的内容。内容默认保存为草稿且仅自己可见；发布前必须显式选择公开可见范围。
+
+## Content rules
+
+- Types: `article`, `tool`, `resource`, `project`.
+- Statuses: `draft`, `published`, `unpublished`.
+- Slug: lowercase ASCII letters/digits joined by single hyphens, max 100 characters, unique among non-deleted records.
+- Title: 1–200 characters; summary max 500; body 1–100000 characters.
+- Deletion sets `deleted_at`; the row is retained for recovery/inspection.
+- The current public detail page renders body text with preserved line breaks; Markdown source is stored as-is but not yet transformed into formatted HTML.
+- Publishing validates fields in the Node.js business layer and writes a `portal.content.validate` event in the same database transaction as the status update. The Go processor stores the validation result in `portal.event_inbox.processing_result`; event notification to the C IPC core is asynchronous and does not itself mean the public page was rendered.
+
+## Deploy / verify
+
+1. Apply migration 007 as a database administrator.
+2. Run `node --check backend/auth-api/server.mjs` and `node --check backend/content-api/handlers.mjs`.
+3. Run `npm run build` in `frontend/`.
+4. Restart `personal_portal_auth_api` and atomically switch the frontend release symlink.
+5. Verify unauthenticated management requests return 401, CRUD operations, public visibility rules, and that the publish validation event reaches `completed` with `valid=true`.
+
+Do not run migrations automatically from the application startup path.

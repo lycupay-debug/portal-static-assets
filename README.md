@@ -34,4 +34,4 @@ npm run build
 
 ## 当前状态
 
-当前已具备 FreeBSD 服务骨架、C IPC v1、Go API、PostgreSQL 事件收件箱、通知分发器，以及独立的 Go 业务处理器执行框架。`dispatch_state=notified` 只代表 C 核心接受了事件 ID/类型元数据；不代表 payload 已交给 C、事件已持久化在 C 侧或业务已完成。业务处理框架使用独立租约和重试状态，但当前没有注册生产业务 handler，因此尚无实际业务事件执行。生产服务仍保持停止且开机自启关闭。
+当前已部署 FreeBSD 原生 C `kqueue` 事件核心、Go API、PostgreSQL 事件收件箱、通知分发器和 Go 业务处理器。C 核心负责本地 IPC 与事件元数据通知；业务 payload 的持久化、租约、重试和处理结果由 PostgreSQL 与 Go `EventProcessor` 负责。已注册 `portal.content.validate` handler。2026-10-15 已完成端到端验证：`POST /events` 返回 202，事件进入 `dispatch_state=notified`，处理状态变为 `completed`，并持久化 `processing_result={\"valid\":true,\"errors\":null}`；相同事件重放返回 200 且 `duplicate=true`。`notified` 仅表示 C IPC 接受了事件 ID/type 元数据，不表示 C 处理了业务 payload。当前事件核心、Go API 和 PostgreSQL 服务正在运行。

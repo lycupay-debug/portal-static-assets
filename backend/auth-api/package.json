@@ -1,0 +1,11 @@
+{
+  "name": "personal-portal-auth-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs" },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "pg": "^8.16.3"
+  }
+}

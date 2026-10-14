@@ -69,7 +69,7 @@ Status is `OK` or `ERROR`. Payload values for the current commands and errors ar
 
 ## Current implementation note
 
-The current C implementation accepts a 255-byte input buffer including a maximum of 255 bytes before the line terminator in the intended contract, but the implementation's read buffer is 256 bytes and reserves a NUL terminator. Keep tests authoritative and reconcile the exact boundary if this limit changes. The Go backend is not implemented yet; this document defines the contract it must follow.
+The C implementation and Go IPC client are implemented and deployed on FreeBSD. The C event core uses `kqueue`/`kevent`; the Go API communicates with it over the local Unix socket. The C test suite passes PING, STATUS, EVENT validation, malformed requests, request-size limits, 24 concurrent clients, and SIGTERM shutdown. The production binary matches the source-built binary by SHA-256.
 
 
 ## Durable event intake (phase 1)
@@ -94,6 +94,6 @@ Request JSON:
 - Migration 003 adds independent dispatch state (`pending`, `leased`, `notified`), attempt count, lease expiry, retry schedule, last error, and notification timestamp. The Go dispatcher claims rows with `FOR UPDATE SKIP LOCKED`, sends the EVENT metadata envelope, retries failures with exponential backoff capped at 64 seconds, and reclaims expired leases after process interruption.
 - `notified` means the C IPC endpoint returned `OK ACCEPTED` for event ID/type metadata only. It does not mean the payload reached C, was durably stored by C, or business work completed.
 - Migration 004 adds independent processing lease fields. The Go `EventProcessor` claims only event types with explicitly registered handlers, using `FOR UPDATE SKIP LOCKED`; it marks `completed` only after the handler returns successfully, retries errors with exponential backoff, and marks an event `failed` after 10 attempts. Expired `processing` leases can be reclaimed.
-- No production event handlers are currently registered, so the processing framework is dormant. Unknown event types are left untouched. Do not interpret this framework as evidence that any business event is being executed.
+- The registered production handler `portal.content.validate` validates a portal content payload and stores its result in `processing_result`. On 2026-10-15, a live end-to-end event completed successfully (`status=completed`, `dispatch_state=notified`, `attempts=1`, result `valid=true`). Replaying the same event ID/type/payload returned HTTP 200 with `duplicate: true`. Unknown event types are left untouched; this single successful test verifies the implemented path but is not a general load or failure-recovery certification.
 - Processing is at-least-once: if a handler performs an external side effect and the process exits before `completed` is persisted, the handler may run again after lease expiry. Business handlers must be idempotent and honor their context deadline.
 - The endpoint is loopback-bound along with the existing API. It is not an authenticated public ingress endpoint.

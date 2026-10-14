@@ -54,7 +54,7 @@ v1 <request_id> ERROR <error_code>
 ./event-core /var/tmp/personal-portal-event.sock
 ```
 
-默认路径为 /var/run/personal-portal/event.sock。部署前必须由部署步骤创建并正确授权 /var/run/personal-portal 目录；当前阶段尚未安装 rc.d 服务，也不会自动以 root 权限运行。
+默认路径为 `/var/run/personal-portal/event.sock`。生产环境已安装 `rc.d` 服务 `personal_portal_event_core`，由专用 `personalportal` 用户运行，并通过 `/usr/sbin/daemon` 监督重启。运行目录由服务启动前置步骤创建，socket 权限为 0600。使用 `service personal_portal_event_core status` 检查服务。
 
 ## 当前边界与后续事项
 
