@@ -31,11 +31,28 @@ function normalizeContentInput(body, partial = false) {
   return { input, errors };
 }
 
+async function saveContentVersion(client, item, authorId) {
+  const next = await client.query(
+    `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version
+     FROM portal.portal_content_versions WHERE content_id = $1`, [item.id]);
+  await client.query(
+    `INSERT INTO portal.portal_content_versions (content_id, author_id, version_number, snapshot)
+     VALUES ($1, $2, $3, $4::jsonb)`,
+    [item.id, authorId, next.rows[0].next_version, JSON.stringify(item)]);
+}
+
 async function handleContentRequest(req, res, url) {
   const user = await getSessionUser(req);
   if (!user) return json(res, 401, { error: '请先登录后再管理内容。' });
 
   const path = url.pathname;
+  if (path === '/content/trash' && req.method === 'GET') {
+    const result = await pool.query(
+      `SELECT ${contentSelect}, deleted_at AS \"deletedAt\"
+       FROM portal.portal_content WHERE author_id = $1 AND deleted_at IS NOT NULL
+       ORDER BY deleted_at DESC, content_id DESC LIMIT 500`, [user.user_id]);
+    return json(res, 200, { items: result.rows });
+  }
   if (path === '/content' && req.method === 'GET') {
     const status = url.searchParams.get('status');
     if (status && !contentStatuses.has(status)) return json(res, 400, { error: '内容状态不正确。' });
@@ -71,6 +88,93 @@ async function handleContentRequest(req, res, url) {
     return json(res, 201, { item: result.rows[0] });
   }
 
+  const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+  const versionRestoreMatch = path.match(new RegExp(`^/content/(${uuid})/versions/(${uuid})/restore$`, 'i'));
+  const versionsMatch = path.match(new RegExp(`^/content/(${uuid})/versions$`, 'i'));
+  const recycleRestoreMatch = path.match(new RegExp(`^/content/(${uuid})/restore$`, 'i'));
+  const permanentDeleteMatch = path.match(new RegExp(`^/content/(${uuid})/permanent$`, 'i'));
+  if (versionsMatch && req.method === 'GET') {
+    const id = versionsMatch[1];
+    const owned = await pool.query(
+      `SELECT content_id FROM portal.portal_content WHERE content_id = $1 AND author_id = $2`, [id, user.user_id]);
+    if (!owned.rowCount) return json(res, 404, { error: '内容不存在或无权访问。' });
+    const result = await pool.query(
+      `SELECT version_id AS \"versionId\", version_number AS \"versionNumber\",
+        snapshot->>'title' AS title, snapshot->>'slug' AS slug,
+        snapshot->>'status' AS status, created_at AS \"createdAt\"
+       FROM portal.portal_content_versions WHERE content_id = $1 AND author_id = $2
+       ORDER BY version_number DESC LIMIT 100`, [id, user.user_id]);
+    return json(res, 200, { items: result.rows });
+  }
+  if (recycleRestoreMatch && req.method === 'POST') {
+    try {
+      const result = await pool.query(
+        `UPDATE portal.portal_content SET deleted_at = NULL, updated_at = now()
+         WHERE content_id = $1 AND author_id = $2 AND deleted_at IS NOT NULL
+         RETURNING ${contentSelect}`, [recycleRestoreMatch[1], user.user_id]);
+      if (!result.rowCount) return json(res, 404, { error: '回收站中不存在该内容。' });
+      return json(res, 200, { item: result.rows[0] });
+    } catch (error) {
+      if (error?.code === '23505') return json(res, 409, { error: '恢复失败：该 URL 别名已被其他内容使用，请先调整别名。' });
+      throw error;
+    }
+  }
+  if (permanentDeleteMatch && req.method === 'DELETE') {
+    const result = await pool.query(
+      `DELETE FROM portal.portal_content WHERE content_id = $1 AND author_id = $2 AND deleted_at IS NOT NULL RETURNING content_id`,
+      [permanentDeleteMatch[1], user.user_id]);
+    if (!result.rowCount) return json(res, 404, { error: '回收站中不存在该内容。' });
+    return json(res, 200, { ok: true });
+  }
+  if (versionRestoreMatch && req.method === 'POST') {
+    const [, id, versionId] = versionRestoreMatch;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query(
+        `SELECT ${contentSelect} FROM portal.portal_content
+         WHERE content_id = $1 AND author_id = $2 AND deleted_at IS NULL FOR UPDATE`, [id, user.user_id]);
+      if (!current.rowCount) {
+        await client.query('ROLLBACK');
+        return json(res, 404, { error: '内容不存在或无权访问。' });
+      }
+      const version = await client.query(
+        `SELECT snapshot FROM portal.portal_content_versions
+         WHERE version_id = $1 AND content_id = $2 AND author_id = $3`, [versionId, id, user.user_id]);
+      if (!version.rowCount) {
+        await client.query('ROLLBACK');
+        return json(res, 404, { error: '历史版本不存在。' });
+      }
+      const snapshot = version.rows[0].snapshot;
+      const validation = normalizeContentInput(snapshot);
+      if (validation.errors.length) {
+        await client.query('ROLLBACK');
+        return json(res, 400, { error: '历史版本数据未通过校验，无法恢复。' });
+      }
+      await saveContentVersion(client, current.rows[0], user.user_id);
+      const restored = await client.query(
+        `UPDATE portal.portal_content SET title = $3, slug = $4, content_type = $5,
+          summary = $6, body = $7, visibility = $8, updated_at = now()
+         WHERE content_id = $1 AND author_id = $2 RETURNING ${contentSelect}`,
+        [id, user.user_id, snapshot.title, snapshot.slug, snapshot.contentType, snapshot.summary,
+          snapshot.body, current.rows[0].status === 'published' ? 'public' : snapshot.visibility]);
+      let eventId = null;
+      if (restored.rows[0].status === 'published') {
+        eventId = crypto.randomUUID();
+        const item = restored.rows[0];
+        await client.query(
+          `INSERT INTO portal.event_inbox (event_id, event_type, payload) VALUES ($1::uuid, 'portal.content.validate', $2::jsonb)`,
+          [eventId, JSON.stringify({ title: item.title, slug: item.slug, content_type: item.contentType,
+            visibility: item.visibility, summary: item.summary, body: item.body })]);
+      }
+      await client.query('COMMIT');
+      return json(res, 200, { item: restored.rows[0], eventId });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (error?.code === '23505') return json(res, 409, { error: '恢复失败：该 URL 别名已被其他内容使用。' });
+      throw error;
+    } finally { client.release(); }
+  }
   const match = path.match(/^\/content\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\/(publish|unpublish))?$/i);
   if (!match) return json(res, 404, { error: '未找到内容接口。' });
   const [, id, action] = match;
@@ -90,16 +194,36 @@ async function handleContentRequest(req, res, url) {
     const allowed = Object.keys(input);
     if (!allowed.length) return json(res, 400, { error: '没有可更新的字段。' });
     const columnNames = { title: 'title', slug: 'slug', contentType: 'content_type', summary: 'summary', body: 'body', visibility: 'visibility' };
-    const assignments = allowed.map((field, index) => `${columnNames[field]} = $${index + 3}`);
-    const values = allowed.map((field) => input[field]);
-    const result = await pool.query(
-      `UPDATE portal.portal_content SET ${assignments.join(', ')}, updated_at = now()
-       WHERE content_id = $1 AND author_id = $2 AND deleted_at IS NULL
-       RETURNING ${contentSelect}`,
-      [id, user.user_id, ...values],
-    );
-    if (!result.rowCount) return json(res, 404, { error: '内容不存在或无权访问。' });
-    return json(res, 200, { item: result.rows[0] });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const existing = await client.query(
+        `SELECT ${contentSelect} FROM portal.portal_content WHERE content_id = $1 AND author_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [id, user.user_id]);
+      if (!existing.rowCount) {
+        await client.query('ROLLBACK');
+        return json(res, 404, { error: '内容不存在或无权访问。' });
+      }
+      const current = existing.rows[0];
+      const changed = allowed.filter((field) => input[field] !== current[field]);
+      if (!changed.length) {
+        await client.query('COMMIT');
+        return json(res, 200, { item: current, versionCreated: false });
+      }
+      await saveContentVersion(client, current, user.user_id);
+      const assignments = changed.map((field, index) => `${columnNames[field]} = $${index + 3}`);
+      const values = changed.map((field) => input[field]);
+      const result = await client.query(
+        `UPDATE portal.portal_content SET ${assignments.join(', ')}, updated_at = now()
+         WHERE content_id = $1 AND author_id = $2 AND deleted_at IS NULL RETURNING ${contentSelect}`,
+        [id, user.user_id, ...values]);
+      await client.query('COMMIT');
+      return json(res, 200, { item: result.rows[0], versionCreated: true });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (error?.code === '23505') return json(res, 409, { error: '保存失败：该 URL 别名已被其他内容使用。' });
+      throw error;
+    } finally { client.release(); }
   }
   if (req.method === 'DELETE' && !action) {
     const result = await pool.query(

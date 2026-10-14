@@ -24,6 +24,7 @@ type PortalContent = {
   updatedAt: string
   publishedAt: string | null
 }
+type ContentVersion = { versionId: string; versionNumber: number; title: string; slug: string; status: PortalContent['status']; createdAt: string }
 type ContentForm = {
   title: string
   slug: string
@@ -115,6 +116,11 @@ type TableRecord = Record<string, string | number>
 const tableQuery = ref('')
 const tableScrollTop = ref(0)
 const contentItems = ref<PortalContent[]>([])
+const contentTrashItems = ref<PortalContent[]>([])
+const contentViewMode = ref<'active' | 'trash'>('active')
+const contentVersions = ref<ContentVersion[]>([])
+const versionsContentId = ref<string | null>(null)
+const versionsContentTitle = ref('')
 const contentLoading = ref(false)
 const contentBusy = ref(false)
 const contentEditorOpen = ref(false)
@@ -134,7 +140,7 @@ const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
 const virtualTableOverscan = 6
 const tableDefinitions: Record<string, { title: string; columns: TableColumn[]; note: string }> = {
-  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作', width: 'minmax(250px, 2fr)' }], note: '内容数据源尚未接入。' },
+  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
   'property-management': { title: '房源列表', columns: [{ key: 'property', label: '房源名称', width: 'minmax(180px, 1.6fr)' }, { key: 'address', label: '地址', width: 'minmax(180px, 2fr)' }, { key: 'roomCount', label: '房间数' }, { key: 'rent', label: '租金' }, { key: 'status', label: '房源状态' }, { key: 'updatedAt', label: '更新时间' }], note: '房源数据源尚未接入。' },
   'room-status': { title: '房态列表', columns: [{ key: 'room', label: '房间', width: 'minmax(140px, 1.3fr)' }, { key: 'property', label: '所属房源', width: 'minmax(180px, 1.7fr)' }, { key: 'status', label: '当前房态' }, { key: 'tenant', label: '租客' }, { key: 'checkIn', label: '入住日期' }, { key: 'checkOut', label: '退租日期' }], note: '房态数据源尚未接入。' },
   'student-records': { title: '学生档案', columns: [{ key: 'name', label: '学生姓名' }, { key: 'studentId', label: '学员编号' }, { key: 'course', label: '课程' }, { key: 'status', label: '学习状态' }, { key: 'updatedAt', label: '更新时间' }], note: '学生档案数据源尚未接入。' },
@@ -153,14 +159,14 @@ const contentStatusLabels: Record<PortalContent['status'], string> = {
   draft: '草稿', published: '已发布', unpublished: '已下架',
 }
 const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value === 'content-management'
-  ? contentItems.value.map((item) => ({
+  ? (contentViewMode.value === 'trash' ? contentTrashItems.value : contentItems.value).map((item) => ({
       id: item.id,
       title: item.title,
       type: contentTypeLabels[item.contentType],
       status: contentStatusLabels[item.status],
       visibility: item.visibility === 'public' ? '公开' : '仅自己可见',
-      updatedAt: new Date(item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),
-      actions: item.status === 'published' ? '已发布' : '待发布',
+      updatedAt: new Date(contentViewMode.value === 'trash' && 'deletedAt' in item ? String(item.deletedAt) : item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),
+      actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
     }))
   : [])
 const filteredTableRecords = computed(() => {
@@ -180,15 +186,83 @@ async function loadContentList() {
   contentLoading.value = true
   contentError.value = ''
   try {
-    const response = await fetch('/api/content', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const isTrash = contentViewMode.value === 'trash'
+    const response = await fetch(isTrash ? '/api/content/trash' : '/api/content', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
     const result = await response.json() as { items?: PortalContent[]; error?: string }
     if (!response.ok) throw new Error(result.error || '读取内容列表失败。')
-    contentItems.value = result.items || []
+    if (isTrash) contentTrashItems.value = result.items || []
+    else contentItems.value = result.items || []
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '网络连接失败，无法读取内容。'
   } finally {
     contentLoading.value = false
   }
+}
+function switchContentView(mode: 'active' | 'trash') {
+  contentViewMode.value = mode
+  versionsContentId.value = null
+  tableQuery.value = ''
+  void loadContentList()
+}
+async function openContentVersions(id: string) {
+  const item = contentItems.value.find((content) => content.id === id)
+  if (!item) return
+  contentBusy.value = true
+  contentError.value = ''
+  try {
+    const response = await fetch(`/api/content/${encodeURIComponent(id)}/versions`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { items?: ContentVersion[]; error?: string }
+    if (!response.ok) throw new Error(result.error || '读取版本历史失败。')
+    contentVersions.value = result.items || []
+    versionsContentId.value = id
+    versionsContentTitle.value = item.title
+  } catch (error) {
+    contentError.value = error instanceof Error ? error.message : '读取版本历史失败。'
+  } finally { contentBusy.value = false }
+}
+async function restoreContentVersion(version: ContentVersion) {
+  const id = versionsContentId.value
+  if (!id || !window.confirm(`将“${versionsContentTitle.value}”恢复到版本 ${version.versionNumber}？当前内容会自动保存为一个历史版本。`)) return
+  contentBusy.value = true
+  contentError.value = ''
+  try {
+    const response = await fetch(`/api/content/${encodeURIComponent(id)}/versions/${encodeURIComponent(version.versionId)}/restore`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { error?: string }
+    if (!response.ok) throw new Error(result.error || '恢复历史版本失败。')
+    versionsContentId.value = null
+    contentNotice.value = `已恢复到版本 ${version.versionNumber}。恢复前的内容已保存到版本历史。`
+    await loadContentList()
+  } catch (error) {
+    contentError.value = error instanceof Error ? error.message : '恢复历史版本失败。'
+  } finally { contentBusy.value = false }
+}
+async function restoreDeletedContent(id: string) {
+  const item = contentTrashItems.value.find((content) => content.id === id)
+  if (!item || !window.confirm(`将“${item.title}”从回收站恢复？`)) return
+  contentBusy.value = true
+  contentError.value = ''
+  try {
+    const response = await fetch(`/api/content/${encodeURIComponent(id)}/restore`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { error?: string }
+    if (!response.ok) throw new Error(result.error || '恢复内容失败。')
+    contentNotice.value = `“${item.title}”已恢复。`
+    await loadContentList()
+  } catch (error) { contentError.value = error instanceof Error ? error.message : '恢复内容失败。' }
+  finally { contentBusy.value = false }
+}
+async function permanentlyDeleteContent(id: string) {
+  const item = contentTrashItems.value.find((content) => content.id === id)
+  if (!item || !window.confirm(`永久删除“${item.title}”？此操作不可撤销，相关版本历史也会一并删除。`)) return
+  contentBusy.value = true
+  contentError.value = ''
+  try {
+    const response = await fetch(`/api/content/${encodeURIComponent(id)}/permanent`, { method: 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { error?: string }
+    if (!response.ok) throw new Error(result.error || '永久删除失败。')
+    contentNotice.value = `“${item.title}”已永久删除。`
+    await loadContentList()
+  } catch (error) { contentError.value = error instanceof Error ? error.message : '永久删除失败。' }
+  finally { contentBusy.value = false }
 }
 function selectAccountSection(id: string) {
   activeAccountSection.value = id
@@ -197,6 +271,8 @@ function selectAccountSection(id: string) {
   contentError.value = ''
   contentNotice.value = ''
   contentEditorOpen.value = false
+  versionsContentId.value = null
+  contentViewMode.value = 'active'
   if (id === 'content-management') void loadContentList()
 }
 function openNewContent() {
@@ -625,12 +701,28 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
               </div>
             </form>
           </section>
+          <section v-else-if="activeAccountSection === 'content-management' && versionsContentId" class="content-editor-panel content-versions-panel">
+            <div class="content-editor-heading">
+              <div><h2>版本历史</h2><p>“{{ versionsContentTitle }}” · 每次有效编辑前自动保存快照，最多显示最近 100 个版本；恢复只替换内容字段，保留当前发布状态。</p></div>
+              <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="versionsContentId = null">返回内容列表</button>
+            </div>
+            <div v-if="contentVersions.length" class="content-version-list">
+              <div v-for="version in contentVersions" :key="version.versionId" class="content-version-row">
+                <div><strong>版本 {{ version.versionNumber }} · {{ version.title }}</strong><p>{{ new Date(version.createdAt).toLocaleString('zh-CN') }} · {{ version.slug }} · {{ contentStatusLabels[version.status] || version.status }}</p></div>
+                <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="restoreContentVersion(version)">恢复此版本</button>
+              </div>
+            </div>
+            <div v-else class="virtual-table-empty"><strong>暂无历史版本</strong><p>保存第一次有效修改后，这里会出现可恢复的历史版本。</p></div>
+          </section>
           <section v-else-if="activeTableDefinition" class="virtual-table-panel">
             <div class="virtual-table-toolbar">
               <div class="virtual-table-heading"><h2>{{ activeTableDefinition.title }}</h2><span class="virtual-table-count">{{ contentLoading && activeAccountSection === 'content-management' ? '正在加载…' : filteredTableRecords.length + ' 条记录' }}</span></div>
               <div class="content-toolbar-actions">
                 <input v-model="tableQuery" class="virtual-table-search" type="search" placeholder="搜索表格内容…" aria-label="搜索表格内容" @input="tableScrollTop = 0" />
-                <button v-if="activeAccountSection === 'content-management'" type="button" class="content-primary-button" @click="openNewContent">新建内容</button>
+                <template v-if="activeAccountSection === 'content-management'">
+                  <button type="button" class="content-secondary-button" @click="switchContentView(contentViewMode === 'active' ? 'trash' : 'active')">{{ contentViewMode === 'active' ? '回收站' : '返回内容列表' }}</button>
+                  <button v-if="contentViewMode === 'active'" type="button" class="content-primary-button" @click="openNewContent">新建内容</button>
+                </template>
               </div>
             </div>
             <div class="virtual-table-scroll" :style="{ '--table-columns': activeTableDefinition.columns.map((column) => column.width || 'minmax(100px, 1fr)').join(' ') }" @scroll="onVirtualTableScroll">
@@ -642,17 +734,24 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
                 <div v-for="(record, index) in visibleTableRecords" :key="String(record.id ?? (virtualTableStart + index))" class="virtual-table-row" role="row">
                   <template v-for="column in activeTableDefinition.columns" :key="column.key">
                     <div v-if="column.key === 'actions' && activeAccountSection === 'content-management'" class="content-row-actions" role="cell">
-                      <button type="button" :disabled="contentBusy" @click="editContent(String(record.id))">编辑</button>
-                      <button v-if="contentItems.find((item) => item.id === String(record.id))?.status !== 'published'" type="button" :disabled="contentBusy" @click="changeContentStatus(String(record.id), 'publish')">发布</button>
-                      <button v-else type="button" :disabled="contentBusy" @click="changeContentStatus(String(record.id), 'unpublish')">下架</button>
-                      <button type="button" class="content-danger-action" :disabled="contentBusy" @click="deleteContent(String(record.id))">删除</button>
+                      <template v-if="contentViewMode === 'trash'">
+                        <button type="button" :disabled="contentBusy" @click="restoreDeletedContent(String(record.id))">恢复</button>
+                        <button type="button" class="content-danger-action" :disabled="contentBusy" @click="permanentlyDeleteContent(String(record.id))">永久删除</button>
+                      </template>
+                      <template v-else>
+                        <button type="button" :disabled="contentBusy" @click="editContent(String(record.id))">编辑</button>
+                        <button type="button" :disabled="contentBusy" @click="openContentVersions(String(record.id))">版本</button>
+                        <button v-if="contentItems.find((item) => item.id === String(record.id))?.status !== 'published'" type="button" :disabled="contentBusy" @click="changeContentStatus(String(record.id), 'publish')">发布</button>
+                        <button v-else type="button" :disabled="contentBusy" @click="changeContentStatus(String(record.id), 'unpublish')">下架</button>
+                        <button type="button" class="content-danger-action" :disabled="contentBusy" @click="deleteContent(String(record.id))">删除</button>
+                      </template>
                     </div>
                     <span v-else role="cell">{{ record[column.key] ?? '—' }}</span>
                   </template>
                 </div>
                 <div class="virtual-table-spacer" :style="{ height: virtualTableBottomSpace + 'px' }"></div>
               </div>
-              <div v-else class="virtual-table-empty"><span class="virtual-table-empty-icon">▤</span><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? '创建第一篇内容，保存为草稿后再发布。' : activeTableDefinition.note }}</p></div>
+              <div v-else class="virtual-table-empty"><span class="virtual-table-empty-icon">▤</span><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? (contentViewMode === 'trash' ? '回收站为空。已删除内容可以恢复，也可以永久删除。' : '创建第一篇内容，保存为草稿后再发布。') : activeTableDefinition.note }}</p></div>
             </div>
             <p class="virtual-table-footnote">虚拟滚动表格 · 仅渲染可视区域内的行</p>
           </section>
@@ -1472,6 +1571,11 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .content-row-actions { display: flex; align-items: center; gap: 7px; padding: 0 10px; white-space: nowrap; }
 .content-row-actions button { padding: 5px 8px; border: 1px solid rgba(126,150,176,.18); border-radius: 7px; color: #315f9e; background: rgba(255,255,255,.48); font-size: 11px; cursor: pointer; }
 .content-row-actions .content-danger-action { color: #a34b46; }
+.content-version-list { display: grid; gap: 0; border-top: 1px solid rgba(126,150,176,.2); }
+.content-version-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 4px; border-bottom: 1px solid rgba(126,150,176,.16); }
+.content-version-row strong { color: #344b63; font-size: 13px; }
+.content-version-row p { margin: 6px 0 0; color: #8190a1; font-size: 11px; }
+@media (max-width: 680px) { .content-version-row { align-items: flex-start; flex-direction: column; gap: 10px; } }
 @media (max-width: 680px) {
   .content-toolbar-actions { width: 100%; align-items: stretch; flex-direction: column; }
   .content-toolbar-actions .virtual-table-search { width: 100%; }
