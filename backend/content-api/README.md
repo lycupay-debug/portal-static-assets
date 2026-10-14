@@ -47,7 +47,7 @@
 ## Deploy / verify
 
 1. Apply unapplied migrations in order as a database administrator. On the current deployment, migration 007 is already applied and migration 008 adds version history and recycle-bin support.
-2. Run `node --check backend/auth-api/server.mjs` and `node --check backend/content-api/handlers.mjs`.
+2. Run `node --check backend/auth-api/server.mjs`, `node --check backend/content-api/handlers.mjs`, and `node --test backend/content-api/handlers.test.mjs`.
 3. In `frontend/`, run `npm test`, `npm run type-check`, and `npm run build`. Markdown security and formatting tests live in `frontend/test/markdown.test.mjs`.
 4. Restart `personal_portal_auth_api` and atomically switch the frontend release symlink.
 5. Verify unauthenticated management requests return 401, CRUD operations, public visibility rules, and that the publish validation event reaches `completed` with `valid=true`.
