@@ -32,4 +32,14 @@ test('allows ordinary text, inline emphasis and safe links', () => {
   assert.match(html, /href="https:\/\/example\.org\/path"/)
 })
 
+
+test('renders custom alignment blocks and keeps their HTML sanitized', () => {
+  const html = render(':::align-center\nCentered **bold**\n:::')
+  assert.ok(html.includes('<div class="md-align-center"><p>Centered <strong>bold</strong></p>'))
+  assert.doesNotMatch(html, /style=/i)
+  const malicious = render(':::align-right\n<img src=x onerror="alert(1)">\n:::')
+  assert.ok(!malicious.includes('<img'))
+  assert.match(malicious, /&lt;img/)
+})
+
 dom.window.close()

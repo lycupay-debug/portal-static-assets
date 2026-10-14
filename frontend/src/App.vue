@@ -1694,6 +1694,8 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .markdown-rendered { color: #40566e; font-size: 15px; line-height: 1.85; overflow-wrap: anywhere; }
 .markdown-rendered > :first-child { margin-top: 0; }
 .markdown-rendered > :last-child { margin-bottom: 0; }
+.markdown-rendered .md-align-center { text-align: center; }
+.markdown-rendered .md-align-right { text-align: right; }
 .markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, .markdown-rendered h4 { margin: 1.45em 0 .65em; color: #2e465f; line-height: 1.4; letter-spacing: -.025em; }
 .markdown-rendered h1 { font-size: 1.8em; }
 .markdown-rendered h2 { font-size: 1.5em; }
