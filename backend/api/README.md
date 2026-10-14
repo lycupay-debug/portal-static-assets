@@ -11,9 +11,9 @@
 - IPC 客户端设有连接/读写超时，并验证协议版本、请求 ID、状态和响应载荷。
 - `POST /events` 将事件持久化到 `portal.event_inbox`；后台 `EventDispatcher` 使用 `FOR UPDATE SKIP LOCKED` 领取待通知事件，租约超时后可恢复，并在 IPC 失败时以 1–64 秒指数退避重试。
 - IPC `EVENT` 仅传送 event ID/type 元数据。数据库 `dispatch_state=notified` 不代表业务完成，也不应修改事件的业务 `status`。
-- `api/event_processor.go` 提供独立业务处理执行层：仅领取已注册处理器的事件；使用 `FOR UPDATE SKIP LOCKED`、处理租约和 worker ID；成功后才写 `completed`；失败时指数退避重试，达到 10 次后写 `failed`；过期的 `processing` 租约可被重新领取。
+- `api/event_processor.go` 提供独立业务处理执行层：默认启动 4 个业务 Worker（`PERSONAL_PORTAL_EVENT_WORKERS` 可设为 1–8，超出上限会限制为 8）；各 Worker 使用独立 ID 并通过 `FOR UPDATE SKIP LOCKED`、处理租约竞争领取事件。成功后才写 `completed`；失败时指数退避重试，达到 10 次后写 `failed`；过期的 `processing` 租约可被重新领取。
 - 处理器必须遵守幂等约定、响应 context 超时；由于外部副作用与数据库完成状态无法原子提交，执行语义是至少一次，处理器不得假设只执行一次。
-- 当前没有注册任何生产业务事件处理器，因此业务处理执行层尚未激活，不会把未知事件自动标为完成或失败。新增实际事件类型时，必须先定义业务语义并注册对应 handler。
+- 只有 `portal.content.validate` 注册了生产业务处理器；其他未知事件类型不会被自动标为完成或失败。新增事件类型时，必须先定义业务语义并注册对应 handler。
 - 迁移 `004_event_processing_leases.sql` 为处理租约和重试调度增加字段。`PERSONAL_PORTAL_TEST_DATABASE_URL_FILE` 可显式启用 PostgreSQL 集成测试；应优先指向专用测试库。
 - `api/main_test.go` 包含 IPC 状态、事件通知成功/异常响应及 HTTP 接收幂等测试。
 

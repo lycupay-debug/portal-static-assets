@@ -32,3 +32,23 @@ func TestEventProcessorWithoutHandlersDoesNotClaim(t *testing.T) {
 	// marked completed or failed just because no business handler is registered.
 	processor.Run(context.Background())
 }
+
+func TestEventProcessorWorkerCountBounds(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input int
+		want  int
+	}{
+		{name: "default", input: 0, want: defaultProcessingWorkers},
+		{name: "negative uses default", input: -1, want: defaultProcessingWorkers},
+		{name: "one worker", input: 1, want: 1},
+		{name: "maximum", input: maxProcessingWorkers, want: maxProcessingWorkers},
+		{name: "clamped", input: maxProcessingWorkers + 1, want: maxProcessingWorkers},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := normalizeEventProcessorWorkers(test.input); got != test.want {
+				t.Fatalf("normalizeEventProcessorWorkers(%d) = %d, want %d", test.input, got, test.want)
+			}
+		})
+	}
+}

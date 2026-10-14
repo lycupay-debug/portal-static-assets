@@ -9,11 +9,14 @@ import (
 	"log"
 	"os"
 	"sort"
+	"sync"
 	"time"
 )
 
 const (
 	defaultProcessingInterval = 500 * time.Millisecond
+	defaultProcessingWorkers  = 4
+	maxProcessingWorkers      = 8
 	processingTimeout         = 20 * time.Second
 	maxProcessingAttempts     = 10
 )
@@ -28,10 +31,21 @@ func registeredEventHandlers() map[string]EventHandler {
 	}
 }
 
+func normalizeEventProcessorWorkers(workers int) int {
+	if workers <= 0 {
+		return defaultProcessingWorkers
+	}
+	if workers > maxProcessingWorkers {
+		return maxProcessingWorkers
+	}
+	return workers
+}
+
 type EventProcessor struct {
 	DB       *sql.DB
 	Handlers map[string]EventHandler
 	Interval time.Duration
+	Workers  int
 	WorkerID string
 }
 
@@ -170,7 +184,9 @@ func (p EventProcessor) processOne(ctx context.Context, eventTypes []string) boo
 	event, err := p.claim(claimCtx, eventTypes)
 	cancelClaim()
 	if err != nil {
-		log.Printf("event processor claim failed: %v", err)
+		if ctx.Err() == nil {
+			log.Printf("event processor claim failed: %v", err)
+		}
 		return false
 	}
 	if event == nil {
@@ -200,23 +216,39 @@ func (p EventProcessor) processOne(ctx context.Context, eventTypes []string) boo
 
 func (p EventProcessor) Run(ctx context.Context) {
 	types := p.supportedTypes()
-	if len(types) == 0 {
+	if len(types) == 0 || ctx.Err() != nil {
 		return
 	}
-	if p.WorkerID == "" {
-		p.WorkerID = fmt.Sprintf("api-%d-%d", os.Getpid(), time.Now().UnixNano())
+	workers := normalizeEventProcessorWorkers(p.Workers)
+	baseWorkerID := p.WorkerID
+	if baseWorkerID == "" {
+		baseWorkerID = fmt.Sprintf("api-%d-%d", os.Getpid(), time.Now().UnixNano())
 	}
 	interval := p.Interval
 	if interval <= 0 {
 		interval = defaultProcessingInterval
 	}
+	var workerGroup sync.WaitGroup
+	workerGroup.Add(workers)
+	for index := 0; index < workers; index++ {
+		worker := p
+		worker.WorkerID = fmt.Sprintf("%s-%02d", baseWorkerID, index+1)
+		go func(worker EventProcessor) {
+			defer workerGroup.Done()
+			worker.runWorker(ctx, types, interval)
+		}(worker)
+	}
+	workerGroup.Wait()
+}
+
+func (p EventProcessor) runWorker(ctx context.Context, eventTypes []string, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if p.processOne(ctx, types) {
+		if p.processOne(ctx, eventTypes) {
 			continue
 		}
 		select {

@@ -264,3 +264,25 @@ func TestReceiveEventHandlerRejectsInvalidAndConflictingEvents(t *testing.T) {
 		}
 	})
 }
+
+func TestConfiguredEventProcessorWorkers(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value string
+		want  int
+	}{
+		{name: "unset defaults", value: "", want: defaultProcessingWorkers},
+		{name: "configured", value: "2", want: 2},
+		{name: "invalid defaults", value: "many", want: defaultProcessingWorkers},
+		{name: "zero defaults", value: "0", want: defaultProcessingWorkers},
+		{name: "negative defaults", value: "-2", want: defaultProcessingWorkers},
+		{name: "upper bound", value: "99", want: maxProcessingWorkers},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("PERSONAL_PORTAL_EVENT_WORKERS", test.value)
+			if got := configuredEventProcessorWorkers(); got != test.want {
+				t.Fatalf("configuredEventProcessorWorkers() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
