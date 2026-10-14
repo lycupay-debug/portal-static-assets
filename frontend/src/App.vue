@@ -1636,21 +1636,22 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .notion-document-content th { background: #f5f7f9; font-weight: 650; }
 .notion-document-content .selectedCell:after { background: rgba(72,126,191,.12); content: ''; inset: 0; pointer-events: none; position: absolute; }
 .notion-document-content ul[data-type="taskList"] { padding-left: 0; list-style: none; }
-.notion-document-content li[data-type="taskItem"] { display: flex; align-items: flex-start; gap: 9px; }
-.notion-document-content li[data-type="taskItem"] > label { display: inline-flex; align-items: center; margin-top: 6px; }
-.notion-document-content li[data-type="taskItem"] > label input { width: 14px; height: 14px; accent-color: #507eb3; }
-.notion-document-content li[data-type="taskItem"] > div { flex: 1; min-width: 0; }
+.notion-document-content ul[data-type="taskList"] { display: block; width: 100%; margin: 8px 0; padding: 0; text-align: left; list-style: none; }
+.notion-document-content li[data-type="taskItem"] { display: flex; width: 100%; align-items: flex-start; justify-content: flex-start; gap: 8px; margin: 3px 0; padding: 0; text-align: left; list-style: none; }
+.notion-document-content li[data-type="taskItem"] > label { display: inline-flex; flex: 0 0 16px; align-items: center; justify-content: center; margin: 5px 0 0; padding: 0; }
+.content-editor-form .notion-document-content li[data-type="taskItem"] > label input, .notion-document-content li[data-type="taskItem"] > label input { display: inline-block; width: 14px !important; min-width: 14px !important; max-width: 14px; height: 14px !important; min-height: 14px !important; margin: 0; padding: 0 !important; border: 1px solid #aab4c0 !important; border-radius: 3px !important; background: #fff !important; box-shadow: none !important; accent-color: #507eb3; appearance: auto; }
+.notion-document-content li[data-type="taskItem"] > div { flex: 1; min-width: 0; text-align: left; }
 .notion-document-content li[data-type="taskItem"][data-checked="true"] > div { color: #9aa3ad; text-decoration: line-through; }
 .notion-document-content p.is-editor-empty:first-child::before { float: left; height: 0; color: #a4adb8; content: attr(data-placeholder); pointer-events: none; }
-.notion-slash-menu { position: absolute; z-index: 10; top: 52px; left: clamp(18px, 4vw, 52px); display: grid; width: min(300px, calc(100% - 36px)); max-height: 350px; overflow: auto; padding: 7px; border: 1px solid #e7ebef; border-radius: 9px; background: #fff; box-shadow: 0 12px 34px rgba(29,43,58,.16); }
+.notion-slash-menu { position: absolute; z-index: 10; top: 8px; left: 8px; display: grid; width: min(276px, calc(100% - 16px)); max-height: 300px; overflow: auto; padding: 7px; border: 1px solid #e7ebef; border-radius: 9px; background: #fff; box-shadow: 0 12px 34px rgba(29,43,58,.16); }
 .notion-slash-heading { padding: 8px 9px; color: #8b95a1; font-size: 10px; font-weight: 650; }
 .notion-slash-empty { margin: 0; padding: 10px; color: #8b95a1; font-size: 11px; }
-.notion-slash-menu button { display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 6px; text-align: left; background: transparent; cursor: pointer; }
-.notion-slash-menu button:hover { background: #f1f4f7; }
-.notion-slash-icon { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #e5e9ee; border-radius: 6px; color: #566576; font-size: 11px; }
-.notion-slash-copy { display: grid; gap: 3px; }
-.notion-slash-copy strong { color: #344252; font-size: 12px; font-weight: 600; }
-.notion-slash-copy small { color: #8a95a2; font-size: 10px; }
+.notion-slash-menu button { display: flex; width: 100%; min-height: 0; align-items: center; gap: 8px; padding: 5px 6px; border: 0; border-radius: 5px; color: #344252; text-align: left; background: transparent; font: inherit; cursor: pointer; }
+.notion-slash-menu button:hover, .notion-slash-menu button.is-selected { background: #f1f4f7; }
+.notion-slash-icon { display: grid; flex: 0 0 26px; place-items: center; width: 26px; height: 26px; border: 1px solid #e5e9ee; border-radius: 5px; color: #566576; font-size: 10px; }
+.notion-slash-copy { display: grid; min-width: 0; gap: 2px; }
+.notion-slash-copy strong { color: #344252; font-size: 11px; font-weight: 600; }
+.notion-slash-copy small { color: #8a95a2; font-size: 9px; }
 .notion-editor-footer { display: flex; justify-content: space-between; gap: 10px; padding: 9px 14px; border-top: 1px solid #edf0f3; color: #8b96a3; font-size: 10px; }
 .notion-editor-footer kbd { padding: 1px 4px; border: 1px solid #e2e6eb; border-radius: 3px; background: #f7f8fa; font: inherit; }
 @media (max-width: 760px) {
