@@ -677,8 +677,8 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         </template>
 
         <template v-else>
-          <h1 class="account-page-title">{{ activeAccountItem?.label || '业务中心' }}</h1>
-          <p class="auth-intro">{{ activeAccountItem?.description || '管理你的业务内容与工作入口。' }}</p>
+          <h1 v-if="activeAccountSection !== 'content-management'" class="account-page-title">{{ activeAccountItem?.label || '业务中心' }}</h1>
+          <p v-if="activeAccountSection !== 'content-management'" class="auth-intro">{{ activeAccountItem?.description || '管理你的业务内容与工作入口。' }}</p>
           <div v-if="activeAccountSection === 'content-management' && contentError" class="content-feedback content-feedback-error">{{ contentError }}</div>
           <div v-if="activeAccountSection === 'content-management' && contentNotice" class="content-feedback content-feedback-success">{{ contentNotice }}</div>
           <section v-if="activeAccountSection === 'content-management' && contentEditorOpen" class="content-editor-panel">
@@ -691,7 +691,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
               <div class="notion-document-properties">
                 <label><span>类型</span><select v-model="contentForm.contentType"><option value="article">知识文章</option><option value="tool">在线工具</option><option value="resource">资源资料</option><option value="project">项目展示</option></select></label>
                 <label><span>可见范围</span><select v-model="contentForm.visibility"><option value="private">仅自己可见</option><option value="public">公开</option></select></label>
-                <label class="notion-slug-property"><span>URL 别名</span><input v-model="contentForm.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /><small>仅使用小写英文、数字和连字符。</small></label>
+                <label class="notion-slug-property"><span>URL 别名</span><input v-model="contentForm.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               </div>
               <label class="notion-summary-property"><span>摘要</span><textarea v-model="contentForm.summary" maxlength="500" rows="2" placeholder="添加简短描述，方便在内容列表和公开首页展示…"></textarea></label>
               <div class="notion-document-divider"></div>

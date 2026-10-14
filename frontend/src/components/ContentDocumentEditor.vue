@@ -124,40 +124,6 @@ onBeforeUnmount(() => editor.value?.destroy())
 
 <template>
   <div class="notion-editor" :class="{ 'is-disabled': disabled }">
-    <div class="notion-editor-toolbar" role="toolbar" aria-label="文档格式工具栏">
-      <div class="notion-toolbar-group">
-        <button type="button" title="正文" aria-label="正文" :class="{ 'is-active': editor?.isActive('paragraph') }" :disabled="disabled" @click="editor?.chain().focus().setParagraph().run()">¶</button>
-        <button type="button" title="一级标题" aria-label="一级标题" :class="{ 'is-active': editor?.isActive('heading', { level: 1 }) }" :disabled="disabled" @click="editor?.chain().focus().toggleHeading({ level: 1 }).run()">H1</button>
-        <button type="button" title="二级标题" aria-label="二级标题" :class="{ 'is-active': editor?.isActive('heading', { level: 2 }) }" :disabled="disabled" @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()">H2</button>
-        <button type="button" title="三级标题" aria-label="三级标题" :class="{ 'is-active': editor?.isActive('heading', { level: 3 }) }" :disabled="disabled" @click="editor?.chain().focus().toggleHeading({ level: 3 }).run()">H3</button>
-      </div>
-      <span class="notion-toolbar-divider" />
-      <div class="notion-toolbar-group">
-        <button type="button" title="加粗 Ctrl+B" aria-label="加粗" :class="{ 'is-active': editor?.isActive('bold') }" :disabled="disabled" @click="editor?.chain().focus().toggleBold().run()"><strong>B</strong></button>
-        <button type="button" title="斜体 Ctrl+I" aria-label="斜体" :class="{ 'is-active': editor?.isActive('italic') }" :disabled="disabled" @click="editor?.chain().focus().toggleItalic().run()"><em>I</em></button>
-        <button type="button" title="下划线" aria-label="下划线" :class="{ 'is-active': editor?.isActive('underline') }" :disabled="disabled" @click="editor?.chain().focus().toggleUnderline().run()"><u>U</u></button>
-        <button type="button" title="删除线" aria-label="删除线" :class="{ 'is-active': editor?.isActive('strike') }" :disabled="disabled" @click="editor?.chain().focus().toggleStrike().run()"><s>S</s></button>
-        <button type="button" title="高亮" aria-label="高亮" :class="{ 'is-active': editor?.isActive('highlight') }" :disabled="disabled" @click="editor?.chain().focus().toggleHighlight().run()">▨</button>
-        <button type="button" title="行内代码" aria-label="行内代码" :class="{ 'is-active': editor?.isActive('code') }" :disabled="disabled" @click="editor?.chain().focus().toggleCode().run()">&lt;/&gt;</button>
-        <button type="button" title="链接" aria-label="插入链接" :class="{ 'is-active': editor?.isActive('link') }" :disabled="disabled" @click="addLink">↗</button>
-      </div>
-      <span class="notion-toolbar-divider" />
-      <div class="notion-toolbar-group">
-        <button type="button" title="项目符号列表" aria-label="项目符号列表" :class="{ 'is-active': editor?.isActive('bulletList') }" :disabled="disabled" @click="editor?.chain().focus().toggleBulletList().run()">•≡</button>
-        <button type="button" title="编号列表" aria-label="编号列表" :class="{ 'is-active': editor?.isActive('orderedList') }" :disabled="disabled" @click="editor?.chain().focus().toggleOrderedList().run()">1≡</button>
-        <button type="button" title="待办清单" aria-label="待办清单" :class="{ 'is-active': editor?.isActive('taskList') }" :disabled="disabled" @click="editor?.chain().focus().toggleTaskList().run()">☑</button>
-        <button type="button" title="引用块" aria-label="引用块" :class="{ 'is-active': editor?.isActive('blockquote') }" :disabled="disabled" @click="editor?.chain().focus().toggleBlockquote().run()">❞</button>
-        <button type="button" title="代码块" aria-label="代码块" :class="{ 'is-active': editor?.isActive('codeBlock') }" :disabled="disabled" @click="editor?.chain().focus().toggleCodeBlock().run()">{ }</button>
-        <button type="button" title="插入表格" aria-label="插入表格" :disabled="disabled" @click="addTable">▦</button>
-        <button type="button" title="插入图片 URL" aria-label="插入图片" :disabled="disabled" @click="addImage">▧</button>
-        <button type="button" title="分割线" aria-label="分割线" :disabled="disabled" @click="editor?.chain().focus().setHorizontalRule().run()">―</button>
-      </div>
-      <span class="notion-toolbar-spacer" />
-      <div class="notion-toolbar-group notion-history-tools">
-        <button type="button" title="撤销 Ctrl+Z" aria-label="撤销" :disabled="disabled || !editor?.can().undo()" @click="editor?.chain().focus().undo().run()">↶</button>
-        <button type="button" title="重做 Ctrl+Shift+Z" aria-label="重做" :disabled="disabled || !editor?.can().redo()" @click="editor?.chain().focus().redo().run()">↷</button>
-      </div>
-    </div>
     <div class="notion-editor-canvas">
       <EditorContent :editor="editor" />
       <div v-if="slashMenuOpen" class="notion-slash-menu" :style="slashMenuStyle" role="menu" aria-label="插入内容块">
