@@ -16,3 +16,10 @@ logs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local editor / pre-change backups; source history belongs in Git.
+*.bak
+*.bak-*
+*.backup
+*.old
+*.orig
