@@ -227,7 +227,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .brand-copy strong { font: 500 11px var(--mono); letter-spacing: .12em; }
 .brand-copy small { color: var(--muted); font-size: 11px; letter-spacing: .08em; }
 .main-nav { display: flex; align-items: center; gap: clamp(22px, 3.4vw, 52px); font-size: 13px; color: #56615b; }
-.main-nav a { transition: color .2s; }
+.main-nav a { transition: color .2s, transform .22s ease; }
+.main-nav a:hover { transform: translateY(-1px) scale(1.04); }
 .main-nav a:hover { color: var(--green); }
 .main-nav .nav-contact { border: 1px solid #cfd8d0; padding: 10px 15px; border-radius: 5px; color: var(--ink); }
 .nav-contact span { margin-left: 13px; color: var(--green); }
@@ -421,7 +422,7 @@ body {
   background: linear-gradient(135deg, #4c91dc, #315bb1);
   box-shadow: 0 8px 22px rgba(47, 94, 171, .2), inset 0 1px rgba(255,255,255,.3);
 }
-.button-primary:hover { background: linear-gradient(135deg, #3e82cc, #284d9d); }
+.button-primary:hover { background: linear-gradient(135deg, #3e82cc, #284d9d); transform: translateY(-2px) scale(1.07); }
 .art-orbit { border-color: rgba(255,255,255,.58); }
 .orbit-two { border-color: rgba(255,255,255,.38); }
 .art-card {
@@ -471,7 +472,8 @@ body {
   pointer-events: none;
 }
 .section-card:hover {
-  transform: translateY(-5px);
+  z-index: 2;
+  transform: translateY(-7px) scale(1.045);
   border-color: rgba(255,255,255,.98);
   box-shadow: 0 20px 42px rgba(49, 75, 108, .12), inset 0 1px rgba(255,255,255,.9);
 }
