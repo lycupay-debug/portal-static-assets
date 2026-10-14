@@ -37,3 +37,6 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+# Vditor runtime assets are copied from the pinned npm dependency before dev/build.
+public/vditor/
