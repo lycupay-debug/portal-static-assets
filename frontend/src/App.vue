@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { renderMarkdown } from './utils/markdown'
+const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
 type PortalSection = {
   id: string
@@ -131,7 +132,6 @@ const emptyContentForm = (): ContentForm => ({
   title: '', slug: '', contentType: 'article', summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
-const renderedContentPreview = computed(() => renderMarkdown(contentForm.value.body))
 const publicContents = ref<PublicContentCard[]>([])
 const publicArticle = ref<PublicContent | null>(null)
 const publicContentLoading = ref(false)
@@ -303,6 +303,10 @@ async function editContent(id: string) {
   }
 }
 async function saveContent() {
+  if (!contentForm.value.body.trim()) {
+    contentError.value = '正文不能为空。'
+    return
+  }
   contentBusy.value = true
   contentError.value = ''
   contentNotice.value = ''
@@ -682,22 +686,21 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
               <div><h2>{{ editingContentId ? '编辑内容' : '创建内容' }}</h2><p>{{ editingContentId ? '保存后会保留当前发布状态与可见范围。' : '内容以草稿形式保存；确认后可单独发布。' }}</p></div>
               <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="contentEditorOpen = false">返回列表</button>
             </div>
-            <form class="content-editor-form" @submit.prevent="saveContent">
-              <label>内容标题<input v-model="contentForm.title" required maxlength="200" placeholder="输入标题" /></label>
-              <label>URL 别名<input v-model="contentForm.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /><small>仅使用小写英文、数字和连字符。</small></label>
-              <div class="content-form-row">
-                <label>内容类型<select v-model="contentForm.contentType"><option value="article">知识文章</option><option value="tool">在线工具</option><option value="resource">资源资料</option><option value="project">项目展示</option></select></label>
-                <label>可见范围<select v-model="contentForm.visibility"><option value="private">仅自己可见</option><option value="public">公开</option></select></label>
+            <form class="content-editor-form notion-content-form" @submit.prevent="saveContent">
+              <input v-model="contentForm.title" class="notion-title-input" required maxlength="200" placeholder="无标题" aria-label="内容标题" />
+              <div class="notion-document-properties">
+                <label><span>类型</span><select v-model="contentForm.contentType"><option value="article">知识文章</option><option value="tool">在线工具</option><option value="resource">资源资料</option><option value="project">项目展示</option></select></label>
+                <label><span>可见范围</span><select v-model="contentForm.visibility"><option value="private">仅自己可见</option><option value="public">公开</option></select></label>
+                <label class="notion-slug-property"><span>URL 别名</span><input v-model="contentForm.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /><small>仅使用小写英文、数字和连字符。</small></label>
               </div>
-              <label>内容摘要<textarea v-model="contentForm.summary" maxlength="500" rows="2" placeholder="简要说明内容（可选）"></textarea></label>
-              <div class="content-markdown-workspace">
-                <label class="content-markdown-source"><span>正文 Markdown</span><small>支持标题、列表、引用、链接、代码块和表格。</small><textarea v-model="contentForm.body" required maxlength="100000" rows="18" placeholder="# 文章标题\n\n在这里撰写 Markdown 正文…"></textarea></label>
-                <section class="content-markdown-preview" aria-label="Markdown 实时预览"><div class="content-markdown-preview-heading">实时预览</div><div v-if="contentForm.body.trim()" class="markdown-rendered" v-html="renderedContentPreview"></div><p v-else class="content-markdown-preview-empty">输入正文后，这里会显示排版效果。</p></section>
-              </div>
+              <label class="notion-summary-property"><span>摘要</span><textarea v-model="contentForm.summary" maxlength="500" rows="2" placeholder="添加简短描述，方便在内容列表和公开首页展示…"></textarea></label>
+              <div class="notion-document-divider"></div>
+              <ContentDocumentEditor v-model="contentForm.body" :disabled="contentBusy" />
               <p v-if="contentError" class="content-feedback content-feedback-error">{{ contentError }}</p>
-              <div class="content-editor-actions">
-                <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="contentEditorOpen = false">取消</button>
-                <button type="submit" class="content-primary-button" :disabled="contentBusy">{{ contentBusy ? '正在保存…' : (editingContentId ? '保存修改' : '保存草稿') }}</button>
+              <div class="content-editor-actions notion-document-actions">
+                <span class="notion-save-hint">正文以 Markdown 格式保存，兼容现有文章和公开页面。</span>
+                <div><button type="button" class="content-secondary-button" :disabled="contentBusy" @click="contentEditorOpen = false">取消</button>
+                <button type="submit" class="content-primary-button" :disabled="contentBusy">{{ contentBusy ? '正在保存…' : (editingContentId ? '保存修改' : '保存草稿') }}</button></div>
               </div>
             </form>
           </section>
@@ -1552,6 +1555,20 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .content-editor-heading h2 { margin: 0; color: #304760; font-size: 21px; font-weight: 650; }
 .content-editor-heading p { margin: 7px 0 0; color: #71849a; font-size: 13px; line-height: 1.6; }
 .content-editor-form { display: grid; gap: 17px; max-width: 1000px; }
+.notion-content-form { max-width: 1180px; margin: 0 auto; gap: 0; }
+.notion-title-input { margin: 12px 0 22px; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; color: #222f3d !important; font-size: clamp(30px, 4vw, 42px) !important; font-weight: 720 !important; letter-spacing: -.045em; line-height: 1.25; }
+.notion-title-input::placeholder { color: #b7c0ca; }
+.notion-document-properties { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(160px, .7fr) minmax(250px, 1.6fr); gap: 10px; padding: 0 0 20px; border-bottom: 1px solid #edf0f2; }
+.notion-document-properties label, .notion-summary-property { display: grid; gap: 7px; min-width: 0; }
+.notion-document-properties label > span, .notion-summary-property > span { color: #7b8794; font-size: 11px; font-weight: 600; }
+.notion-document-properties input, .notion-document-properties select { min-height: 36px !important; padding: 7px 9px !important; border: 1px solid #e7ebef !important; border-radius: 6px !important; background: #fbfcfd !important; font-size: 12px !important; }
+.notion-document-properties small { font-size: 10px !important; }
+.notion-summary-property { padding: 17px 0 14px; }
+.notion-summary-property textarea { min-height: 48px; resize: vertical; border: 0 !important; border-radius: 0 !important; padding: 5px 0 !important; background: transparent !important; box-shadow: none !important; font-size: 13px !important; }
+.notion-document-divider { height: 1px; background: #edf0f2; margin-bottom: 12px; }
+.notion-document-actions { align-items: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid #edf0f2; }
+.notion-document-actions > div { display: flex; gap: 8px; }
+.notion-save-hint { color: #8b96a3; font-size: 11px; }
 .content-editor-form label { display: grid; gap: 8px; color: #40566e; font-size: 13px; font-weight: 650; }
 .content-editor-form input, .content-editor-form select, .content-editor-form textarea { width: 100%; min-width: 0; border: 1px solid rgba(126,150,176,.24); border-radius: 11px; padding: 11px 13px; color: #344b63; background: rgba(255,255,255,.65); font: inherit; font-weight: 400; outline: none; }
 .content-editor-form input, .content-editor-form select { min-height: 42px; }
@@ -1584,6 +1601,67 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
   .content-row-actions { padding: 0 8px; }
 }
 
+
+/* Notion-style block editor */
+.notion-editor { min-width: 0; border: 1px solid #e8ebef; border-radius: 9px; background: #fff; color: #27313d; }
+.notion-editor.is-disabled { opacity: .72; }
+.notion-editor-toolbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-height: 48px; padding: 7px 9px; border-bottom: 1px solid #e9edf1; border-radius: 9px 9px 0 0; background: rgba(255,255,255,.96); backdrop-filter: blur(14px); }
+.notion-toolbar-group { display: flex; align-items: center; gap: 2px; }
+.notion-toolbar-group button { display: inline-flex; align-items: center; justify-content: center; min-width: 29px; height: 29px; padding: 0 6px; border: 0; border-radius: 5px; color: #5f6b78; background: transparent; font-size: 12px; cursor: pointer; }
+.notion-toolbar-group button:hover:not(:disabled), .notion-toolbar-group button.is-active { color: #24384d; background: #edf1f5; }
+.notion-toolbar-group button:disabled { opacity: .35; cursor: not-allowed; }
+.notion-toolbar-divider { width: 1px; height: 22px; margin: 0 3px; background: #e6eaf0; }
+.notion-toolbar-spacer { flex: 1; }
+.notion-editor-canvas { position: relative; min-height: 440px; padding: 26px clamp(18px, 4vw, 52px) 54px; }
+.notion-document-content { min-height: 360px; outline: none; color: #343e49; font-size: 15px; line-height: 1.85; overflow-wrap: anywhere; caret-color: #386cb3; }
+.notion-document-content > * { margin-top: 0; margin-bottom: 10px; }
+.notion-document-content p { min-height: 1.85em; }
+.notion-document-content h1, .notion-document-content h2, .notion-document-content h3 { margin: 1.15em 0 .45em; color: #202d3a; font-weight: 700; line-height: 1.35; letter-spacing: -.025em; }
+.notion-document-content h1 { font-size: 30px; }
+.notion-document-content h2 { font-size: 24px; }
+.notion-document-content h3 { font-size: 19px; }
+.notion-document-content ul, .notion-document-content ol { padding-left: 1.7em; }
+.notion-document-content li { padding-left: .15em; }
+.notion-document-content li + li { margin-top: 3px; }
+.notion-document-content blockquote { margin: 12px 0; padding: 4px 0 4px 15px; border-left: 3px solid #c6cdd6; color: #5c6875; }
+.notion-document-content pre { overflow-x: auto; padding: 16px; border-radius: 7px; color: #e7edf5; background: #202b38; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+.notion-document-content code { padding: 2px 5px; border-radius: 4px; color: #b44c37; background: #f5f1ef; font-family: var(--mono); font-size: .88em; }
+.notion-document-content pre code { padding: 0; color: inherit; background: transparent; }
+.notion-document-content a { color: #356fb5; text-decoration: underline; text-underline-offset: 3px; }
+.notion-document-content mark { border-radius: 2px; background: #fff0a8; }
+.notion-document-content hr { border: 0; border-top: 1px solid #e5e9ee; margin: 24px 0; }
+.notion-document-content img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+.notion-document-content table { width: 100%; border-collapse: collapse; table-layout: fixed; overflow: hidden; }
+.notion-document-content th, .notion-document-content td { min-width: 80px; padding: 7px 10px; border: 1px solid #e1e6eb; vertical-align: top; text-align: left; }
+.notion-document-content th { background: #f5f7f9; font-weight: 650; }
+.notion-document-content .selectedCell:after { background: rgba(72,126,191,.12); content: ''; inset: 0; pointer-events: none; position: absolute; }
+.notion-document-content ul[data-type="taskList"] { padding-left: 0; list-style: none; }
+.notion-document-content li[data-type="taskItem"] { display: flex; align-items: flex-start; gap: 9px; }
+.notion-document-content li[data-type="taskItem"] > label { display: inline-flex; align-items: center; margin-top: 6px; }
+.notion-document-content li[data-type="taskItem"] > label input { width: 14px; height: 14px; accent-color: #507eb3; }
+.notion-document-content li[data-type="taskItem"] > div { flex: 1; min-width: 0; }
+.notion-document-content li[data-type="taskItem"][data-checked="true"] > div { color: #9aa3ad; text-decoration: line-through; }
+.notion-document-content p.is-editor-empty:first-child::before { float: left; height: 0; color: #a4adb8; content: attr(data-placeholder); pointer-events: none; }
+.notion-slash-menu { position: absolute; z-index: 10; top: 52px; left: clamp(18px, 4vw, 52px); display: grid; width: min(300px, calc(100% - 36px)); max-height: 350px; overflow: auto; padding: 7px; border: 1px solid #e7ebef; border-radius: 9px; background: #fff; box-shadow: 0 12px 34px rgba(29,43,58,.16); }
+.notion-slash-heading { padding: 8px 9px; color: #8b95a1; font-size: 10px; font-weight: 650; }
+.notion-slash-empty { margin: 0; padding: 10px; color: #8b95a1; font-size: 11px; }
+.notion-slash-menu button { display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 6px; text-align: left; background: transparent; cursor: pointer; }
+.notion-slash-menu button:hover { background: #f1f4f7; }
+.notion-slash-icon { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #e5e9ee; border-radius: 6px; color: #566576; font-size: 11px; }
+.notion-slash-copy { display: grid; gap: 3px; }
+.notion-slash-copy strong { color: #344252; font-size: 12px; font-weight: 600; }
+.notion-slash-copy small { color: #8a95a2; font-size: 10px; }
+.notion-editor-footer { display: flex; justify-content: space-between; gap: 10px; padding: 9px 14px; border-top: 1px solid #edf0f3; color: #8b96a3; font-size: 10px; }
+.notion-editor-footer kbd { padding: 1px 4px; border: 1px solid #e2e6eb; border-radius: 3px; background: #f7f8fa; font: inherit; }
+@media (max-width: 760px) {
+  .notion-document-properties { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .notion-slug-property { grid-column: 1 / -1; }
+  .notion-editor-toolbar { gap: 3px; }
+  .notion-toolbar-divider { margin: 0 1px; }
+  .notion-editor-canvas { padding: 22px 17px 40px; }
+  .notion-editor-footer { flex-direction: column; }
+  .notion-save-hint { display: none; }
+}
 
 /* Public content listing and article view */
 .published-content-section { padding: 10px clamp(22px, 11vw, 176px) 96px; }

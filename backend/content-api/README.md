@@ -41,14 +41,14 @@
 - Title: 1–200 characters; summary max 500; body 1–100000 characters.
 - Deletion sets `deleted_at`; the row is retained in the owner's recycle bin until restored or permanently deleted. Restoring a slug that has since been reused returns HTTP 409; the user must resolve the slug conflict first.
 - Before a changed edit, the API locks the content row and stores the complete prior content snapshot in `portal.portal_content_versions` in the same transaction as the update. No-op saves do not create duplicate versions. Restoring a historical version first snapshots the current state, so the restore itself is reversible. Version history is scoped to the content owner; permanent deletion cascades to its snapshots.
-- The editor stores Markdown source as-is. The frontend renders Markdown in a live side-by-side preview and on public detail pages using `marked`, then sanitizes the generated HTML with DOMPurify. Raw HTML is escaped instead of being trusted as author markup; executable URL schemes and unsafe HTML attributes are removed.
+- The editor uses a Notion-style WYSIWYG block workspace (formatting toolbar, headings, lists, task lists, quotes, code blocks, tables, images, links, undo/redo, and `/` block insertion). The editor serializes to Markdown in the existing `body` field, preserving compatibility with existing content records and public pages. Public Markdown is rendered with `marked` and sanitized with DOMPurify; raw HTML is escaped instead of trusted as author markup, and executable URL schemes and unsafe HTML attributes are removed.
 - Publishing validates fields in the Node.js business layer and writes a `portal.content.validate` event in the same database transaction as the status update. The Go processor stores the validation result in `portal.event_inbox.processing_result`; event notification to the C IPC core is asynchronous and does not itself mean the public page was rendered.
 
 ## Deploy / verify
 
 1. Apply unapplied migrations in order as a database administrator. On the current deployment, migration 007 is already applied and migration 008 adds version history and recycle-bin support.
 2. Run `node --check backend/auth-api/server.mjs`, `node --check backend/content-api/handlers.mjs`, and `node --test backend/content-api/handlers.test.mjs`.
-3. In `frontend/`, run `npm test`, `npm run type-check`, and `npm run build`. Markdown security and formatting tests live in `frontend/test/markdown.test.mjs`.
+3. In `frontend/`, run `npm test`, `npm run type-check`, and `npm run build`. Markdown security tests live in `frontend/test/markdown.test.mjs`; editor Markdown round-trip compatibility tests live in `frontend/test/document-editor.test.mjs`.
 4. Restart `personal_portal_auth_api` and atomically switch the frontend release symlink.
 5. Verify unauthenticated management requests return 401, CRUD operations, public visibility rules, and that the publish validation event reaches `completed` with `valid=true`.
 
