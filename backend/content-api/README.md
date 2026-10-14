@@ -34,14 +34,14 @@
 - Slug: lowercase ASCII letters/digits joined by single hyphens, max 100 characters, unique among non-deleted records.
 - Title: 1–200 characters; summary max 500; body 1–100000 characters.
 - Deletion sets `deleted_at`; the row is retained for recovery/inspection.
-- The current public detail page renders body text with preserved line breaks; Markdown source is stored as-is but not yet transformed into formatted HTML.
+- The editor stores Markdown source as-is. The frontend renders Markdown in a live side-by-side preview and on public detail pages using `marked`, then sanitizes the generated HTML with DOMPurify. Raw HTML is escaped instead of being trusted as author markup; executable URL schemes and unsafe HTML attributes are removed.
 - Publishing validates fields in the Node.js business layer and writes a `portal.content.validate` event in the same database transaction as the status update. The Go processor stores the validation result in `portal.event_inbox.processing_result`; event notification to the C IPC core is asynchronous and does not itself mean the public page was rendered.
 
 ## Deploy / verify
 
 1. Apply migration 007 as a database administrator.
 2. Run `node --check backend/auth-api/server.mjs` and `node --check backend/content-api/handlers.mjs`.
-3. Run `npm run build` in `frontend/`.
+3. In `frontend/`, run `npm test`, `npm run type-check`, and `npm run build`. Markdown security and formatting tests live in `frontend/test/markdown.test.mjs`.
 4. Restart `personal_portal_auth_api` and atomically switch the frontend release symlink.
 5. Verify unauthenticated management requests return 401, CRUD operations, public visibility rules, and that the publish validation event reaches `completed` with `valid=true`.
 

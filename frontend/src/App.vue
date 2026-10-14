@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { renderMarkdown } from './utils/markdown'
 
 type PortalSection = {
   id: string
@@ -124,6 +125,7 @@ const emptyContentForm = (): ContentForm => ({
   title: '', slug: '', contentType: 'article', summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
+const renderedContentPreview = computed(() => renderMarkdown(contentForm.value.body))
 const publicContents = ref<PublicContentCard[]>([])
 const publicArticle = ref<PublicContent | null>(null)
 const publicContentLoading = ref(false)
@@ -515,7 +517,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         <p class="public-article-type">{{ contentTypeLabels[publicArticle.contentType] }} <span>·</span> {{ publicArticle.publishedAt ? new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') : '' }}</p>
         <h1>{{ publicArticle.title }}</h1>
         <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
-        <div class="public-article-body">{{ publicArticle.body }}</div>
+        <div class="public-article-body markdown-rendered" v-html="renderMarkdown(publicArticle.body)"></div>
       </section>
       <section v-else class="public-content-state"><h1>内容暂不可用</h1><p>{{ publicContentError || '内容不存在或尚未公开。' }}</p><a class="button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section>
     </main>
@@ -612,7 +614,10 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
                 <label>可见范围<select v-model="contentForm.visibility"><option value="private">仅自己可见</option><option value="public">公开</option></select></label>
               </div>
               <label>内容摘要<textarea v-model="contentForm.summary" maxlength="500" rows="2" placeholder="简要说明内容（可选）"></textarea></label>
-              <label>正文（纯文本或 Markdown 源文）<textarea v-model="contentForm.body" required maxlength="100000" rows="10" placeholder="在这里撰写正文内容"></textarea></label>
+              <div class="content-markdown-workspace">
+                <label class="content-markdown-source"><span>正文 Markdown</span><small>支持标题、列表、引用、链接、代码块和表格。</small><textarea v-model="contentForm.body" required maxlength="100000" rows="18" placeholder="# 文章标题\n\n在这里撰写 Markdown 正文…"></textarea></label>
+                <section class="content-markdown-preview" aria-label="Markdown 实时预览"><div class="content-markdown-preview-heading">实时预览</div><div v-if="contentForm.body.trim()" class="markdown-rendered" v-html="renderedContentPreview"></div><p v-else class="content-markdown-preview-empty">输入正文后，这里会显示排版效果。</p></section>
+              </div>
               <p v-if="contentError" class="content-feedback content-feedback-error">{{ contentError }}</p>
               <div class="content-editor-actions">
                 <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="contentEditorOpen = false">取消</button>
@@ -1496,7 +1501,33 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .public-article-type span { padding: 0 6px; color: #8a98a8; }
 .public-article h1 { margin: 0; color: #263e58; font-size: clamp(34px, 5vw, 58px); line-height: 1.25; letter-spacing: -.04em; overflow-wrap: anywhere; }
 .public-article-summary { margin: 22px 0 0; color: #62768c; font-size: 17px; line-height: 1.9; }
-.public-article-body { margin-top: 38px; padding-top: 30px; border-top: 1px solid rgba(42,66,96,.09); color: #40566e; font-size: 16px; line-height: 2; white-space: pre-wrap; overflow-wrap: anywhere; }
+.public-article-body { margin-top: 38px; padding-top: 30px; border-top: 1px solid rgba(42,66,96,.09); color: #40566e; font-size: 16px; line-height: 1.85; overflow-wrap: anywhere; }
+.content-markdown-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; gap: 16px; }
+.content-markdown-source { min-width: 0; }
+.content-markdown-source textarea { min-height: 390px; resize: vertical; font-family: var(--mono); font-size: 13px; tab-size: 2; }
+.content-markdown-preview { min-width: 0; min-height: 390px; overflow: auto; border: 1px solid rgba(126,150,176,.2); border-radius: 11px; background: rgba(255,255,255,.5); }
+.content-markdown-preview-heading { position: sticky; top: 0; z-index: 1; padding: 12px 14px; border-bottom: 1px solid rgba(126,150,176,.16); color: #71849a; background: rgba(244,248,252,.96); font-size: 12px; font-weight: 650; }
+.content-markdown-preview-empty { padding: 18px; color: #8a98a8; font-size: 12px; }
+.markdown-rendered { color: #40566e; font-size: 15px; line-height: 1.85; overflow-wrap: anywhere; }
+.markdown-rendered > :first-child { margin-top: 0; }
+.markdown-rendered > :last-child { margin-bottom: 0; }
+.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, .markdown-rendered h4 { margin: 1.45em 0 .65em; color: #2e465f; line-height: 1.4; letter-spacing: -.025em; }
+.markdown-rendered h1 { font-size: 1.8em; }
+.markdown-rendered h2 { font-size: 1.5em; }
+.markdown-rendered h3 { font-size: 1.22em; }
+.markdown-rendered p { margin: .8em 0; }
+.markdown-rendered ul, .markdown-rendered ol { padding-left: 1.6em; margin: .8em 0; }
+.markdown-rendered li + li { margin-top: .25em; }
+.markdown-rendered blockquote { margin: 1em 0; padding: .15em 1em; border-left: 3px solid #9ab7d5; color: #687e94; background: rgba(228,238,248,.35); }
+.markdown-rendered a { color: #2869ad; text-decoration: underline; text-underline-offset: 3px; }
+.markdown-rendered hr { border: 0; border-top: 1px solid rgba(126,150,176,.24); margin: 1.6em 0; }
+.markdown-rendered code { padding: .12em .35em; border-radius: 5px; color: #8b4e35; background: rgba(229,235,242,.75); font-family: var(--mono); font-size: .88em; }
+.markdown-rendered pre { max-width: 100%; overflow: auto; padding: 15px; border-radius: 9px; color: #e7edf5; background: #243448; line-height: 1.65; }
+.markdown-rendered pre code { padding: 0; color: inherit; background: transparent; font-size: .88em; }
+.markdown-rendered table { width: 100%; border-collapse: collapse; margin: 1.2em 0; font-size: .9em; }
+.markdown-rendered th, .markdown-rendered td { padding: 8px 10px; border: 1px solid rgba(126,150,176,.24); text-align: left; }
+.markdown-rendered th { background: rgba(226,236,247,.6); font-weight: 650; }
+.markdown-rendered img { max-width: 100%; height: auto; border-radius: 8px; }
 .public-content-state { display: flex; width: min(100%, 620px); min-height: 320px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 12px; margin: 0 auto; color: #52677e; }
 .public-content-state h1 { margin: 0; color: #304760; font-size: 32px; }
 .public-content-state p { margin: 0 0 10px; line-height: 1.8; }
@@ -1509,6 +1540,9 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
   .public-article-back { margin-bottom: 28px; }
   .public-article-summary { font-size: 15px; }
   .public-article-body { margin-top: 28px; font-size: 15px; }
+  .content-markdown-workspace { grid-template-columns: minmax(0, 1fr); }
+  .content-markdown-source textarea { min-height: 260px; }
+  .content-markdown-preview { min-height: 220px; }
 }
 
 </style>
