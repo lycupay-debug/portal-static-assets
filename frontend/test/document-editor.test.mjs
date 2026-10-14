@@ -70,4 +70,31 @@ test('task lists and images preserve their Markdown representation', () => {
   } finally { editor.destroy() }
 })
 
+test('task-list checkbox clicks update the checked state and Markdown output', () => {
+  const editor = createEditor('- [ ] pending task\n- [x] done task')
+  try {
+    const checkboxes = editor.view.dom.querySelectorAll('ul[data-type="taskList"] > li > label input[type="checkbox"]')
+    assert.equal(checkboxes.length, 2)
+    assert.equal(checkboxes[0].checked, false)
+    checkboxes[0].click()
+    assert.equal(editor.view.dom.querySelectorAll('ul[data-type="taskList"] > li > label input[type="checkbox"]')[0].checked, true)
+    assert.match(editor.getMarkdown(), /- \[x\] pending task/)
+    assert.match(editor.getMarkdown(), /- \[x\] done task/)
+  } finally { editor.destroy() }
+})
+
+test('nested task lists preserve both checkbox items and ordinary nested bullets', () => {
+  const source = '- [ ] parent\n  - [ ] checkbox child\n  - plain child'
+  const editor = createEditor(source)
+  try {
+    const html = editor.getHTML()
+    const output = editor.getMarkdown()
+    assert.match(html, /checkbox child/)
+    assert.match(html, /plain child/)
+    assert.match(output, /- \[ \] parent/)
+    assert.match(output, /checkbox child/)
+    assert.match(output, /plain child/)
+  } finally { editor.destroy() }
+})
+
 dom.window.close()
