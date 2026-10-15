@@ -683,7 +683,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         </template>
 
         <template v-else>
-          <h1 v-if="activeAccountSection !== 'content-management'" class="account-page-title">{{ activeAccountItem?.label || '业务中心' }}</h1>
+          <h1 v-if="activeAccountSection !== 'content-management' && !activeTableDefinition" class="account-page-title">{{ activeAccountItem?.label || '业务中心' }}</h1>
           <p v-if="activeAccountSection !== 'content-management'" class="auth-intro">{{ activeAccountItem?.description || '管理你的业务内容与工作入口。' }}</p>
           <section v-if="activeAccountSection === 'content-management' && contentEditorOpen" class="content-editor-panel">
             <div class="content-editor-heading">
