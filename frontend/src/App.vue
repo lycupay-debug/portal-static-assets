@@ -1085,7 +1085,10 @@ onBeforeUnmount(() => {
     <main v-else-if="isPublicContentPage" class="public-content-page">
       <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
       <section v-else-if="publicArticle" class="public-article">
-        <p class="public-article-type">{{ contentTypeLabels[publicArticle.contentType] }} <span>·</span> {{ publicArticle.publishedAt ? new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') : '' }}</p>
+        <header class="public-article-route-header" aria-label="文章信息">
+          <span class="public-article-route-type">{{ contentTypeLabels[publicArticle.contentType] }}</span>
+          <span v-if="publicArticle.publishedAt" class="public-article-route-date">{{ new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') }}</span>
+        </header>
         <h1>{{ publicArticle.title }}</h1>
         <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
         <div class="public-article-body markdown-rendered" v-html="renderMarkdown(publicArticle.body)"></div>
@@ -2099,8 +2102,10 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .published-content-empty { padding: 22px; border-radius: 14px; color: #71849a; background: rgba(245,249,255,.35); font-size: 14px; }
 .public-content-page { min-height: 76vh; padding: clamp(32px, 7vw, 82px) 24px; }
 .public-article { width: min(100%, 900px); margin: 0 auto; }
-.public-article-type { margin: 0 0 15px; color: #527caf; font-size: 14px; font-weight: 650; }
-.public-article-type span { padding: 0 6px; color: #8a98a8; }
+.public-article-route-header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; color: #667085; font-size: 13px; line-height: 1.5; }
+.public-article-route-type { color: #344054; font-weight: 650; }
+.public-article-route-date { color: #858d99; }
+.public-article-route-date::before { content: '·'; margin-right: 10px; color: #b0b6bf; }
 .public-article h1 { margin: 0; color: #263e58; font-size: clamp(34px, 5vw, 58px); line-height: 1.25; letter-spacing: -.04em; overflow-wrap: anywhere; }
 .public-article-summary { margin: 22px 0 0; color: #62768c; font-size: 17px; line-height: 1.9; }
 .public-article-body { margin-top: 38px; padding-top: 30px; border-top: 1px solid rgba(42,66,96,.09); color: #40566e; font-size: 16px; line-height: 1.85; overflow-wrap: anywhere; }
