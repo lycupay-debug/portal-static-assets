@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { renderMarkdown } from './utils/markdown'
+import { ArrowDown } from '@element-plus/icons-vue'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
@@ -171,11 +172,7 @@ const knowledgeVisibleCount = ref(10)
 const knowledgePageSize = 10
 const knowledgeCategory = ref('recent')
 const knowledgeSubcategory = ref('')
-const knowledgeCategoryHover = ref('')
-const knowledgeCategoryPopoverStyle = ref({ top: '0px', left: '0px' })
-const activeKnowledgeCategoryMenu = computed(() => knowledgeCategoryMenus.find(category => category.value === knowledgeCategoryHover.value) ?? null)
 const knowledgeSearchQuery = ref('')
-const knowledgeSearchOpen = ref(false)
 const knowledgeCategoryMenus = [
   { value: 'recent', label: '最近更新', children: [] },
   { value: 'education', label: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
@@ -254,8 +251,6 @@ const knowledgeSearchSuggestions = computed(() => {
   return matches.filter((item, index) => matches.findIndex(other => other.label === item.label) === index).slice(0, 8)
 })
 function chooseKnowledgeSuggestion(suggestion: (typeof knowledgeSearchSuggestions.value)[number]) {
-  knowledgeSearchOpen.value = false
-  knowledgeCategoryHover.value = ''
   if (suggestion.kind === 'article' && 'slug' in suggestion) {
     navigate(`/content/${suggestion.slug}`)
     return
@@ -278,7 +273,6 @@ function handleKnowledgeAutocompleteSelect(item: { value: string; kind: 'theme' 
   if (suggestion) chooseKnowledgeSuggestion(suggestion)
 }
 function submitKnowledgeSearch() {
-  knowledgeSearchOpen.value = false
   knowledgeVisibleCount.value = knowledgePageSize
 }
 
@@ -288,48 +282,12 @@ function selectKnowledgeCategory(category: string, subcategory = '') {
   knowledgeSubcategory.value = subcategory
   knowledgeVisibleCount.value = knowledgePageSize
 }
-function handleKnowledgeCategoryOutsideClick(event: MouseEvent) {
-  if (!knowledgeCategoryHover.value) return
-  const target = event.target
-  if (!(target instanceof Element)) return
-  if (target.closest('.knowledge-segmented, .knowledge-category-popover')) return
-  knowledgeCategoryHover.value = ''
-}
-function handleKnowledgeEscape(event: KeyboardEvent) {
-  if (event.key === 'Escape' && knowledgeCategoryHover.value) {
-    knowledgeCategoryHover.value = ''
-    const trigger = document.querySelector<HTMLButtonElement>('.knowledge-segment[aria-expanded="true"]')
-    trigger?.focus()
-  }
-}
-function handleKnowledgeViewportScroll(event: Event) {
-  if (!knowledgeCategoryHover.value) return
-  const target = event.target
-  if (target instanceof Element && target.closest('.knowledge-category-popover')) return
-  knowledgeCategoryHover.value = ''
-}
-
-function toggleKnowledgeCategoryMenu(category: typeof knowledgeCategoryMenus[number], event: MouseEvent) {
-  if (!category.children.length) {
-    selectKnowledgeCategory(category.value)
-    knowledgeCategoryHover.value = ''
-    return
-  }
-  if (knowledgeCategoryHover.value === category.value) {
-    knowledgeCategoryHover.value = ''
-    return
-  }
-  const trigger = event.currentTarget as HTMLElement
-  const rect = trigger.getBoundingClientRect()
-  const menuWidth = 220
-  const menuHeight = Math.min(340, window.innerHeight * 0.6)
-  const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - menuWidth - 12))
-  const below = rect.bottom + 7
-  const top = below + menuHeight <= window.innerHeight - 12
-    ? below
-    : Math.max(12, rect.top - menuHeight - 7)
-  knowledgeCategoryPopoverStyle.value = { top: `${top}px`, left: `${left}px` }
-  knowledgeCategoryHover.value = category.value
+const selectedKnowledgeCategoryLabel = computed(() => {
+  if (knowledgeSubcategory.value) return knowledgeSubcategory.value
+  return knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.label || '最近更新'
+})
+function chooseKnowledgeCategory(categoryValue: string, subcategory = '') {
+  selectKnowledgeCategory(categoryValue, subcategory)
 }
 function scrollKnowledgeCategories(direction: number) {
   const carousel = document.querySelector('.directory-tile-carousel') as HTMLElement | null
@@ -884,10 +842,6 @@ function onPopState() {
   void restoreScrollPosition()
 }
 onMounted(() => {
-  document.addEventListener('click', handleKnowledgeCategoryOutsideClick)
-  document.addEventListener('keydown', handleKnowledgeEscape)
-  document.addEventListener('scroll', handleKnowledgeViewportScroll, true)
-  window.addEventListener('resize', handleKnowledgeViewportScroll)
   setRouteFromLocation()
   void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
@@ -907,10 +861,6 @@ onMounted(() => {
   void restoreScrollPosition()
 })
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleKnowledgeCategoryOutsideClick)
-  document.removeEventListener('keydown', handleKnowledgeEscape)
-  document.removeEventListener('scroll', handleKnowledgeViewportScroll, true)
-  window.removeEventListener('resize', handleKnowledgeViewportScroll)
   saveScrollPosition()
   tableResizeObserver?.disconnect()
   window.removeEventListener('popstate', onPopState)
@@ -1018,15 +968,27 @@ onBeforeUnmount(() => {
           </article>
         </div>
       </section>
-      <section v-if="route === '/knowledge' || route === '/education-resources' || route === '/software-tools'" class="directory-published-section">
-        <div v-if="route === '/knowledge'" class="directory-section-heading knowledge-toolbar" aria-label="文章分类">
+      <section v-if="route === '/knowledge'" class="directory-published-section knowledge-filter-section">
+        <div class="knowledge-toolbar" aria-label="文章筛选与搜索">
           <div class="knowledge-toolbar-controls">
-            <div class="knowledge-segmented" role="group" aria-label="文章分类筛选">
-              <div v-for="category in knowledgeCategoryMenus" :key="category.value" class="knowledge-segment-wrap" :class="{ 'is-active': knowledgeCategory === category.value }">
-                <button type="button" class="knowledge-segment" :aria-pressed="knowledgeCategory === category.value" :aria-haspopup="category.children.length ? 'menu' : undefined" :aria-expanded="category.children.length ? knowledgeCategoryHover === category.value : undefined" @click="toggleKnowledgeCategoryMenu(category, $event)">{{ category.label }}</button>
-              </div>
-            </div>
-            <span class="knowledge-toolbar-splitter" aria-hidden="true"></span>
+            <el-dropdown trigger="click" placement="bottom-start" :teleported="true" popper-class="knowledge-dropdown-popper" @command="(command: string) => { const [category, ...rest] = command.split('::'); chooseKnowledgeCategory(category || 'recent', rest.join('::')) }">
+              <button type="button" class="knowledge-dropdown-trigger" aria-label="选择文章分类">
+                <span class="knowledge-dropdown-label">{{ selectedKnowledgeCategoryLabel }}</span>
+                <el-icon class="knowledge-dropdown-arrow"><ArrowDown /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu class="knowledge-dropdown-menu">
+                  <template v-for="(category, categoryIndex) in knowledgeCategoryMenus" :key="category.value">
+                    <el-dropdown-item :command="category.value" :divided="categoryIndex > 0" :class="{ 'is-current': knowledgeCategory === category.value && !knowledgeSubcategory }">
+                      <span>{{ category.label }}</span><span v-if="knowledgeCategory === category.value && !knowledgeSubcategory" class="knowledge-dropdown-check">✓</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item v-for="child in category.children" :key="child" :command="category.value + '::' + child" class="knowledge-dropdown-subitem" :class="{ 'is-current': knowledgeCategory === category.value && knowledgeSubcategory === child }">
+                      <span>{{ child }}</span><span v-if="knowledgeCategory === category.value && knowledgeSubcategory === child" class="knowledge-dropdown-check">✓</span>
+                    </el-dropdown-item>
+                  </template>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-autocomplete
               v-model="knowledgeSearchQuery"
               class="knowledge-search-form knowledge-autocomplete"
@@ -1038,7 +1000,6 @@ onBeforeUnmount(() => {
               :trigger-on-focus="false"
               @input="knowledgeVisibleCount = knowledgePageSize"
               @select="handleKnowledgeAutocompleteSelect"
-              @clear="knowledgeSearchOpen = false"
             >
               <template #prefix><span class="knowledge-search-icon" aria-hidden="true">⌕</span></template>
               <template #default="{ item }">
@@ -1049,17 +1010,14 @@ onBeforeUnmount(() => {
                 </div>
               </template>
             </el-autocomplete>
-            <Teleport to="body">
-              <div v-if="activeKnowledgeCategoryMenu" class="knowledge-category-popover" role="menu" :style="knowledgeCategoryPopoverStyle">
-                <button v-for="child in activeKnowledgeCategoryMenu.children" :key="child" type="button" role="menuitem" :class="{ selected: knowledgeCategory === activeKnowledgeCategoryMenu.value && knowledgeSubcategory === child }" @click="selectKnowledgeCategory(activeKnowledgeCategoryMenu.value, child); knowledgeCategoryHover = ''">{{ child }}<span v-if="knowledgeCategory === activeKnowledgeCategoryMenu.value && knowledgeSubcategory === child">✓</span></button>
-              </div>
-            </Teleport>
           </div>
         </div>
-        <div v-else class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
+      </section>
+      <section v-if="route === '/knowledge'" class="directory-published-section knowledge-results-section">
+        <div class="directory-section-heading knowledge-results-heading"><div><p class="eyebrow">KNOWLEDGE LIBRARY</p><h2>文章列表</h2></div><span>{{ knowledgeFilteredItems.length }} 篇文章</span></div>
         <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
         <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
-        <div v-else-if="route === '/knowledge' && knowledgeFilteredItems.length" class="knowledge-infinite-list" @scroll.passive="onKnowledgeListScroll">
+        <div v-else-if="knowledgeFilteredItems.length" class="knowledge-infinite-list" @scroll.passive="onKnowledgeListScroll">
           <a v-for="(item, index) in visibleDirectoryContentItems" :key="item.id" class="knowledge-list-item" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
             <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.summary">{{ item.summary }}</span></span>
@@ -1068,17 +1026,23 @@ onBeforeUnmount(() => {
           </a>
           <p class="knowledge-list-status">{{ visibleDirectoryContentItems.length < knowledgeFilteredItems.length ? '向下滚动加载更多' : `已显示全部 ${knowledgeFilteredItems.length} 篇文章` }}</p>
         </div>
-        <div v-else-if="route !== '/knowledge' && directoryContentItems.length" class="published-content-grid">
+        <p v-else-if="knowledgeSearchQuery.trim()" class="directory-empty">没有找到匹配“{{ knowledgeSearchQuery.trim() }}”的文章。试试其他关键词或选择下方主题。</p>
+        <p v-else-if="knowledgeCategory !== 'recent'" class="directory-empty">当前分类暂时没有匹配的文章。现有文章尚未单独标注分类，筛选暂按标题和摘要中的主题词匹配。</p>
+        <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
+      </section>
+      <section v-if="route === '/education-resources' || route === '/software-tools'" class="directory-published-section">
+        <div class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
+        <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
+        <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
+        <div v-else-if="directoryContentItems.length" class="published-content-grid">
           <a v-for="(item, index) in directoryContentItems" :key="item.id" class="published-content-card" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
             <div class="published-content-meta"><span class="published-content-type">{{ contentTypeLabels[item.contentType] }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
             <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 ↗</span></div></div>
           </a>
         </div>
-        <p v-else-if="route === '/knowledge' && knowledgeSearchQuery.trim()" class="directory-empty">没有找到匹配“{{ knowledgeSearchQuery.trim() }}”的文章。试试其他关键词或选择下方主题。</p>
-        <p v-else-if="route === '/knowledge' && knowledgeCategory !== 'recent'" class="directory-empty">当前分类暂时没有匹配的文章。现有文章尚未单独标注分类，筛选暂按标题和摘要中的主题词匹配。</p>
         <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
       </section>
-      <section v-else class="directory-published-section directory-coming-soon"><p class="eyebrow">LISTINGS COMING SOON</p><h2>房源内容正在整理中</h2><p>后续将在这里展示民宿图片、所在位置、价格、设施说明、入住规则及联系预订方式。</p></section>
+      <section v-if="route === '/homestays'" class="directory-published-section directory-coming-soon"><p class="eyebrow">LISTINGS COMING SOON</p><h2>房源内容正在整理中</h2><p>后续将在这里展示民宿图片、所在位置、价格、设施说明、入住规则及联系预订方式。</p></section>
     </main>
 
     <main v-else-if="isAuthPage" class="route-main">
