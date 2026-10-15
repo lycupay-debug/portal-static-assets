@@ -66,7 +66,10 @@ async function handleContentRequest(req, res, url) {
     let statusClause = '';
     if (status) { params.push(status); statusClause = ' AND status = $2'; }
     const result = await pool.query(
-      `SELECT ${contentSelect} FROM portal.portal_content
+      `SELECT ${contentSelect},
+         (SELECT COUNT(*)::int FROM portal.portal_content_interactions i WHERE i.content_id = portal.portal_content.content_id AND i.interaction_type = 'like') AS "likeCount",
+         (SELECT COUNT(*)::int FROM portal.portal_content_interactions i WHERE i.content_id = portal.portal_content.content_id AND i.interaction_type = 'favorite') AS "favoriteCount"
+       FROM portal.portal_content
        WHERE author_id = $1 AND deleted_at IS NULL${statusClause}
        ORDER BY updated_at DESC, content_id DESC LIMIT 500`,
       params,
