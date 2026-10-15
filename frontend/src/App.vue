@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { renderMarkdown } from './utils/markdown'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
@@ -255,6 +255,7 @@ const knowledgeSearchSuggestions = computed(() => {
 })
 function chooseKnowledgeSuggestion(suggestion: (typeof knowledgeSearchSuggestions.value)[number]) {
   knowledgeSearchOpen.value = false
+  knowledgeCategoryHover.value = ''
   if (suggestion.kind === 'article' && 'slug' in suggestion) {
     navigate(`/content/${suggestion.slug}`)
     return
@@ -294,6 +295,19 @@ function handleKnowledgeCategoryOutsideClick(event: MouseEvent) {
   if (target.closest('.knowledge-segmented, .knowledge-category-popover')) return
   knowledgeCategoryHover.value = ''
 }
+function handleKnowledgeEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape' && knowledgeCategoryHover.value) {
+    knowledgeCategoryHover.value = ''
+    const trigger = document.querySelector<HTMLButtonElement>('.knowledge-segment[aria-expanded="true"]')
+    trigger?.focus()
+  }
+}
+function handleKnowledgeViewportScroll(event: Event) {
+  if (!knowledgeCategoryHover.value) return
+  const target = event.target
+  if (target instanceof Element && target.closest('.knowledge-category-popover')) return
+  knowledgeCategoryHover.value = ''
+}
 
 function toggleKnowledgeCategoryMenu(category: typeof knowledgeCategoryMenus[number], event: MouseEvent) {
   if (!category.children.length) {
@@ -308,8 +322,13 @@ function toggleKnowledgeCategoryMenu(category: typeof knowledgeCategoryMenus[num
   const trigger = event.currentTarget as HTMLElement
   const rect = trigger.getBoundingClientRect()
   const menuWidth = 220
+  const menuHeight = Math.min(340, window.innerHeight * 0.6)
   const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - menuWidth - 12))
-  knowledgeCategoryPopoverStyle.value = { top: `${rect.bottom + 7}px`, left: `${left}px` }
+  const below = rect.bottom + 7
+  const top = below + menuHeight <= window.innerHeight - 12
+    ? below
+    : Math.max(12, rect.top - menuHeight - 7)
+  knowledgeCategoryPopoverStyle.value = { top: `${top}px`, left: `${left}px` }
   knowledgeCategoryHover.value = category.value
 }
 function scrollKnowledgeCategories(direction: number) {
@@ -325,6 +344,12 @@ function onKnowledgeListScroll(event: Event) {
   const element = event.target as HTMLElement
   if (element.scrollTop + element.clientHeight >= element.scrollHeight - 80) loadMoreKnowledge()
 }
+function ensureKnowledgeListFilled() {
+  if (route.value !== '/knowledge' || knowledgeVisibleCount.value >= knowledgeFilteredItems.value.length) return
+  const list = document.querySelector<HTMLElement>('.knowledge-infinite-list')
+  if (list && list.clientHeight > 0 && list.scrollHeight <= list.clientHeight + 1) loadMoreKnowledge()
+}
+onUpdated(ensureKnowledgeListFilled)
 const publicArticle = ref<PublicContent | null>(null)
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
@@ -860,6 +885,9 @@ function onPopState() {
 }
 onMounted(() => {
   document.addEventListener('click', handleKnowledgeCategoryOutsideClick)
+  document.addEventListener('keydown', handleKnowledgeEscape)
+  document.addEventListener('scroll', handleKnowledgeViewportScroll, true)
+  window.addEventListener('resize', handleKnowledgeViewportScroll)
   setRouteFromLocation()
   void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
@@ -880,6 +908,9 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleKnowledgeCategoryOutsideClick)
+  document.removeEventListener('keydown', handleKnowledgeEscape)
+  document.removeEventListener('scroll', handleKnowledgeViewportScroll, true)
+  window.removeEventListener('resize', handleKnowledgeViewportScroll)
   saveScrollPosition()
   tableResizeObserver?.disconnect()
   window.removeEventListener('popstate', onPopState)
@@ -990,9 +1021,9 @@ onBeforeUnmount(() => {
       <section v-if="route === '/knowledge' || route === '/education-resources' || route === '/software-tools'" class="directory-published-section">
         <div v-if="route === '/knowledge'" class="directory-section-heading knowledge-toolbar" aria-label="文章分类">
           <div class="knowledge-toolbar-controls">
-            <div class="knowledge-segmented" role="tablist" aria-label="文章分类筛选">
+            <div class="knowledge-segmented" role="group" aria-label="文章分类筛选">
               <div v-for="category in knowledgeCategoryMenus" :key="category.value" class="knowledge-segment-wrap" :class="{ 'is-active': knowledgeCategory === category.value }">
-                <button type="button" role="tab" class="knowledge-segment" :aria-selected="knowledgeCategory === category.value" :aria-haspopup="category.children.length ? 'menu' : undefined" :aria-expanded="category.children.length ? knowledgeCategoryHover === category.value : undefined" @click="toggleKnowledgeCategoryMenu(category, $event)">{{ category.label }}</button>
+                <button type="button" class="knowledge-segment" :aria-pressed="knowledgeCategory === category.value" :aria-haspopup="category.children.length ? 'menu' : undefined" :aria-expanded="category.children.length ? knowledgeCategoryHover === category.value : undefined" @click="toggleKnowledgeCategoryMenu(category, $event)">{{ category.label }}</button>
               </div>
             </div>
             <span class="knowledge-toolbar-splitter" aria-hidden="true"></span>
