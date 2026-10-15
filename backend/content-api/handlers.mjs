@@ -212,7 +212,9 @@ async function handleContentRequest(req, res, url) {
         return json(res, 404, { error: '内容不存在或无权访问。' });
       }
       const current = existing.rows[0];
-      const changed = allowed.filter((field) => input[field] !== current[field]);
+      const changed = allowed.filter((field) => Array.isArray(input[field]) && Array.isArray(current[field])
+        ? JSON.stringify(input[field]) !== JSON.stringify(current[field])
+        : input[field] !== current[field]);
       if (!changed.length) {
         await client.query('COMMIT');
         return json(res, 200, { item: current, versionCreated: false });

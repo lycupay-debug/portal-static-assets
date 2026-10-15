@@ -377,7 +377,7 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
   ? (contentViewMode.value === 'trash' ? contentTrashItems.value : contentItems.value).map((item) => ({
       id: item.id,
       title: item.title,
-      type: contentTypeLabels[item.contentType],
+      type: item.tags?.length ? item.tags.join(' · ') : contentTypeLabels[item.contentType],
       status: contentStatusLabels[item.status],
       visibility: item.visibility === 'public' ? '公开' : '仅自己可见',
       updatedAt: new Date(contentViewMode.value === 'trash' && 'deletedAt' in item ? String(item.deletedAt) : item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),

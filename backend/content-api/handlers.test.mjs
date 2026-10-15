@@ -100,3 +100,12 @@ test('new content requires at least one approved Knowledge Plaza tag', async () 
   const invalid = await h.call('PATCH', `/content/${contentId}`, { tags: ['not-a-real-tag'] });
   assert.equal(invalid.status, 400);
 });
+
+
+test('saving an unchanged tag array does not create a duplicate history entry', async () => {
+  const h = createHarness();
+  const result = await h.call('PATCH', `/content/${contentId}`, { tags: ['编程', 'Python'] });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.versionCreated, false);
+  assert.equal(h.versions.length, 0);
+});

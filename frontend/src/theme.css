@@ -1323,6 +1323,6 @@ body { overflow-x: clip; }
 .workspace-tag-group > strong { color: #4b5563; font-size: 12px; font-weight: 650; }
 .workspace-tag-options { display: flex; flex-wrap: wrap; gap: 7px; }
 .workspace-properties .workspace-tag-option { display: inline-flex; grid-template-columns: none; align-items: center; gap: 6px; min-height: 30px; padding: 5px 9px; border: 1px solid rgba(31, 41, 55, .12); border-radius: 999px; background: rgba(255,255,255,.62); cursor: pointer; }
-.workspace-properties .workspace-tag-option input { width: 13px; min-height: 13px; height: 13px; margin: 0; accent-color: #202833; }
+.workspace-properties .workspace-tag-option input { width: 13px; min-height: 13px; height: 13px; margin: 0; padding: 0; border: 0; border-radius: 3px; background: transparent; box-shadow: none; accent-color: #202833; }
 .workspace-properties .workspace-tag-option span { color: #374151; font-size: 12px; font-weight: 500; }
 .workspace-properties .workspace-tag-option:has(input:checked) { border-color: rgba(31, 41, 55, .42); background: rgba(31, 41, 55, .07); }
