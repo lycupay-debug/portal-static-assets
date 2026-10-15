@@ -128,3 +128,11 @@ a:hover,button:hover,.section-card:hover,.section-card:hover .card-arrow,.main-n
 
 /* Keep the content table toolbar close to the top of the viewport. */
 .account-content.account-content-table-mode > .virtual-table-panel > .virtual-table-toolbar { margin-top: 2vh; }
+
+/* Unify virtual-table bounds: use the full account content width on every viewport. */
+.account-content.account-content-table-mode > .virtual-table-panel {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  box-sizing: border-box;
+}
