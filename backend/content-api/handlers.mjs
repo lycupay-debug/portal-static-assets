@@ -64,13 +64,14 @@ async function handleContentRequest(req, res, url) {
     const body = await readBody(req, 36 * 1024 * 1024);
     const title = String(body.title || '').trim(); const description = String(body.description || '').trim();
     const filename = String(body.filename || '').replace(/[\\/\x00-\x1f\x7f]/g, '').trim().slice(0, 255);
-    const mime = String(body.mimeType || '').toLowerCase(); const data = String(body.data || '');
+    const data = String(body.data || '');
     if (!title || [...title].length > 200 || description.length > 2000 || !filename || !data || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return json(res, 400, { error: '请填写有效的资源名称并选择文件。' });
     const bytes = Buffer.from(data, 'base64');
     if (!bytes.length || bytes.length > 25 * 1024 * 1024) return json(res, 413, { error: '单个文件大小不能超过 25 MB。' });
     const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
     const allowed = new Set(['ppt','pptx','mp3','pdf','doc','docx','txt']);
     if (!allowed.has(ext)) return json(res, 400, { error: '支持的格式：PPT、PPTX、MP3、PDF、DOC、DOCX、TXT。' });
+    const mime = ({ ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', mp3: 'audio/mpeg', pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', txt: 'text/plain' })[ext];
     const signatures = {
       ppt: b => b.length >= 8 && b.subarray(0,4).toString('hex') === 'd0cf11e0',
       pptx: b => b.length >= 4 && b.subarray(0,4).toString('hex') === '504b0304',
