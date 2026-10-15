@@ -157,7 +157,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/public/content' || url.pathname.startsWith('/public/content/')) {
       return await handlePublicContentRequest(req, res, url);
     }
-    if (url.pathname === '/content' || url.pathname.startsWith('/content/')) {
+    if (url.pathname === '/content' || url.pathname.startsWith('/content/') || url.pathname === '/resources' || url.pathname.startsWith('/resources/')) {
       return await handleContentRequest(req, res, url);
     }
     if (url.pathname === '/auth/register' && req.method === 'POST') {

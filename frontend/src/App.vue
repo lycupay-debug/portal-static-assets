@@ -41,6 +41,7 @@ type PortalContent = {
   favoriteCount?: number
 }
 type ContentVersion = { versionId: string; versionNumber: number; title: string; slug: string; status: PortalContent['status']; createdAt: string }
+type TeachingResource = { id: string; title: string; description: string; filename: string; mimeType: string; fileSize: number; createdAt: string; updatedAt?: string; deletedAt?: string }
 type ContentForm = {
   title: string
   slug: string
@@ -169,6 +170,15 @@ const contentEditorOpen = ref(false)
 const editingContentId = ref<string | null>(null)
 const contentError = ref('')
 const contentNotice = ref('')
+const teachingResources = ref<TeachingResource[]>([])
+const teachingResourceTrash = ref<TeachingResource[]>([])
+const resourceViewMode = ref<'active' | 'trash'>('active')
+const resourceDialogOpen = ref(false)
+const resourceBusy = ref(false)
+const resourceError = ref('')
+const resourceTitle = ref('')
+const resourceDescription = ref('')
+const resourceFile = ref<File | null>(null)
 watch(authError, (message) => { if (message) portalNotify.error(message, '登录或注册失败') }, { flush: 'sync' })
 watch(authNotice, (message) => { if (message) portalNotify.info(message) }, { flush: 'sync' })
 watch(contentError, (message) => { if (message) portalNotify.error(message, '内容操作失败') }, { flush: 'sync' })
@@ -390,7 +400,9 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       favoriteCount: item.favoriteCount ?? 0,
       actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
     }))
-  : [])
+  : activeAccountSection.value === 'teaching-resources'
+    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.filename.split('.').pop()?.toUpperCase() || '文件', course: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
+    : [])
 const filteredTableRecords = computed(() => {
   const keyword = tableQuery.value.trim().toLocaleLowerCase()
   if (!keyword) return tableRecords.value
@@ -476,6 +488,50 @@ function switchContentView(mode: 'active' | 'trash') {
   tableQuery.value = ''
   void loadContentList()
 }
+async function loadTeachingResources() {
+  resourceBusy.value = true; resourceError.value = ''
+  try {
+    const trash = resourceViewMode.value === 'trash'
+    const response = await fetch(trash ? '/api/resources/trash' : '/api/resources', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { items?: TeachingResource[]; error?: string }
+    if (!response.ok) throw new Error(result.error || '读取教学资源失败。')
+    if (trash) teachingResourceTrash.value = result.items || []; else teachingResources.value = result.items || []
+  } catch (error) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') }
+  finally { resourceBusy.value = false }
+}
+function openResourceDialog() { resourceTitle.value = ''; resourceDescription.value = ''; resourceFile.value = null; resourceError.value = ''; resourceDialogOpen.value = true }
+async function createTeachingResource() {
+  if (!resourceTitle.value.trim() || !resourceFile.value) { resourceError.value = '请填写资源名称并选择文件。'; return }
+  if (resourceFile.value.size > 25 * 1024 * 1024) { resourceError.value = '单个文件大小不能超过 25 MB。'; return }
+  resourceBusy.value = true; resourceError.value = ''
+  try {
+    const file = resourceFile.value
+    const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
+    const response = await fetch('/api/resources', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), filename: file.name, mimeType: file.type || 'application/octet-stream', data }) })
+    const result = await response.json() as { item?: TeachingResource; error?: string }
+    if (!response.ok) throw new Error(result.error || '创建资源失败。')
+    if (result.item) teachingResources.value = [result.item, ...teachingResources.value]
+    resourceDialogOpen.value = false; portalNotify.success('资源已保存到数据库。')
+  } catch (error) { resourceError.value = error instanceof Error ? error.message : '创建资源失败。' }
+  finally { resourceBusy.value = false }
+}
+async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 'permanent') {
+  const message = action === 'permanent' ? '永久删除后将同时删除服务器文件，无法恢复。确定继续？' : action === 'trash' ? '将该资源移入回收站？' : ''
+  if (message && !window.confirm(message)) return
+  resourceBusy.value = true
+  try {
+    const suffix = action === 'restore' ? '/restore' : action === 'permanent' ? '/permanent' : ''
+    const response = await fetch(`/api/resources/${encodeURIComponent(id)}${suffix}`, { method: action === 'restore' ? 'POST' : 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { error?: string }
+    if (!response.ok) throw new Error(result.error || '资源操作失败。')
+    await loadTeachingResources(); portalNotify.success(action === 'trash' ? '已移入回收站。' : action === 'restore' ? '资源已恢复。' : '资源及文件已永久删除。')
+  } catch (error) { portalNotify.error(error instanceof Error ? error.message : '资源操作失败。', '教学资源') }
+  finally { resourceBusy.value = false }
+}
+function switchResourceView() { resourceViewMode.value = resourceViewMode.value === 'active' ? 'trash' : 'active'; tableQuery.value = ''; void loadTeachingResources() }
+function downloadTeachingResource(id: string) { window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
+function formatFileSize(size: number) { return size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB` }
+
 async function initializeContentEditorRoute() {
   const id = contentEditorRouteId.value
   contentError.value = ''
@@ -963,6 +1019,7 @@ onMounted(() => {
     }
   })
   if (isAccountPage.value && activeAccountSection.value === 'content-management') void loadContentList()
+  if (isAccountPage.value && activeAccountSection.value === 'teaching-resources') void loadTeachingResources()
   if (isContentEditorPage.value) void initializeContentEditorRoute()
   void restoreScrollPosition()
 })
@@ -1293,6 +1350,10 @@ onBeforeUnmount(() => {
                   <button type="button" class="content-secondary-button" @click="switchContentView(contentViewMode === 'active' ? 'trash' : 'active')">{{ contentViewMode === 'active' ? '回收站' : '返回内容列表' }}</button>
                   <button v-if="contentViewMode === 'active'" type="button" class="content-primary-button" @click="openNewContent">新建内容</button>
                 </template>
+                <template v-else-if="activeAccountSection === 'teaching-resources'">
+                  <button type="button" class="content-secondary-button" :disabled="resourceBusy" @click="switchResourceView">{{ resourceViewMode === 'active' ? '回收站' : '返回资源列表' }}</button>
+                  <button v-if="resourceViewMode === 'active'" type="button" class="content-primary-button" @click="openResourceDialog">创建资源</button>
+                </template>
               </div>
             </div>
             <div ref="virtualTableScrollElement" class="virtual-table-scroll" :style="{ '--table-columns': tableColumnTemplate }" @scroll="onVirtualTableScroll">
@@ -1303,8 +1364,18 @@ onBeforeUnmount(() => {
                 <div class="virtual-table-spacer" :style="{ height: virtualTableTopSpace + 'px' }"></div>
                 <div v-for="(record, index) in visibleTableRecords" :key="String(record.id ?? (virtualTableStart + index))" class="virtual-table-row" role="row">
                   <template v-for="column in activeTableDefinition.columns" :key="column.key">
-                    <div v-if="column.key === 'actions' && activeAccountSection === 'content-management'" class="content-row-actions" role="cell">
-                      <template v-if="contentViewMode === 'trash'">
+                    <div v-if="column.key === 'actions' && (activeAccountSection === 'content-management' || activeAccountSection === 'teaching-resources')" class="content-row-actions" role="cell">
+                      <template v-if="activeAccountSection === 'teaching-resources'">
+                        <template v-if="resourceViewMode === 'trash'">
+                          <button type="button" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'restore')">恢复</button>
+                          <button type="button" class="content-danger-action" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'permanent')">永久删除</button>
+                        </template>
+                        <template v-else>
+                          <button type="button" :disabled="resourceBusy" @click="downloadTeachingResource(String(record.id))">下载</button>
+                          <button type="button" class="content-danger-action" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'trash')">删除</button>
+                        </template>
+                      </template>
+                      <template v-else-if="contentViewMode === 'trash'">
                         <button type="button" :disabled="contentBusy" @click="restoreDeletedContent(String(record.id))">恢复</button>
                         <button type="button" class="content-danger-action" :disabled="contentBusy" @click="permanentlyDeleteContent(String(record.id))">永久删除</button>
                       </template>
@@ -1321,7 +1392,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="virtual-table-spacer" :style="{ height: virtualTableBottomSpace + 'px' }"></div>
               </div>
-              <div v-else class="virtual-table-empty"><span class="virtual-table-empty-icon">▤</span><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? (contentViewMode === 'trash' ? '回收站为空。已删除内容可以恢复，也可以永久删除。' : '创建第一篇内容，保存为草稿后再发布。') : activeTableDefinition.note }}</p></div>
+              <div v-else class="virtual-table-empty"><span class="virtual-table-empty-icon">▤</span><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? (contentViewMode === 'trash' ? '回收站为空。已删除内容可以恢复，也可以永久删除。' : '创建第一篇内容，保存为草稿后再发布。') : activeAccountSection === 'teaching-resources' ? (resourceViewMode === 'trash' ? '资源回收站为空。' : '创建第一份教学资源，支持 PPT、MP3、PDF、Word 等文件。') : activeTableDefinition.note }}</p></div>
             </div>
           </section>
         </template>
@@ -1329,6 +1400,27 @@ onBeforeUnmount(() => {
     </main>
 
     <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
+
+    <div v-if="resourceDialogOpen" class="share-dialog-backdrop" @click.self="resourceDialogOpen = false" @keydown.esc="resourceDialogOpen = false">
+      <section class="share-dialog resource-create-dialog" role="dialog" aria-modal="true" aria-labelledby="resource-create-title">
+        <button type="button" class="share-dialog-close" aria-label="关闭" @click="resourceDialogOpen = false">×</button>
+        <span class="share-dialog-eyebrow">TEACHING LIBRARY</span>
+        <h2 id="resource-create-title">创建教学资源</h2>
+        <p>上传课件、听力音频或其他教学文件。文件最大 25 MB，保存后可下载或移入回收站。</p>
+        <form class="resource-create-form" @submit.prevent="createTeachingResource">
+          <label class="share-dialog-label" for="resource-title">资源名称</label>
+          <input id="resource-title" v-model="resourceTitle" class="share-dialog-url" maxlength="200" required placeholder="例如：七年级英语听力 Unit 1" />
+          <label class="share-dialog-label" for="resource-description">资源说明</label>
+          <textarea id="resource-description" v-model="resourceDescription" class="share-dialog-url resource-description-input" maxlength="2000" placeholder="关联课程、章节或使用说明（选填）"></textarea>
+          <label class="share-dialog-label" for="resource-file">上传文件</label>
+          <input id="resource-file" class="resource-file-input" type="file" accept=".ppt,.pptx,.mp3,.pdf,.doc,.docx,.txt" required @change="resourceFile = ($event.target as HTMLInputElement).files?.[0] || null" />
+          <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。</p>
+          <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}</p>
+          <p v-if="resourceError" class="resource-error">{{ resourceError }}</p>
+          <div class="resource-form-actions"><button type="button" class="content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? '正在上传…' : '保存资源' }}</button></div>
+        </form>
+      </section>
+    </div>
 
     <div v-if="selectedTableCell" class="table-cell-detail-backdrop" @click.self="selectedTableCell = null" @keydown.esc="selectedTableCell = null">
       <section class="table-cell-detail" role="dialog" aria-modal="true" :aria-label="selectedTableCell.label">

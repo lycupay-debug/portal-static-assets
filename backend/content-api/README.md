@@ -16,6 +16,13 @@
 
 | Method | Public path | Purpose |
 |---|---|---|
+| GET | `/api/resources` | 列出当前登录用户的教学资源 |
+| POST | `/api/resources` | 上传教学资源（PPT/PPTX、MP3、PDF、DOC/DOCX、TXT；单文件最大 25 MB） |
+| GET | `/api/resources/trash` | 列出当前用户资源回收站 |
+| DELETE | `/api/resources/:id` | 将本人资源移入回收站（软删除） |
+| POST | `/api/resources/:id/restore` | 恢复回收站中的资源 |
+| DELETE | `/api/resources/:id/permanent` | 永久删除回收站记录及服务器文件 |
+| GET | `/api/resources/:id/download` | 下载本人未删除的资源文件，需登录 |
 | GET | `/api/content` | 列出当前登录用户的内容，最多 500 条 |
 | GET | `/api/content/:id` | 读取本人内容详情 |
 | POST | `/api/content` | 创建草稿 |
@@ -53,3 +60,6 @@
 5. Verify unauthenticated management requests return 401, CRUD operations, public visibility rules, and that the publish validation event reaches `completed` with `valid=true`.
 
 Do not run migrations automatically from the application startup path.
+
+
+教学资源元数据保存在 `portal.teaching_resources`。资源文件存放于 Web 根目录之外的 `/var/db/personal-portal/resources`，下载接口校验登录用户所有权；移入回收站仅软删除元数据，永久删除才清理文件。迁移文件为 `backend/migrations/011_teaching_resources.sql`。

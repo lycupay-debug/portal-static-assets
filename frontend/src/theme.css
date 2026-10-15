@@ -1380,3 +1380,14 @@ body { overflow-x: clip; }
 .share-dialog-copy { border: 1px solid #202833; color: #fff; background: #202833; }
 .share-dialog-copy:hover { background: #344054; }
 @media (max-width: 480px) { .share-dialog { padding: 26px 20px 20px; border-radius: 18px; } .share-dialog h2 { font-size: 22px; } }
+
+/* Teaching resource creation dialog */
+.resource-create-dialog { width: min(100%, 540px); max-height: min(88vh, 860px); overflow-y: auto; }
+.resource-create-form { display: grid; gap: 10px; }
+.resource-description-input { min-height: 88px; resize: vertical; }
+.resource-file-input { display: block; width: 100%; padding: 12px; border: 1px dashed rgba(31,41,55,.2); border-radius: 12px; color: #394354; background: rgba(255,255,255,.55); font: inherit; font-size: 13px; }
+.resource-file-hint, .resource-selected-file, .resource-error { margin: 0 !important; font-size: 12px !important; }
+.resource-file-hint { color: #7b8492 !important; }
+.resource-selected-file { color: #394354 !important; overflow-wrap: anywhere; }
+.resource-error { color: #b42318 !important; }
+.resource-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }

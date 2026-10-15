@@ -52,6 +52,72 @@ async function handleContentRequest(req, res, url) {
   if (!user) return json(res, 401, { error: '请先登录后再管理内容。' });
 
   const path = url.pathname;
+  if (path === '/resources' && req.method === 'GET') {
+    const result = await pool.query(`SELECT resource_id AS "id", title, description, original_filename AS "filename", mime_type AS "mimeType", file_size AS "fileSize", created_at AS "createdAt", updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500`, [user.user_id]);
+    return json(res, 200, { items: result.rows });
+  }
+  if (path === '/resources/trash' && req.method === 'GET') {
+    const result = await pool.query(`SELECT resource_id AS "id", title, description, original_filename AS "filename", mime_type AS "mimeType", file_size AS "fileSize", created_at AS "createdAt", deleted_at AS "deletedAt" FROM portal.teaching_resources WHERE owner_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500`, [user.user_id]);
+    return json(res, 200, { items: result.rows });
+  }
+  if (path === '/resources' && req.method === 'POST') {
+    const body = await readBody(req, 36 * 1024 * 1024);
+    const title = String(body.title || '').trim(); const description = String(body.description || '').trim();
+    const filename = String(body.filename || '').replace(/[\\/\x00-\x1f\x7f]/g, '').trim().slice(0, 255);
+    const mime = String(body.mimeType || '').toLowerCase(); const data = String(body.data || '');
+    if (!title || [...title].length > 200 || description.length > 2000 || !filename || !data || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return json(res, 400, { error: '请填写有效的资源名称并选择文件。' });
+    const bytes = Buffer.from(data, 'base64');
+    if (!bytes.length || bytes.length > 25 * 1024 * 1024) return json(res, 413, { error: '单个文件大小不能超过 25 MB。' });
+    const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
+    const allowed = new Set(['ppt','pptx','mp3','pdf','doc','docx','txt']);
+    if (!allowed.has(ext)) return json(res, 400, { error: '支持的格式：PPT、PPTX、MP3、PDF、DOC、DOCX、TXT。' });
+    const signatures = {
+      ppt: b => b.length >= 8 && b.subarray(0,4).toString('hex') === 'd0cf11e0',
+      pptx: b => b.length >= 4 && b.subarray(0,4).toString('hex') === '504b0304',
+      doc: b => b.length >= 8 && b.subarray(0,4).toString('hex') === 'd0cf11e0',
+      docx: b => b.length >= 4 && b.subarray(0,4).toString('hex') === '504b0304',
+      mp3: b => b.length >= 3 && (b.subarray(0,3).toString('ascii') === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0)),
+      pdf: b => b.length >= 5 && b.subarray(0,5).toString('ascii') === '%PDF-',
+      txt: b => !b.subarray(0,Math.min(b.length,8192)).includes(0),
+    };
+    if (!signatures[ext](bytes)) return json(res, 400, { error: '文件内容与扩展名不匹配，上传已拒绝。' });
+    const fs = await import('node:fs/promises'); const pathModule = await import('node:path');
+    const uploadDir = process.env.PERSONAL_PORTAL_RESOURCE_DIR || '/var/db/personal-portal/resources';
+    const storedFilename = crypto.randomUUID() + '.' + ext;
+    await fs.mkdir(uploadDir, { recursive: true }); await fs.writeFile(pathModule.join(uploadDir, storedFilename), bytes, { flag: 'wx', mode: 0o640 });
+    try {
+      const result = await pool.query(`INSERT INTO portal.teaching_resources(owner_id,title,description,original_filename,stored_filename,mime_type,file_size) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING resource_id AS "id", title, description, original_filename AS "filename", mime_type AS "mimeType", file_size AS "fileSize", created_at AS "createdAt"`, [user.user_id,title,description,filename,storedFilename,mime,bytes.length]);
+      return json(res, 201, { item: result.rows[0] });
+    } catch (error) { await fs.unlink(pathModule.join(uploadDir,storedFilename)).catch(() => {}); throw error; }
+  }
+  const resourceAction = path.match(/^\/resources\/([0-9a-f-]{36})(?:\/(restore|permanent|download))?$/i);
+  if (resourceAction) {
+    const [, resourceId, action] = resourceAction;
+    if (req.method === 'POST' && action === 'restore') {
+      const result = await pool.query(`UPDATE portal.teaching_resources SET deleted_at=NULL,updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL RETURNING resource_id AS "id", title, description, original_filename AS "filename", mime_type AS "mimeType", file_size AS "fileSize", created_at AS "createdAt"`, [resourceId,user.user_id]);
+      return result.rowCount ? json(res,200,{item:result.rows[0]}) : json(res,404,{error:'资源不存在或无权恢复。'});
+    }
+    if (req.method === 'DELETE' && !action) {
+      const result = await pool.query(`UPDATE portal.teaching_resources SET deleted_at=now(),updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL RETURNING resource_id`, [resourceId,user.user_id]);
+      return result.rowCount ? json(res,200,{ok:true}) : json(res,404,{error:'资源不存在或已在回收站。'});
+    }
+    if (req.method === 'DELETE' && action === 'permanent') {
+      const result = await pool.query(`DELETE FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL RETURNING stored_filename`, [resourceId,user.user_id]);
+      if (!result.rowCount) return json(res,404,{error:'资源不存在或不在回收站。'});
+      const fs = await import('node:fs/promises'); const pathModule = await import('node:path');
+      await fs.unlink(pathModule.join(process.env.PERSONAL_PORTAL_RESOURCE_DIR || '/var/db/personal-portal/resources',result.rows[0].stored_filename)).catch(() => {});
+      return json(res,200,{ok:true});
+    }
+    if (req.method === 'GET' && action === 'download') {
+      const result = await pool.query(`SELECT stored_filename,original_filename,mime_type FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL`, [resourceId,user.user_id]);
+      if (!result.rowCount) return json(res,404,{error:'资源不存在或无权访问。'});
+      const fs = await import('node:fs'); const pathModule = await import('node:path');
+      const filePath = pathModule.join(process.env.PERSONAL_PORTAL_RESOURCE_DIR || '/var/db/personal-portal/resources',result.rows[0].stored_filename);
+      if (!fs.existsSync(filePath)) return json(res,404,{error:'资源文件缺失。'});
+      res.writeHead(200,{'Content-Type':result.rows[0].mime_type || 'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(result.rows[0].original_filename)}`,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'});
+      return fs.createReadStream(filePath).pipe(res);
+    }
+  }
   if (path === '/content/trash' && req.method === 'GET') {
     const result = await pool.query(
       `SELECT ${contentSelect}, deleted_at AS \"deletedAt\",
