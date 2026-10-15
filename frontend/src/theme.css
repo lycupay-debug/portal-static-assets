@@ -136,3 +136,44 @@ a:hover,button:hover,.section-card:hover,.section-card:hover .card-arrow,.main-n
   margin-right: 0;
   box-sizing: border-box;
 }
+
+/* Public resource directories */
+.directory-page { min-height: calc(100vh - 72px); padding: 0 clamp(24px, 7vw, 108px) 84px; }
+.directory-hero { max-width: 900px; padding: clamp(36px, 6vh, 72px) 0 34px; }
+.directory-back-link { display: inline-block; margin-bottom: 32px; color: #64738a; font-size: 14px; text-decoration: none; }
+.directory-hero .eyebrow { margin-bottom: 14px; }
+.directory-hero h1 { margin: 0; color: #171a21; font-size: clamp(38px, 5vw, 64px); line-height: 1.2; letter-spacing: -.045em; }
+.directory-hero h1 span { color: #71809a; }
+.directory-hero h2 { margin: 16px 0 12px; color: #3b4658; font-size: clamp(20px, 2.2vw, 28px); font-weight: 600; }
+.directory-description { max-width: 760px; margin: 0; color: #687181; font-size: 16px; line-height: 1.9; }
+.directory-section, .directory-published-section { padding: 28px 0 44px; border-top: 1px solid rgba(28,37,54,.09); }
+.directory-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
+.directory-section-heading .eyebrow { margin-bottom: 8px; }
+.directory-section-heading h2, .directory-coming-soon h2 { margin: 0; color: #20242c; font-size: clamp(24px, 2.6vw, 34px); letter-spacing: -.03em; }
+.directory-section-heading > span { padding-bottom: 4px; color: #858c99; font-size: 14px; white-space: nowrap; }
+.directory-tile-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.directory-tile { min-width: 0; min-height: 225px; padding: 22px; border: 1px solid rgba(28,37,54,.09); border-radius: 14px; background: rgba(255,255,255,.7); backdrop-filter: blur(14px); }
+.directory-tile-top { display: flex; justify-content: space-between; color: #8993a2; font-size: 14px; }
+.directory-tile h3 { margin: 28px 0 10px; color: #222833; font-size: 20px; letter-spacing: -.02em; }
+.directory-tile > p { min-height: 76px; margin: 0 0 16px; color: #697486; font-size: 14px; line-height: 1.8; }
+.directory-tile .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.directory-tile .tag-list span { padding: 4px 7px; border: 1px solid #e9edf3; border-radius: 6px; color: #687487; background: #f5f7fa; font-size: 12px; }
+.directory-published-section .published-content-grid { margin-top: 0; }
+.directory-empty { padding: 24px 0; color: #7b8594; font-size: 14px; line-height: 1.8; }
+.directory-coming-soon { padding: 32px; border: 1px solid rgba(28,37,54,.09); border-radius: 14px; background: rgba(255,255,255,.62); }
+.directory-coming-soon h2 { margin-bottom: 12px; }
+.directory-coming-soon > p:last-child { max-width: 700px; margin: 0; color: #687181; font-size: 15px; line-height: 1.9; }
+@media (max-width: 1050px) { .directory-tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .directory-page { padding: 0 20px 56px; }
+  .directory-hero { padding-top: 32px; }
+  .directory-back-link { margin-bottom: 24px; }
+  .directory-description { font-size: 14px; }
+  .directory-section, .directory-published-section { padding: 24px 0 30px; }
+  .directory-section-heading { align-items: flex-start; }
+  .directory-tile-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .directory-tile { min-height: 0; padding: 20px; }
+  .directory-tile h3 { margin-top: 20px; }
+  .directory-tile > p { min-height: 0; }
+  .directory-coming-soon { padding: 22px; }
+}

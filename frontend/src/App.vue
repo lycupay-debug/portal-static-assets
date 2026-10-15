@@ -389,6 +389,47 @@ const filteredSections = computed(() => {
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
+const directoryPages: Record<string, { eyebrow: string; title: string; subtitle: string; description: string }> = {
+  '/knowledge': { eyebrow: 'KNOWLEDGE & IDEAS', title: '知识广场', subtitle: '技术、经验、分析与教学', description: '汇集技术实践、经验分享、行业分析和教学文章，把值得留下的知识整理成可以持续查阅的内容。' },
+  '/education-resources': { eyebrow: 'LEARNING LIBRARY', title: '教育资源', subtitle: '让学习资料更容易找到', description: '集中整理课件讲义、英语听力、网课视频链接和其他学习资料。' },
+  '/homestays': { eyebrow: 'STAYS & HOMES', title: '民宿房源', subtitle: '发现值得分享的住宿空间', description: '用于展示民宿与短租房源，后续可逐步补充房源图片、位置、价格、入住说明和预订方式。' },
+  '/software-tools': { eyebrow: 'SOFTWARE & TOOLS', title: '软件工具', subtitle: '把实用工具集中起来', description: '整理在线工具、桌面软件、开发运维工具、文档处理服务和自动化资源。' },
+}
+const directoryTiles: Record<string, Array<{ number: string; title: string; description: string; tags: string[] }>> = {
+  '/knowledge': [
+    { number: '01', title: '技术实践', description: '开发笔记、系统架构、部署经验与问题排查。', tags: ['编程开发', '系统运维', '实践复盘'] },
+    { number: '02', title: '经验分享', description: '工具用法、工作方法与值得复用的经验。', tags: ['经验总结', '效率方法', '资源推荐'] },
+    { number: '03', title: '行业分析', description: '围绕行业变化、商业逻辑和具体问题展开分析。', tags: ['行业观察', '案例分析', '商业思考'] },
+    { number: '04', title: '教学文章', description: '教程、操作指南、学习路径与知识讲解。', tags: ['入门教程', '操作指南', '学习笔记'] },
+  ],
+  '/education-resources': [
+    { number: '01', title: '课件与讲义', description: '课堂课件、教学讲义、练习题和复习材料。', tags: ['PPT', '讲义', '练习题'] },
+    { number: '02', title: '听力材料', description: '英语及其他语言的听力音频、文本和训练素材。', tags: ['英语听力', '音频', '听力文本'] },
+    { number: '03', title: '网课视频', description: '整理公开课程、系列教学视频和在线学习入口。', tags: ['课程链接', '系列课程', '视频学习'] },
+    { number: '04', title: '学习资料', description: '电子书、参考资料、学习清单和辅助工具。', tags: ['电子资料', '学习清单', '参考链接'] },
+  ],
+  '/homestays': [
+    { number: '01', title: '城市民宿', description: '适合城市旅行、短期出差和周末出行的住宿空间。', tags: ['城市出行', '短期住宿', '交通便利'] },
+    { number: '02', title: '乡村与度假', description: '适合休闲度假、亲近自然和慢节奏旅行的房源。', tags: ['乡村体验', '度假住宿', '周边游'] },
+    { number: '03', title: '短租房源', description: '按入住周期整理的短租与灵活住宿信息。', tags: ['短租', '入住周期', '配套设施'] },
+    { number: '04', title: '房源信息说明', description: '后续房源详情可展示位置、价格、设施、规则和联系预订方式。', tags: ['房源图片', '价格说明', '预订方式'] },
+  ],
+  '/software-tools': [
+    { number: '01', title: '在线效率工具', description: '无需复杂安装即可使用的在线服务与小工具。', tags: ['在线工具', '效率提升', '实用网站'] },
+    { number: '02', title: '开发与运维', description: '面向开发、调试、部署和系统管理的工具。', tags: ['开发工具', '服务器', '网络诊断'] },
+    { number: '03', title: '文档与格式转换', description: '处理 PDF、图片、文本、表格和常见文件格式。', tags: ['文档处理', '格式转换', '文件管理'] },
+    { number: '04', title: 'AI 与自动化', description: '人工智能服务、工作流平台和重复任务自动化工具。', tags: ['AI 服务', '自动化', '工作流'] },
+  ],
+}
+const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
+const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
+const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
+const directoryContentItems = computed(() => {
+  const contentType = route.value === '/knowledge' ? 'article' : route.value === '/education-resources' ? 'resource' : route.value === '/software-tools' ? 'tool' : null
+  return contentType ? publicContents.value.filter((item) => item.contentType === contentType) : []
+})
+const directoryContentHeading = computed(() => route.value === '/knowledge' ? '最新文章' : route.value === '/education-resources' ? '已发布的学习资料' : '已发布的工具')
+
 
 function closeMenu() { menuOpen.value = false }
 function setRouteFromLocation() { route.value = window.location.pathname || '/' }
@@ -436,7 +477,7 @@ async function navigate(target: string) {
       return
     }
   }
-  if (route.value === '/') void loadPublicContents()
+  if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (route.value === '/' && window.location.hash) {
     await nextTick()
@@ -497,13 +538,13 @@ function onPopState() {
   setRouteFromLocation()
   closeMenu()
   authError.value = ''
-  if (route.value === '/') void loadPublicContents()
+  if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (route.value === '/account') void loadSession().then((valid) => { if (!valid) void navigate('/login') })
 }
 onMounted(() => {
   window.addEventListener('popstate', onPopState)
-  if (route.value === '/') void loadPublicContents()
+  if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   void loadSession().then((valid) => {
     if (route.value === '/account' && !valid) {
@@ -527,9 +568,13 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
        <span></span>
       </button>
       <nav class="main-nav" :class="{ 'is-open': menuOpen }" aria-label="主导航">
-        <a href="/#explore" @click.prevent="navigate('/#explore')">探索</a>
-        <a href="/#about" @click.prevent="navigate('/#about')">关于本站</a>
-        <a class="nav-contact" href="/#explore" @click.prevent="navigate('/#explore')">内容索引</a>
+        <a href="/#journal" @click.prevent="navigate('/#journal')">文章</a>
+        <a href="/knowledge" @click.prevent="navigate('/knowledge')">知识广场</a>
+        <a href="/education-resources" @click.prevent="navigate('/education-resources')">教育资源</a>
+        <a href="/homestays" @click.prevent="navigate('/homestays')">民宿房源</a>
+        <a href="/software-tools" @click.prevent="navigate('/software-tools')">软件工具</a>
+        <a href="/#explore" @click.prevent="navigate('/#explore')">资源目录</a>
+        <a href="/#about" @click.prevent="navigate('/#about')">关于</a>
         <a v-if="user" class="nav-auth" href="/account" @click.prevent="navigate('/account')">个人中心</a>
         <a v-else class="nav-auth" href="/login" @click.prevent="navigate('/login')">登录 / 注册</a>
       </nav>
@@ -577,6 +622,40 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         </div>
       </section>
       <section id="about" class="about-section"><div class="about-mark">P.</div><div class="about-copy"><p class="eyebrow">ABOUT THIS SPACE</p><h2>不是内容的终点，<br />而是持续实践的起点。</h2><p>这里将逐步收录公开的知识文章、在线工具、参考资料与项目记录。内容会在经过整理后发布；私人工作区与公开页面保持分离。</p></div><div class="about-meta"><span>DESIGNED TO GROW</span><span>Built with intention.</span></div></section>
+    </main>
+
+    <main v-else-if="isPublicDirectoryPage" class="directory-page">
+      <section class="directory-hero">
+        <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
+        <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
+        <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
+        <h2>{{ currentDirectoryPage.subtitle }}</h2>
+        <p class="directory-description">{{ currentDirectoryPage.description }}</p>
+      </section>
+      <section class="directory-section">
+        <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span></div>
+        <div class="directory-tile-grid">
+          <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile">
+            <div class="directory-tile-top"><span>{{ tile.number }}</span><span aria-hidden="true">↗</span></div>
+            <h3>{{ tile.title }}</h3>
+            <p>{{ tile.description }}</p>
+            <div class="tag-list"><span v-for="tag in tile.tags" :key="tag">{{ tag }}</span></div>
+          </article>
+        </div>
+      </section>
+      <section v-if="route === '/knowledge' || route === '/education-resources' || route === '/software-tools'" class="directory-published-section">
+        <div class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
+        <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
+        <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
+        <div v-else-if="directoryContentItems.length" class="published-content-grid">
+          <a v-for="(item, index) in directoryContentItems" :key="item.id" class="published-content-card" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
+            <div class="published-content-meta"><span class="published-content-type">{{ contentTypeLabels[item.contentType] }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
+            <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 ↗</span></div></div>
+          </a>
+        </div>
+        <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
+      </section>
+      <section v-else class="directory-published-section directory-coming-soon"><p class="eyebrow">LISTINGS COMING SOON</p><h2>房源内容正在整理中</h2><p>后续将在这里展示民宿图片、所在位置、价格、设施说明、入住规则及联系预订方式。</p></section>
     </main>
 
     <main v-else-if="isAuthPage" class="route-main">
