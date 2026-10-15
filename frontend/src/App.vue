@@ -287,6 +287,14 @@ function selectKnowledgeCategory(category: string, subcategory = '') {
   knowledgeSubcategory.value = subcategory
   knowledgeVisibleCount.value = knowledgePageSize
 }
+function handleKnowledgeCategoryOutsideClick(event: MouseEvent) {
+  if (!knowledgeCategoryHover.value) return
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (target.closest('.knowledge-segmented, .knowledge-category-popover')) return
+  knowledgeCategoryHover.value = ''
+}
+
 function toggleKnowledgeCategoryMenu(category: typeof knowledgeCategoryMenus[number], event: MouseEvent) {
   if (!category.children.length) {
     selectKnowledgeCategory(category.value)
@@ -851,6 +859,7 @@ function onPopState() {
   void restoreScrollPosition()
 }
 onMounted(() => {
+  document.addEventListener('click', handleKnowledgeCategoryOutsideClick)
   setRouteFromLocation()
   void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
@@ -870,6 +879,7 @@ onMounted(() => {
   void restoreScrollPosition()
 })
 onBeforeUnmount(() => {
+  document.removeEventListener('click', handleKnowledgeCategoryOutsideClick)
   saveScrollPosition()
   tableResizeObserver?.disconnect()
   window.removeEventListener('popstate', onPopState)
