@@ -350,20 +350,6 @@ function ensureKnowledgeListFilled() {
 }
 onUpdated(ensureKnowledgeListFilled)
 const publicArticle = ref<PublicContent | null>(null)
-const articleTocCollapsed = ref(false)
-const publicArticleDocument = computed(() => {
-  const source = publicArticle.value?.body || ''
-  const headings: Array<{ id: string; level: number; title: string }> = []
-  let index = 0
-  const html = renderMarkdown(source).replace(/<h([1-6])([^>]*)>([\s\S]*?)<\/h\1>/gi, (_match, rawLevel: string, attributes: string, inner: string) => {
-    const id = `article-heading-${index++}`
-    const title = inner.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
-    headings.push({ id, level: Number(rawLevel), title })
-    const cleanAttributes = attributes.replace(/\s+id=(?:"[^"]*"|'[^']*')/gi, '')
-    return `<h${rawLevel}${cleanAttributes} id="${id}">${inner}</h${rawLevel}>`
-  })
-  return { html, headings }
-})
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
 const publicInteractionBusy = ref(false)
@@ -1166,17 +1152,7 @@ onBeforeUnmount(() => {
 
     <main v-else-if="isPublicContentPage" class="public-content-page">
       <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
-      <section v-else-if="publicArticle" class="public-article-layout" :class="{ 'toc-collapsed': articleTocCollapsed }">
-        <aside class="public-article-toc" aria-label="文章目录">
-          <div class="public-article-toc-heading">
-            <strong>目录</strong>
-            <button type="button" class="public-article-toc-toggle" :aria-expanded="!articleTocCollapsed" :aria-label="articleTocCollapsed ? '展开文章目录' : '收起文章目录'" @click="articleTocCollapsed = !articleTocCollapsed">{{ articleTocCollapsed ? '展开' : '收起' }}</button>
-          </div>
-          <nav v-if="!articleTocCollapsed" class="public-article-toc-list" aria-label="文章标题导航">
-            <a v-for="heading in publicArticleDocument.headings" :key="heading.id" :href="`#${heading.id}`" :class="`toc-level-${heading.level}`">{{ heading.title }}</a>
-            <p v-if="!publicArticleDocument.headings.length" class="public-article-toc-empty">本文暂无标题目录</p>
-          </nav>
-        </aside>
+      <section v-else-if="publicArticle" class="public-article-layout">
         <article class="public-article">
           <header class="public-article-route-header" aria-label="文章信息">
             <span class="public-article-route-type">{{ publicArticle.tags?.length ? publicArticle.tags.join(' · ') : contentTypeLabels[publicArticle.contentType] }}</span>
@@ -1184,7 +1160,7 @@ onBeforeUnmount(() => {
           </header>
           <h1>{{ publicArticle.title }}</h1>
           <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
-          <div class="public-article-body markdown-rendered" v-html="publicArticleDocument.html"></div>
+          <div class="public-article-body markdown-rendered" v-html="renderMarkdown(publicArticle.body)"></div>
         </article>
         <aside class="public-article-sidebar" aria-label="作者信息与文章操作">
           <section class="public-author-card">
