@@ -720,7 +720,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
             </div>
             <div v-else class="virtual-table-empty"><strong>暂无历史版本</strong><p>保存第一次有效修改后，这里会出现可恢复的历史版本。</p></div>
           </section>
-          <section v-else-if="activeTableDefinition" class="virtual-table-panel">
+          <section v-else-if="activeTableDefinition" class="virtual-table-panel" style="margin-right: unset; margin-left: 0px;">
             <div class="virtual-table-toolbar">
               <div class="virtual-table-heading"><h2>{{ activeTableDefinition.title }}</h2><span class="virtual-table-count">{{ contentLoading && activeAccountSection === 'content-management' ? '正在加载…' : filteredTableRecords.length + ' 条记录' }}</span></div>
               <div class="content-toolbar-actions">
