@@ -200,6 +200,10 @@ function selectKnowledgeCategory(category: string, subcategory = '') {
   knowledgeSubcategory.value = subcategory
   knowledgeVisibleCount.value = knowledgePageSize
 }
+function scrollKnowledgeCategories(direction: number) {
+  const carousel = document.querySelector('.directory-tile-carousel') as HTMLElement | null
+  if (carousel) carousel.scrollBy({ left: direction * Math.max(260, carousel.clientWidth * 0.78), behavior: 'smooth' })
+}
 function loadMoreKnowledge() {
   if (route.value === '/knowledge' && knowledgeVisibleCount.value < knowledgeFilteredItems.value.length) {
     knowledgeVisibleCount.value = Math.min(knowledgeVisibleCount.value + knowledgePageSize, knowledgeFilteredItems.value.length)
@@ -859,9 +863,19 @@ onBeforeUnmount(() => {
         <h2>{{ currentDirectoryPage.subtitle }}</h2>
         <p class="directory-description">{{ currentDirectoryPage.description }}</p>
       </section>
-      <section class="directory-section">
-        <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span></div>
-        <div class="directory-tile-grid">
+      <section class="directory-section" :class="{ 'knowledge-category-section': route === '/knowledge' }">
+        <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><div class="directory-carousel-controls"><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span><template v-if="route === '/knowledge'"><button type="button" aria-label="向左浏览分类" @click="scrollKnowledgeCategories(-1)">←</button><button type="button" aria-label="向右浏览分类" @click="scrollKnowledgeCategories(1)">→</button></template></div></div>
+        <div v-if="route === '/knowledge'" class="directory-tile-carousel" aria-label="知识文章主题分类">
+          <div class="directory-tile-track">
+            <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile">
+              <div class="directory-tile-top"><span>{{ tile.number }}</span><span aria-hidden="true">↗</span></div>
+              <h3>{{ tile.title }}</h3>
+              <p>{{ tile.description }}</p>
+              <div class="tag-list"><span v-for="tag in tile.tags" :key="tag">{{ tag }}</span></div>
+            </article>
+          </div>
+        </div>
+        <div v-else class="directory-tile-grid">
           <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile">
             <div class="directory-tile-top"><span>{{ tile.number }}</span><span aria-hidden="true">↗</span></div>
             <h3>{{ tile.title }}</h3>
