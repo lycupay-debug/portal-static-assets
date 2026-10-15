@@ -294,10 +294,20 @@ function submitKnowledgeSearch() {
 }
 
 const visibleDirectoryContentItems = computed(() => knowledgeFilteredItems.value.slice(0, knowledgeVisibleCount.value))
+function syncKnowledgeFilterToUrl() {
+  if (route.value !== '/knowledge') return
+  const url = new URL(window.location.href)
+  if (knowledgeCategory.value === 'recent') url.searchParams.delete('category')
+  else url.searchParams.set('category', knowledgeCategory.value)
+  if (knowledgeSubcategory.value) url.searchParams.set('subcategory', knowledgeSubcategory.value)
+  else url.searchParams.delete('subcategory')
+  history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
 function selectKnowledgeCategory(category: string, subcategory = '') {
   knowledgeCategory.value = category
   knowledgeSubcategory.value = subcategory
   knowledgeVisibleCount.value = knowledgePageSize
+  syncKnowledgeFilterToUrl()
 }
 const selectedKnowledgeCategoryLabel = computed(() => {
   if (knowledgeSubcategory.value) return knowledgeSubcategory.value
@@ -710,6 +720,17 @@ function setRouteFromLocation() {
   const rawPath = decodeURI(window.location.pathname || '/')
   const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath
   route.value = routeAliases[pathname] || pathname
+  if (route.value === '/knowledge') {
+    const params = new URLSearchParams(window.location.search)
+    const requestedCategory = params.get('category') || 'recent'
+    const validCategory = knowledgeCategoryMenus.some(category => category.value === requestedCategory)
+    const category = validCategory ? requestedCategory : 'recent'
+    const requestedSubcategory = params.get('subcategory') || ''
+    const categoryDefinition = knowledgeCategoryMenus.find(item => item.value === category)
+    knowledgeCategory.value = category
+    knowledgeSubcategory.value = categoryDefinition?.children.includes(requestedSubcategory) ? requestedSubcategory : ''
+    knowledgeVisibleCount.value = knowledgePageSize
+  }
   if (isAccountPage.value) {
     const section = routeSections[route.value] || 'overview'
     activeAccountSection.value = section
@@ -1064,7 +1085,6 @@ onBeforeUnmount(() => {
     <main v-else-if="isPublicContentPage" class="public-content-page">
       <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
       <section v-else-if="publicArticle" class="public-article">
-        <a class="public-article-back" href="/" @click.prevent="navigate('/')">← 返回首页</a>
         <p class="public-article-type">{{ contentTypeLabels[publicArticle.contentType] }} <span>·</span> {{ publicArticle.publishedAt ? new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') : '' }}</p>
         <h1>{{ publicArticle.title }}</h1>
         <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
@@ -2079,7 +2099,6 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .published-content-empty { padding: 22px; border-radius: 14px; color: #71849a; background: rgba(245,249,255,.35); font-size: 14px; }
 .public-content-page { min-height: 76vh; padding: clamp(32px, 7vw, 82px) 24px; }
 .public-article { width: min(100%, 900px); margin: 0 auto; }
-.public-article-back { display: inline-block; margin-bottom: 36px; color: #527caf; font-size: 14px; text-decoration: none; }
 .public-article-type { margin: 0 0 15px; color: #527caf; font-size: 14px; font-weight: 650; }
 .public-article-type span { padding: 0 6px; color: #8a98a8; }
 .public-article h1 { margin: 0; color: #263e58; font-size: clamp(34px, 5vw, 58px); line-height: 1.25; letter-spacing: -.04em; overflow-wrap: anywhere; }
@@ -2122,7 +2141,6 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
   .published-content-grid { grid-template-columns: 1fr; gap: 10px; }
   .published-content-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .public-content-page { padding: 30px 20px 56px; }
-  .public-article-back { margin-bottom: 28px; }
   .public-article-summary { font-size: 15px; }
   .public-article-body { margin-top: 28px; font-size: 15px; }
   .content-markdown-workspace { grid-template-columns: minmax(0, 1fr); }
