@@ -172,6 +172,8 @@ const knowledgePageSize = 10
 const knowledgeCategory = ref('recent')
 const knowledgeSubcategory = ref('')
 const knowledgeCategoryHover = ref('')
+const knowledgeCategoryPopoverStyle = ref({ top: '0px', left: '0px' })
+const activeKnowledgeCategoryMenu = computed(() => knowledgeCategoryMenus.find(category => category.value === knowledgeCategoryHover.value) ?? null)
 const knowledgeSearchQuery = ref('')
 const knowledgeSearchOpen = ref(false)
 const knowledgeCategoryMenus = [
@@ -284,6 +286,23 @@ function selectKnowledgeCategory(category: string, subcategory = '') {
   knowledgeCategory.value = category
   knowledgeSubcategory.value = subcategory
   knowledgeVisibleCount.value = knowledgePageSize
+}
+function toggleKnowledgeCategoryMenu(category: typeof knowledgeCategoryMenus[number], event: MouseEvent) {
+  if (!category.children.length) {
+    selectKnowledgeCategory(category.value)
+    knowledgeCategoryHover.value = ''
+    return
+  }
+  if (knowledgeCategoryHover.value === category.value) {
+    knowledgeCategoryHover.value = ''
+    return
+  }
+  const trigger = event.currentTarget as HTMLElement
+  const rect = trigger.getBoundingClientRect()
+  const menuWidth = 220
+  const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - menuWidth - 12))
+  knowledgeCategoryPopoverStyle.value = { top: `${rect.bottom + 7}px`, left: `${left}px` }
+  knowledgeCategoryHover.value = category.value
 }
 function scrollKnowledgeCategories(direction: number) {
   const carousel = document.querySelector('.directory-tile-carousel') as HTMLElement | null
@@ -963,10 +982,7 @@ onBeforeUnmount(() => {
           <div class="knowledge-toolbar-controls">
             <div class="knowledge-segmented" role="tablist" aria-label="文章分类筛选">
               <div v-for="category in knowledgeCategoryMenus" :key="category.value" class="knowledge-segment-wrap" :class="{ 'is-active': knowledgeCategory === category.value }">
-                <button type="button" role="tab" class="knowledge-segment" :aria-selected="knowledgeCategory === category.value" :aria-haspopup="category.children.length ? 'menu' : undefined" :aria-expanded="category.children.length ? knowledgeCategoryHover === category.value : undefined" @click="category.children.length ? (knowledgeCategoryHover = knowledgeCategoryHover === category.value ? '' : category.value) : (selectKnowledgeCategory(category.value), knowledgeCategoryHover = '')">{{ category.label }}<span v-if="category.children.length" class="knowledge-segment-chevron">v</span></button>
-                <div v-if="category.children.length && knowledgeCategoryHover === category.value" class="knowledge-category-popover" role="menu">
-                  <button v-for="child in category.children" :key="child" type="button" role="menuitem" :class="{ selected: knowledgeCategory === category.value && knowledgeSubcategory === child }" @click="selectKnowledgeCategory(category.value, child); knowledgeCategoryHover = ''">{{ child }}<span v-if="knowledgeCategory === category.value && knowledgeSubcategory === child">✓</span></button>
-                </div>
+                <button type="button" role="tab" class="knowledge-segment" :aria-selected="knowledgeCategory === category.value" :aria-haspopup="category.children.length ? 'menu' : undefined" :aria-expanded="category.children.length ? knowledgeCategoryHover === category.value : undefined" @click="toggleKnowledgeCategoryMenu(category, $event)">{{ category.label }}</button>
               </div>
             </div>
             <span class="knowledge-toolbar-splitter" aria-hidden="true"></span>
@@ -992,6 +1008,11 @@ onBeforeUnmount(() => {
                 </div>
               </template>
             </el-autocomplete>
+            <Teleport to="body">
+              <div v-if="activeKnowledgeCategoryMenu" class="knowledge-category-popover" role="menu" :style="knowledgeCategoryPopoverStyle">
+                <button v-for="child in activeKnowledgeCategoryMenu.children" :key="child" type="button" role="menuitem" :class="{ selected: knowledgeCategory === activeKnowledgeCategoryMenu.value && knowledgeSubcategory === child }" @click="selectKnowledgeCategory(activeKnowledgeCategoryMenu.value, child); knowledgeCategoryHover = ''">{{ child }}<span v-if="knowledgeCategory === activeKnowledgeCategoryMenu.value && knowledgeSubcategory === child">✓</span></button>
+              </div>
+            </Teleport>
           </div>
         </div>
         <div v-else class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>

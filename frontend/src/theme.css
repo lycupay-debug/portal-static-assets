@@ -1267,7 +1267,7 @@ body { overflow-x: clip; }
 .knowledge-segment-wrap.is-active > .knowledge-segment { color: #17191d; background: #ffd100; box-shadow: 0 1px 2px rgba(20, 20, 20, .06); }
 .knowledge-segment:hover { color: #17191d; }
 .knowledge-segment-chevron { color: #777b83; font-size: 13px; line-height: 1; }
-.knowledge-category-popover { position: absolute; z-index: 1000; top: calc(100% + 7px); left: 0; display: grid; min-width: 178px; max-height: min(340px, 60vh); overflow: auto; padding: 6px; border: 1px solid rgba(28, 32, 40, .09); border-radius: 12px; background: rgba(255, 255, 255, .96); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); box-shadow: 0 14px 38px rgba(20, 26, 36, .13); }
+.knowledge-category-popover { position: fixed; z-index: 2147483000; display: grid; min-width: 178px; max-height: min(340px, 60vh); overflow: auto; padding: 6px; border: 1px solid rgba(28, 32, 40, .09); border-radius: 12px; background: rgba(255, 255, 255, .96); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); box-shadow: 0 14px 38px rgba(20, 26, 36, .13); }
 .knowledge-category-popover button { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 36px; padding: 7px 10px; border: 0; border-radius: 7px; color: #343840; background: transparent; text-align: left; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .knowledge-category-popover button:hover, .knowledge-category-popover button.selected { color: #17191d; background: rgba(255, 209, 0, .22); }
 @media (max-width: 760px) {
@@ -1275,7 +1275,7 @@ body { overflow-x: clip; }
   .knowledge-toolbar-controls { gap: 10px; }
   .knowledge-segmented { width: 100%; justify-content: flex-start; border-radius: 13px; }
   .knowledge-segment { min-height: 34px; padding: 0 12px; }
-  .knowledge-category-popover { position: fixed; top: auto; left: 12px; right: 12px; bottom: 18px; min-width: 0; max-height: 45vh; }
+  .knowledge-category-popover { left: 12px !important; right: 12px; top: auto !important; bottom: 18px; min-width: 0; max-height: 45vh; }
 }
 
 /* Knowledge page: compact category tabs with search aligned on the right. */
