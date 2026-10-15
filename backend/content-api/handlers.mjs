@@ -54,7 +54,9 @@ async function handleContentRequest(req, res, url) {
   const path = url.pathname;
   if (path === '/content/trash' && req.method === 'GET') {
     const result = await pool.query(
-      `SELECT ${contentSelect}, deleted_at AS \"deletedAt\"
+      `SELECT ${contentSelect}, deleted_at AS \"deletedAt\",
+         (SELECT COUNT(*)::int FROM portal.portal_content_interactions i WHERE i.content_id = portal.portal_content.content_id AND i.interaction_type = 'like') AS \"likeCount\",
+         (SELECT COUNT(*)::int FROM portal.portal_content_interactions i WHERE i.content_id = portal.portal_content.content_id AND i.interaction_type = 'favorite') AS \"favoriteCount\"
        FROM portal.portal_content WHERE author_id = $1 AND deleted_at IS NOT NULL
        ORDER BY deleted_at DESC, content_id DESC LIMIT 500`, [user.user_id]);
     return json(res, 200, { items: result.rows });
