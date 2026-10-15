@@ -183,6 +183,46 @@ const knowledgeCategoryMenus = [
   { value: 'programming', label: '编程', children: ['前端开发', '后端开发', 'Python', 'JavaScript / TypeScript', '数据库', 'API 与集成', '代码实践'] },
   { value: 'software', label: '软件工具', children: ['效率工具', '开发工具', '文档工具', 'AI 工具', '自动化工具'] },
 ]
+function knowledgeEditDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let i = 1; i <= left.length; i++) {
+    const current = [i]
+    for (let j = 1; j <= right.length; j++) current[j] = Math.min((current[j - 1] ?? i) + 1, (previous[j] ?? j) + 1, (previous[j - 1] ?? i + j) + ((left[i - 1] ?? '') === (right[j - 1] ?? '') ? 0 : 1))
+    for (let j = 0; j < current.length; j++) previous[j] = current[j] ?? j
+  }
+  return previous[right.length] ?? right.length
+}
+function knowledgeFuzzyMatch(source: string, query: string) {
+  const text = source.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, '')
+  const term = query.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, '')
+  if (!term || text.includes(term)) return true
+  // Character-order matching helps Chinese partial phrases with omitted characters.
+  let position = 0
+  for (const character of term) {
+    position = text.indexOf(character, position)
+    if (position < 0) break
+    position++
+  }
+  if (position > 0) {
+    let check = 0
+    let matched = true
+    for (const character of term) { check = text.indexOf(character, check); if (check < 0) { matched = false; break } check++ }
+    if (matched) return true
+  }
+  // Allow small spelling mistakes in longer queries using a bounded-length window.
+  const chars = Array.from(text)
+  const termChars = Array.from(term)
+  if (termChars.length >= 4) {
+    const tolerance = termChars.length >= 7 ? 2 : 1
+    for (let start = 0; start < chars.length; start++) {
+      for (let size = Math.max(1, termChars.length - tolerance); size <= termChars.length + tolerance && start + size <= chars.length; size++) {
+        if (knowledgeEditDistance(termChars.join(''), chars.slice(start, start + size).join('')) <= tolerance) return true
+      }
+    }
+  }
+  return false
+}
+
 const knowledgeFilteredItems = computed(() => {
   const items = [...directoryContentItems.value]
   let filtered = items
@@ -194,10 +234,10 @@ const knowledgeFilteredItems = computed(() => {
       programming: ['编程', '代码', 'Python', 'JavaScript', 'TypeScript', 'API', '数据库'], software: ['软件', '工具', '效率', '自动化', 'AI'],
     }
     const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(terms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
-    filtered = filtered.filter(item => keywords.some(keyword => `${item.title} ${item.summary || ''}`.toLocaleLowerCase().includes(keyword)))
+    filtered = filtered.filter(item => keywords.some(keyword => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, keyword)))
   }
   const searchTerm = knowledgeSearchQuery.value.trim().toLocaleLowerCase()
-  if (searchTerm) filtered = filtered.filter(item => `${item.title} ${item.summary || ''}`.toLocaleLowerCase().includes(searchTerm))
+  if (searchTerm) filtered = filtered.filter(item => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, searchTerm))
   return filtered.sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
 })
 const knowledgeSearchSuggestions = computed(() => {
@@ -208,7 +248,7 @@ const knowledgeSearchSuggestions = computed(() => {
     ...category.children.map(child => ({ label: child, kind: 'theme' as const })),
   ])
   const articles = directoryContentItems.value.map(item => ({ label: item.title, kind: 'article' as const, slug: item.slug, summary: item.summary || '' }))
-  const matches = [...themes, ...articles].filter(item => `${item.label} ${'summary' in item ? item.summary : ''}`.toLocaleLowerCase().includes(term))
+  const matches = [...themes, ...articles].filter(item => knowledgeFuzzyMatch(`${item.label} ${'summary' in item ? item.summary : ''}`, term))
   return matches.filter((item, index) => matches.findIndex(other => other.label === item.label) === index).slice(0, 8)
 })
 function chooseKnowledgeSuggestion(suggestion: (typeof knowledgeSearchSuggestions.value)[number]) {
@@ -891,45 +931,16 @@ onBeforeUnmount(() => {
     </main>
 
     <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge' }">
-      <section class="directory-hero" :class="{ 'knowledge-search-hero': route === '/knowledge' }">
-        <template v-if="route === '/knowledge'">
-          <p class="eyebrow">KNOWLEDGE &amp; IDEAS</p>
-          <h1>按主题搜索<span>.</span></h1>
-          <form class="knowledge-search-form" role="search" @submit.prevent="submitKnowledgeSearch">
-            <span class="knowledge-search-icon" aria-hidden="true">⌕</span>
-            <input v-model="knowledgeSearchQuery" type="search" autocomplete="off" aria-label="按主题搜索知识文章" placeholder="搜索主题、关键词或文章标题…" @focus="knowledgeSearchOpen = true" @input="knowledgeSearchOpen = true; knowledgeVisibleCount = knowledgePageSize" @keydown.esc="knowledgeSearchOpen = false" />
-            <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeSearchOpen = false">×</button>
-            <div v-if="knowledgeSearchOpen && knowledgeSearchSuggestions.length" class="knowledge-search-suggestions" role="listbox" aria-label="搜索建议">
-              <button v-for="suggestion in knowledgeSearchSuggestions" :key="`${suggestion.kind}-${suggestion.label}`" type="button" role="option" class="knowledge-search-suggestion" @mousedown.prevent="chooseKnowledgeSuggestion(suggestion)">
-                <span class="knowledge-suggestion-kind">{{ suggestion.kind === 'theme' ? '主题' : '文章' }}</span>
-                <span class="knowledge-suggestion-copy"><strong>{{ suggestion.label }}</strong><small v-if="'summary' in suggestion && suggestion.summary">{{ suggestion.summary }}</small></span>
-                <span class="knowledge-suggestion-arrow">↗</span>
-              </button>
-            </div>
-          </form>
-          <p class="knowledge-search-hint">输入关键词，实时筛选文章；也可以从补全建议中直接选择主题或文章。</p>
-        </template>
-        <template v-else>
-          <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
-          <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
-          <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
-          <h2>{{ currentDirectoryPage.subtitle }}</h2>
-          <p class="directory-description">{{ currentDirectoryPage.description }}</p>
-        </template>
+      <section v-if="route !== '/knowledge'" class="directory-hero">
+        <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
+        <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
+        <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
+        <h2>{{ currentDirectoryPage.subtitle }}</h2>
+        <p class="directory-description">{{ currentDirectoryPage.description }}</p>
       </section>
-      <section class="directory-section" :class="{ 'knowledge-category-section': route === '/knowledge' }">
-        <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><div class="directory-carousel-controls"><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span><template v-if="route === '/knowledge'"><button type="button" aria-label="向左浏览分类" @click="scrollKnowledgeCategories(-1)">←</button><button type="button" aria-label="向右浏览分类" @click="scrollKnowledgeCategories(1)">→</button></template></div></div>
-        <div v-if="route === '/knowledge'" class="directory-tile-carousel" aria-label="知识文章主题分类">
-          <div class="directory-tile-track">
-            <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile">
-              <div class="directory-tile-top"><span>{{ tile.number }}</span><span aria-hidden="true">↗</span></div>
-              <h3>{{ tile.title }}</h3>
-              <p>{{ tile.description }}</p>
-              <div class="tag-list"><span v-for="tag in tile.tags" :key="tag">{{ tag }}</span></div>
-            </article>
-          </div>
-        </div>
-        <div v-else class="directory-tile-grid">
+      <section v-if="route !== '/knowledge'" class="directory-section">
+        <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span></div>
+        <div class="directory-tile-grid">
           <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile">
             <div class="directory-tile-top"><span>{{ tile.number }}</span><span aria-hidden="true">↗</span></div>
             <h3>{{ tile.title }}</h3>
@@ -940,13 +951,27 @@ onBeforeUnmount(() => {
       </section>
       <section v-if="route === '/knowledge' || route === '/education-resources' || route === '/software-tools'" class="directory-published-section">
         <div v-if="route === '/knowledge'" class="directory-section-heading knowledge-toolbar" aria-label="文章分类">
-          <div class="knowledge-segmented" role="tablist" aria-label="文章分类筛选">
-            <div v-for="category in knowledgeCategoryMenus" :key="category.value" class="knowledge-segment-wrap" :class="{ 'is-active': knowledgeCategory === category.value }" @mouseenter="category.children.length && (knowledgeCategoryHover = category.value)" @mouseleave="knowledgeCategoryHover = ''">
-              <button type="button" role="tab" class="knowledge-segment" :aria-selected="knowledgeCategory === category.value" @click="category.children.length ? (knowledgeCategoryHover = category.value) : selectKnowledgeCategory(category.value)">{{ category.label }}<span v-if="category.children.length" class="knowledge-segment-chevron">⌄</span></button>
-              <div v-if="category.children.length && knowledgeCategoryHover === category.value" class="knowledge-category-popover" role="menu">
-                <button v-for="child in category.children" :key="child" type="button" role="menuitem" :class="{ selected: knowledgeCategory === category.value && knowledgeSubcategory === child }" @click="selectKnowledgeCategory(category.value, child); knowledgeCategoryHover = ''">{{ child }}<span v-if="knowledgeCategory === category.value && knowledgeSubcategory === child">✓</span></button>
+          <div class="knowledge-toolbar-controls">
+            <div class="knowledge-segmented" role="tablist" aria-label="文章分类筛选">
+              <div v-for="category in knowledgeCategoryMenus" :key="category.value" class="knowledge-segment-wrap" :class="{ 'is-active': knowledgeCategory === category.value }" @mouseenter="category.children.length && (knowledgeCategoryHover = category.value)" @mouseleave="knowledgeCategoryHover = ''">
+                <button type="button" role="tab" class="knowledge-segment" :aria-selected="knowledgeCategory === category.value" @click="category.children.length ? (knowledgeCategoryHover = category.value) : selectKnowledgeCategory(category.value)">{{ category.label }}<span v-if="category.children.length" class="knowledge-segment-chevron">⌄</span></button>
+                <div v-if="category.children.length && knowledgeCategoryHover === category.value" class="knowledge-category-popover" role="menu">
+                  <button v-for="child in category.children" :key="child" type="button" role="menuitem" :class="{ selected: knowledgeCategory === category.value && knowledgeSubcategory === child }" @click="selectKnowledgeCategory(category.value, child); knowledgeCategoryHover = ''">{{ child }}<span v-if="knowledgeCategory === category.value && knowledgeSubcategory === child">✓</span></button>
+                </div>
               </div>
             </div>
+            <form class="knowledge-search-form" role="search" @submit.prevent="submitKnowledgeSearch">
+              <span class="knowledge-search-icon" aria-hidden="true">⌕</span>
+              <input v-model="knowledgeSearchQuery" type="search" autocomplete="off" aria-label="模糊搜索知识文章" placeholder="搜索文章…" @focus="knowledgeSearchOpen = true" @input="knowledgeSearchOpen = true; knowledgeVisibleCount = knowledgePageSize" @keydown.esc="knowledgeSearchOpen = false" />
+              <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeSearchOpen = false; knowledgeVisibleCount = knowledgePageSize">×</button>
+              <div v-if="knowledgeSearchOpen && knowledgeSearchSuggestions.length" class="knowledge-search-suggestions" role="listbox" aria-label="搜索建议">
+                <button v-for="suggestion in knowledgeSearchSuggestions" :key="`${suggestion.kind}-${suggestion.label}`" type="button" role="option" class="knowledge-search-suggestion" @mousedown.prevent="chooseKnowledgeSuggestion(suggestion)">
+                  <span class="knowledge-suggestion-kind">{{ suggestion.kind === 'theme' ? '主题' : '文章' }}</span>
+                  <span class="knowledge-suggestion-copy"><strong>{{ suggestion.label }}</strong><small v-if="'summary' in suggestion && suggestion.summary">{{ suggestion.summary }}</small></span>
+                  <span class="knowledge-suggestion-arrow">↗</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
         <div v-else class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
