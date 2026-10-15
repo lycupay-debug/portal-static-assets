@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { renderMarkdown } from './utils/markdown'
+import NotificationHost from './components/NotificationHost.vue'
+import { portalNotify } from './utils/notification'
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
 type PortalSection = {
@@ -128,6 +130,10 @@ const contentEditorOpen = ref(false)
 const editingContentId = ref<string | null>(null)
 const contentError = ref('')
 const contentNotice = ref('')
+watch(authError, (message) => { if (message) portalNotify.error(message, '登录或注册失败') }, { flush: 'sync' })
+watch(authNotice, (message) => { if (message) portalNotify.info(message) }, { flush: 'sync' })
+watch(contentError, (message) => { if (message) portalNotify.error(message, '内容操作失败') }, { flush: 'sync' })
+watch(contentNotice, (message) => { if (message) portalNotify.success(message) }, { flush: 'sync' })
 const emptyContentForm = (): ContentForm => ({
   title: '', slug: '', contentType: 'article', summary: '', body: '', visibility: 'private',
 })
@@ -136,6 +142,7 @@ const publicContents = ref<PublicContentCard[]>([])
 const publicArticle = ref<PublicContent | null>(null)
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
+watch(publicContentError, (message) => { if (message) portalNotify.error(message, '内容读取失败') }, { flush: 'sync' })
 const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
 const virtualTableOverscan = 6
@@ -470,6 +477,7 @@ async function submitAuth() {
     user.value = result.user
     authForm.value.password = ''
     await navigate('/account')
+    portalNotify.success(isRegister.value ? '账户创建成功。' : '登录成功。', isRegister.value ? '注册成功' : '登录成功')
   } catch (error) {
     authError.value = error instanceof Error ? error.message : '网络连接失败，请稍后再试。'
   } finally { authBusy.value = false }
@@ -482,7 +490,7 @@ async function logout() {
     user.value = null
     authBusy.value = false
     await navigate('/')
-    authNotice.value = '已安全退出登录。'
+    portalNotify.success('已安全退出登录。', '退出登录成功')
   }
 }
 function onPopState() {
@@ -576,13 +584,11 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         <p class="eyebrow"><span class="status-dot"></span> PERSONAL PORTAL ACCOUNT</p>
         <h1>{{ isRegister ? '创建你的账户' : '欢迎回来' }}</h1>
         <p class="auth-intro">{{ isRegister ? '注册后即可进入个人中心。你的账户信息将安全保存。' : '登录后进入个人中心，管理你的账户信息。' }}</p>
-        <p v-if="authNotice" class="form-notice">{{ authNotice }}</p>
         <form class="auth-form" @submit.prevent="submitAuth">
           <label v-if="isRegister" class="field-label">昵称 <input v-model="authForm.displayName" type="text" autocomplete="nickname" maxlength="60" placeholder="怎么称呼你" /></label>
           <label class="field-label">邮箱地址 <input v-model="authForm.email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com" /></label>
           <label class="field-label">密码 <input v-model="authForm.password" type="password" :autocomplete="isRegister ? 'new-password' : 'current-password'" :minlength="isRegister ? 10 : 1" maxlength="72" required :placeholder="isRegister ? '至少 10 个字符' : '输入你的密码'" /></label>
           <p v-if="isRegister" class="field-help">密码长度为 10–72 个字符。请勿重复使用其他网站的密码。</p>
-          <p v-if="authError" class="form-error" role="alert">{{ authError }}</p>
           <button class="button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
         </form>
         <p class="auth-switch">{{ isRegister ? '已经有账户？' : '还没有账户？' }} <a :href="isRegister ? '/login' : '/register'" @click.prevent="navigate(isRegister ? '/login' : '/register')">{{ isRegister ? '立即登录' : '创建账户' }}</a></p>
@@ -679,8 +685,6 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         <template v-else>
           <h1 v-if="activeAccountSection !== 'content-management'" class="account-page-title">{{ activeAccountItem?.label || '业务中心' }}</h1>
           <p v-if="activeAccountSection !== 'content-management'" class="auth-intro">{{ activeAccountItem?.description || '管理你的业务内容与工作入口。' }}</p>
-          <div v-if="activeAccountSection === 'content-management' && contentError" class="content-feedback content-feedback-error">{{ contentError }}</div>
-          <div v-if="activeAccountSection === 'content-management' && contentNotice" class="content-feedback content-feedback-success">{{ contentNotice }}</div>
           <section v-if="activeAccountSection === 'content-management' && contentEditorOpen" class="content-editor-panel">
             <div class="content-editor-heading">
               <div><h2>{{ editingContentId ? '编辑内容' : '创建内容' }}</h2><p>{{ editingContentId ? '保存后会保留当前发布状态与可见范围。' : '内容以草稿形式保存；确认后可单独发布。' }}</p></div>
@@ -696,7 +700,6 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
               <label class="notion-summary-property"><span>摘要</span><textarea v-model="contentForm.summary" maxlength="500" rows="2" placeholder="添加简短描述，方便在内容列表和公开首页展示…"></textarea></label>
               <div class="notion-document-divider"></div>
               <ContentDocumentEditor v-model="contentForm.body" :disabled="contentBusy" />
-              <p v-if="contentError" class="content-feedback content-feedback-error">{{ contentError }}</p>
               <div class="content-editor-actions notion-document-actions">
                 <span class="notion-save-hint">正文以 Markdown 格式保存，兼容现有文章和公开页面。</span>
                 <div><button type="button" class="content-secondary-button" :disabled="contentBusy" @click="contentEditorOpen = false">取消</button>
@@ -763,6 +766,8 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
     </main>
 
     <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
+
+    <NotificationHost />
 
     <footer v-if="route !== '/account'" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">PERSONAL PORTAL <span>©</span></a><span>一个持续构建中的个人空间</span><a href="/#top" @click.prevent="navigate('/#top')">返回顶部 ↑</a></footer>
   </div>
