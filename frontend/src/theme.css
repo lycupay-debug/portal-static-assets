@@ -1258,8 +1258,10 @@ body { overflow-x: clip; }
 
 /* Knowledge category selector inspired by a segmented control. */
 .knowledge-toolbar { position: relative; z-index: 60; align-items: center; justify-content: flex-start; margin-bottom: 24px; }
-.knowledge-toolbar-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-width: 0; }
-.knowledge-segmented { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; min-width: 0; max-width: 100%; padding: 4px; border: 1px solid rgba(25, 29, 36, .055); border-radius: 16px; background: rgba(244, 245, 247, .82); -webkit-backdrop-filter: blur(20px) saturate(140%); backdrop-filter: blur(20px) saturate(140%); }
+.knowledge-toolbar-controls { display: flex; align-items: center; justify-content: stretch; gap: 14px; width: 100%; min-width: 0; }
+.knowledge-segmented { display: flex; align-items: center; gap: 3px; flex: 1 1 0; min-width: 0; max-width: 100%; overflow-x: auto; padding: 4px; border: 1px solid rgba(25, 29, 36, .045); border-radius: 14px; background: rgba(255, 255, 255, .38); -webkit-backdrop-filter: blur(6px) saturate(118%); backdrop-filter: blur(6px) saturate(118%); scrollbar-width: none; }
+.knowledge-segmented::-webkit-scrollbar { display: none; }
+.knowledge-toolbar-splitter { display: block; flex: 0 0 1px; align-self: center; width: 1px; height: 28px; border-radius: 1px; background: rgba(25, 29, 36, .14); }
 .knowledge-segment-wrap { position: relative; flex: 0 0 auto; }
 .knowledge-segment { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 15px; border: 0; border-radius: 12px; color: #454951; background: transparent; font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
 .knowledge-segment-wrap.is-active > .knowledge-segment { color: #17191d; background: #ffd100; box-shadow: 0 1px 2px rgba(20, 20, 20, .06); }
@@ -1271,8 +1273,7 @@ body { overflow-x: clip; }
 @media (max-width: 760px) {
   .knowledge-toolbar { overflow: visible; }
   .knowledge-toolbar-controls { gap: 10px; }
-  .knowledge-segmented { width: 100%; overflow-x: auto; justify-content: flex-start; border-radius: 13px; scrollbar-width: none; }
-  .knowledge-segmented::-webkit-scrollbar { display: none; }
+  .knowledge-segmented { width: 100%; justify-content: flex-start; border-radius: 13px; }
   .knowledge-segment { min-height: 36px; padding: 0 12px; }
   .knowledge-category-popover { position: fixed; top: auto; left: 12px; right: 12px; bottom: 18px; min-width: 0; max-height: 45vh; }
 }
@@ -1281,9 +1282,10 @@ body { overflow-x: clip; }
 .knowledge-directory-page { display: block; }
 .knowledge-directory-page > .directory-published-section { min-width: 0; }
 @media (max-width: 900px) {
-  .knowledge-toolbar-controls { flex-wrap: wrap; }
-  .knowledge-segmented { flex: 1 1 100%; }
-  .knowledge-search-form { flex: 1 1 100%; width: 100%; max-width: none; }
+  .knowledge-toolbar-controls { flex-wrap: wrap; gap: 9px; }
+  .knowledge-segmented { order: 1; flex: 1 1 100%; width: 100%; }
+  .knowledge-toolbar-splitter { order: 2; flex: 0 0 100%; width: 100%; height: 1px; }
+  .knowledge-search-form { order: 3; flex: 1 1 100%; width: 100%; max-width: none; }
 }
 .directory-carousel-controls { display: flex; align-items: center; gap: 8px; }
 .directory-carousel-controls > span { margin-right: 8px; color: #858c99; font-size: 14px; white-space: nowrap; }
@@ -1307,8 +1309,8 @@ body { overflow-x: clip; }
 /* Element Plus autocomplete: keep suggestion poppers above article cards and match the glass toolbar. */
 .knowledge-autocomplete { display: block; }
 .knowledge-autocomplete .el-input { width: 100%; }
-.knowledge-autocomplete .el-input__wrapper { min-height: 44px; padding: 0 12px; border: 1px solid rgba(25, 29, 36, .10); border-radius: 14px; background: rgba(255,255,255,.78); box-shadow: 0 8px 24px rgba(24, 30, 42, .035); transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
-.knowledge-autocomplete .el-input__wrapper:hover { box-shadow: 0 8px 24px rgba(24, 30, 42, .05); }
+.knowledge-autocomplete .el-input__wrapper { min-height: 44px; padding: 0 12px; border: 1px solid rgba(25, 29, 36, .07); border-radius: 13px; background: rgba(255,255,255,.42); -webkit-backdrop-filter: blur(6px) saturate(118%); backdrop-filter: blur(6px) saturate(118%); box-shadow: 0 3px 12px rgba(24, 30, 42, .025); transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.knowledge-autocomplete .el-input__wrapper:hover { background: rgba(255,255,255,.52); box-shadow: 0 3px 12px rgba(24, 30, 42, .035); }
 .knowledge-autocomplete .el-input__wrapper.is-focus { border-color: rgba(49,95,206,.35); box-shadow: 0 0 0 3px rgba(49,95,206,.08); }
 .knowledge-autocomplete .el-input__inner { height: 42px; color: #17191d; font-size: 13px; }
 .knowledge-autocomplete .el-input__inner::placeholder { color: #858991; }
@@ -1323,5 +1325,6 @@ body { overflow-x: clip; }
 .knowledge-autocomplete-option .knowledge-suggestion-copy strong { overflow: hidden; color: #20242c; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-autocomplete-option .knowledge-suggestion-copy small { overflow: hidden; color: #7b8290; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-autocomplete-option .knowledge-suggestion-arrow { flex: 0 0 auto; color: #7b8290; }
-@media (max-width: 900px) { .knowledge-autocomplete { flex: 1 1 100%; width: 100%; max-width: none; } }
-.knowledge-autocomplete.knowledge-search-form { position: relative; display: block; flex: 0 1 320px; width: 320px; min-width: 210px; max-width: 36%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+.knowledge-autocomplete.knowledge-search-form { position: relative; display: block; flex: 0 0 clamp(220px, 29%, 320px); width: clamp(220px, 29%, 320px); min-width: 0; max-width: 38%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+
+@media (max-width: 900px) { .knowledge-autocomplete.knowledge-search-form { flex: 1 1 100%; width: 100%; max-width: none; } }

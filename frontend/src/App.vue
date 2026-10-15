@@ -969,6 +969,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
+            <span class="knowledge-toolbar-splitter" aria-hidden="true"></span>
             <el-autocomplete
               v-model="knowledgeSearchQuery"
               class="knowledge-search-form knowledge-autocomplete"
