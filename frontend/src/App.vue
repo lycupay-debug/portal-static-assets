@@ -169,10 +169,40 @@ const contentForm = ref<ContentForm>(emptyContentForm())
 const publicContents = ref<PublicContentCard[]>([])
 const knowledgeVisibleCount = ref(10)
 const knowledgePageSize = 10
-const visibleDirectoryContentItems = computed(() => directoryContentItems.value.slice(0, knowledgeVisibleCount.value))
+const knowledgeCategory = ref('recent')
+const knowledgeSubcategory = ref('')
+const knowledgeCategoryHover = ref('')
+const knowledgeCategoryMenus = [
+  { value: 'recent', label: '最近更新', children: [] },
+  { value: 'education', label: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
+  { value: 'travel', label: '旅游', children: ['住宿', '交通', '景点攻略', '旅行规划', '美食体验'] },
+  { value: 'network', label: '网络', children: ['网络安全', '网络维护', '网络基础知识', '网络诊断', '云与服务器'] },
+  { value: 'system', label: '系统', children: ['操作系统', '系统配置', '系统维护', '部署运维', '故障排查'] },
+  { value: 'programming', label: '编程', children: ['前端开发', '后端开发', 'Python', 'JavaScript / TypeScript', '数据库', 'API 与集成', '代码实践'] },
+  { value: 'software', label: '软件工具', children: ['效率工具', '开发工具', '文档工具', 'AI 工具', '自动化工具'] },
+]
+const knowledgeFilteredItems = computed(() => {
+  const items = [...directoryContentItems.value]
+  if (knowledgeCategory.value === 'recent') return items.sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
+  const selected = knowledgeSubcategory.value || knowledgeCategoryMenus.find(item => item.value === knowledgeCategory.value)?.label || ''
+  const terms: Record<string, string[]> = {
+    education: ['教育', '学习', '课程', '教学', '学生', '学校'], travel: ['旅游', '旅行', '住宿', '交通', '景点'],
+    network: ['网络', '安全', '维护', 'DNS', 'TCP', 'HTTP'], system: ['系统', '部署', '运维', 'Linux', 'FreeBSD', 'Windows'],
+    programming: ['编程', '代码', 'Python', 'JavaScript', 'TypeScript', 'API', '数据库'], software: ['软件', '工具', '效率', '自动化', 'AI'],
+  }
+  const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(terms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
+  return items.filter(item => keywords.some(keyword => `${item.title} ${item.summary || ''}`.toLocaleLowerCase().includes(keyword)))
+    .sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
+})
+const visibleDirectoryContentItems = computed(() => knowledgeFilteredItems.value.slice(0, knowledgeVisibleCount.value))
+function selectKnowledgeCategory(category: string, subcategory = '') {
+  knowledgeCategory.value = category
+  knowledgeSubcategory.value = subcategory
+  knowledgeVisibleCount.value = knowledgePageSize
+}
 function loadMoreKnowledge() {
-  if (route.value === '/knowledge' && knowledgeVisibleCount.value < directoryContentItems.value.length) {
-    knowledgeVisibleCount.value = Math.min(knowledgeVisibleCount.value + knowledgePageSize, directoryContentItems.value.length)
+  if (route.value === '/knowledge' && knowledgeVisibleCount.value < knowledgeFilteredItems.value.length) {
+    knowledgeVisibleCount.value = Math.min(knowledgeVisibleCount.value + knowledgePageSize, knowledgeFilteredItems.value.length)
   }
 }
 function onKnowledgeListScroll(event: Event) {
@@ -841,24 +871,35 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <section v-if="route === '/knowledge' || route === '/education-resources' || route === '/software-tools'" class="directory-published-section">
-        <div class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
+        <div v-if="route === '/knowledge'" class="directory-section-heading knowledge-toolbar" aria-label="文章分类">
+          <div class="knowledge-segmented" role="tablist" aria-label="文章分类筛选">
+            <div v-for="category in knowledgeCategoryMenus" :key="category.value" class="knowledge-segment-wrap" :class="{ 'is-active': knowledgeCategory === category.value }" @mouseenter="category.children.length && (knowledgeCategoryHover = category.value)" @mouseleave="knowledgeCategoryHover = ''">
+              <button type="button" role="tab" class="knowledge-segment" :aria-selected="knowledgeCategory === category.value" @click="category.children.length ? (knowledgeCategoryHover = category.value) : selectKnowledgeCategory(category.value)">{{ category.label }}<span v-if="category.children.length" class="knowledge-segment-chevron">⌄</span></button>
+              <div v-if="category.children.length && knowledgeCategoryHover === category.value" class="knowledge-category-popover" role="menu">
+                <button v-for="child in category.children" :key="child" type="button" role="menuitem" :class="{ selected: knowledgeCategory === category.value && knowledgeSubcategory === child }" @click="selectKnowledgeCategory(category.value, child); knowledgeCategoryHover = ''">{{ child }}<span v-if="knowledgeCategory === category.value && knowledgeSubcategory === child">✓</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
         <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
         <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
-        <div v-else-if="route === '/knowledge' && directoryContentItems.length" class="knowledge-infinite-list" @scroll.passive="onKnowledgeListScroll">
+        <div v-else-if="route === '/knowledge' && knowledgeFilteredItems.length" class="knowledge-infinite-list" @scroll.passive="onKnowledgeListScroll">
           <a v-for="(item, index) in visibleDirectoryContentItems" :key="item.id" class="knowledge-list-item" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
             <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.summary">{{ item.summary }}</span></span>
             <time>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</time>
             <span class="knowledge-list-arrow" aria-hidden="true">↗</span>
           </a>
-          <p class="knowledge-list-status">{{ visibleDirectoryContentItems.length < directoryContentItems.length ? '向下滚动加载更多' : `已显示全部 ${directoryContentItems.length} 篇文章` }}</p>
+          <p class="knowledge-list-status">{{ visibleDirectoryContentItems.length < knowledgeFilteredItems.length ? '向下滚动加载更多' : `已显示全部 ${knowledgeFilteredItems.length} 篇文章` }}</p>
         </div>
-        <div v-else-if="directoryContentItems.length" class="published-content-grid">
+        <div v-else-if="route !== '/knowledge' && directoryContentItems.length" class="published-content-grid">
           <a v-for="(item, index) in directoryContentItems" :key="item.id" class="published-content-card" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
             <div class="published-content-meta"><span class="published-content-type">{{ contentTypeLabels[item.contentType] }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
             <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 ↗</span></div></div>
           </a>
         </div>
+        <p v-else-if="route === '/knowledge' && knowledgeCategory !== 'recent'" class="directory-empty">当前分类暂时没有匹配的文章。现有文章尚未单独标注分类，筛选暂按标题和摘要中的主题词匹配。</p>
         <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
       </section>
       <section v-else class="directory-published-section directory-coming-soon"><p class="eyebrow">LISTINGS COMING SOON</p><h2>房源内容正在整理中</h2><p>后续将在这里展示民宿图片、所在位置、价格、设施说明、入住规则及联系预订方式。</p></section>

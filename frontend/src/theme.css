@@ -1247,3 +1247,22 @@ body { overflow-x: clip; }
   .knowledge-list-item time { grid-column: 2; grid-row: 2; }
   .knowledge-list-arrow { grid-column: 3; grid-row: 1; }
 }
+
+/* Knowledge category selector inspired by a segmented control. */
+.knowledge-toolbar { align-items: center; justify-content: flex-start; margin-bottom: 24px; }
+.knowledge-segmented { display: flex; align-items: center; gap: 3px; max-width: 100%; padding: 4px; border: 1px solid rgba(25, 29, 36, .055); border-radius: 16px; background: rgba(244, 245, 247, .82); -webkit-backdrop-filter: blur(20px) saturate(140%); backdrop-filter: blur(20px) saturate(140%); }
+.knowledge-segment-wrap { position: relative; flex: 0 0 auto; }
+.knowledge-segment { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 15px; border: 0; border-radius: 12px; color: #454951; background: transparent; font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
+.knowledge-segment-wrap.is-active > .knowledge-segment { color: #17191d; background: #ffd100; box-shadow: 0 1px 2px rgba(20, 20, 20, .06); }
+.knowledge-segment:hover { color: #17191d; }
+.knowledge-segment-chevron { color: #777b83; font-size: 13px; line-height: 1; }
+.knowledge-category-popover { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; display: grid; min-width: 178px; max-height: min(340px, 60vh); overflow: auto; padding: 6px; border: 1px solid rgba(28, 32, 40, .09); border-radius: 12px; background: rgba(255, 255, 255, .96); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); box-shadow: 0 14px 38px rgba(20, 26, 36, .13); }
+.knowledge-category-popover button { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 36px; padding: 7px 10px; border: 0; border-radius: 7px; color: #343840; background: transparent; text-align: left; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.knowledge-category-popover button:hover, .knowledge-category-popover button.selected { color: #17191d; background: rgba(255, 209, 0, .22); }
+@media (max-width: 760px) {
+  .knowledge-toolbar { overflow: visible; }
+  .knowledge-segmented { width: 100%; overflow-x: auto; justify-content: flex-start; border-radius: 13px; scrollbar-width: none; }
+  .knowledge-segmented::-webkit-scrollbar { display: none; }
+  .knowledge-segment { min-height: 36px; padding: 0 12px; }
+  .knowledge-category-popover { position: fixed; top: auto; left: 12px; right: 12px; bottom: 18px; min-width: 0; max-height: 45vh; }
+}
