@@ -33,6 +33,13 @@ test('allows ordinary text, inline emphasis and safe links', () => {
 })
 
 
+test('renders safe text colors and background colors from Markdown color syntax', () => {
+  const html = render('A {{color:#315CF5|blue}} and {{bg:#CDE7FF|marked}} text')
+  assert.match(html, /class="md-text-color-315cf5">blue<\/span>/)
+  assert.match(html, /<mark class="md-background-cde7ff">marked<\/mark>/)
+  assert.doesNotMatch(html, /style=/i)
+})
+
 test('renders custom alignment blocks and keeps their HTML sanitized', () => {
   const html = render(':::align-center\nCentered **bold**\n:::')
   assert.ok(html.includes('<div class="md-align-center"><p>Centered <strong>bold</strong></p>'))

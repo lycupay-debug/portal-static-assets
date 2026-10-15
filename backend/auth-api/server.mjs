@@ -6,6 +6,7 @@ import path from 'node:path';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { createContentHandlers } from '../content-api/handlers.mjs';
+import { resolveResponsiveLayout } from './responsive-layout.mjs';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,6 +17,8 @@ const HOST = process.env.AUTH_API_HOST || '127.0.0.1';
 const PORT = Number(process.env.AUTH_API_PORT || 8082);
 const SESSION_DAYS = 30;
 const COOKIE = 'portal_session';
+const UPLOAD_DIR = process.env.PERSONAL_PORTAL_UPLOAD_DIR || '/usr/local/www/personal-portal/uploads';
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const rateBuckets = new Map();
 
@@ -121,8 +124,36 @@ const server = http.createServer(async (req, res) => {
   if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(req.method || '')) return json(res, 405, { error: '不支持的请求方式。' });
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   if (url.pathname === '/healthz' && req.method === 'GET') return json(res, 200, { status: 'ok' });
+  if (url.pathname === '/layout-policy' && req.method === 'GET') {
+    return json(res, 200, resolveResponsiveLayout(url.searchParams));
+  }
   if (req.method === 'POST' && ['/auth/register', '/auth/login'].includes(url.pathname) && rateLimit(req, res)) return;
   try {
+    if (url.pathname === '/uploads' && req.method === 'POST') {
+      const user = await getSessionUser(req);
+      if (!user) return json(res, 401, { error: '请先登录后再上传图片。' });
+      const body = await readBody(req, 12 * 1024 * 1024);
+      const mime = String(body.mime || '').toLowerCase();
+      const allowed = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+      if (!allowed.has(mime) || typeof body.data !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.data)) {
+        return json(res, 400, { error: '仅支持 PNG、JPEG、GIF、WebP 或 AVIF 图片。' });
+      }
+      const bytes = Buffer.from(body.data, 'base64');
+      if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) return json(res, 413, { error: '图片大小不能超过 8 MB。' });
+      const signatures = {
+        'image/png': bytes => bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])),
+        'image/jpeg': bytes => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+        'image/gif': bytes => bytes.length >= 6 && ['GIF87a','GIF89a'].includes(bytes.subarray(0, 6).toString('ascii')),
+        'image/webp': bytes => bytes.length >= 12 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP',
+        'image/avif': bytes => bytes.length >= 12 && bytes.subarray(4, 12).toString('ascii').includes('avif'),
+      };
+      if (!signatures[mime](bytes)) return json(res, 400, { error: '图片文件内容与声明格式不匹配。' });
+      const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/avif': 'avif' }[mime];
+      await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
+      const filename = crypto.randomUUID() + '.' + extension;
+      await fs.promises.writeFile(path.join(UPLOAD_DIR, filename), bytes, { flag: 'wx', mode: 0o644 });
+      return json(res, 201, { url: '/uploads/' + filename, mime, size: bytes.length });
+    }
     if (url.pathname === '/public/content' || url.pathname.startsWith('/public/content/')) {
       return await handlePublicContentRequest(req, res, url);
     }

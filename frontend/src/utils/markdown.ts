@@ -29,6 +29,33 @@ const alignmentExtension = {
   },
 }
 
+const colorInlineExtensions = [
+  {
+    name: 'coloredText', level: 'inline' as const,
+    start(source: string) { return source.indexOf('{{color:') },
+    tokenizer(source: string) {
+      const match = source.match(/^\{\{color:(#[0-9a-fA-F]{6})\|([\s\S]+?)\}\}/)
+      if (!match) return undefined
+      return { type: 'coloredText', raw: match[0], color: match[1]!.toLowerCase(), text: match[2] || '' }
+    },
+    renderer(token: { color: string; text: string }) {
+      return '<span class="md-text-color-' + token.color.slice(1) + '">' + markdownParser.parseInline(token.text) + '</span>'
+    },
+  },
+  {
+    name: 'coloredBackground', level: 'inline' as const,
+    start(source: string) { return source.indexOf('{{bg:') },
+    tokenizer(source: string) {
+      const match = source.match(/^\{\{bg:(#[0-9a-fA-F]{6})\|([\s\S]+?)\}\}/)
+      if (!match) return undefined
+      return { type: 'coloredBackground', raw: match[0], color: match[1]!.toLowerCase(), text: match[2] || '' }
+    },
+    renderer(token: { color: string; text: string }) {
+      return '<mark class="md-background-' + token.color.slice(1) + '">' + markdownParser.parseInline(token.text) + '</mark>'
+    },
+  },
+]
+
 const markdownOptions = {
   async: false as const,
   breaks: false,
@@ -39,7 +66,7 @@ const markdownOptions = {
 }
 
 // Use an isolated parser instance so custom tokenizers do not mutate Marked's global singleton.
-markdownParser = new Marked({ ...markdownOptions, extensions: [alignmentExtension] })
+markdownParser = new Marked({ ...markdownOptions, extensions: [alignmentExtension, ...colorInlineExtensions] })
 
 export function renderMarkdown(source: string, sanitizer = DOMPurify): string {
   const markdown = typeof source === 'string' ? source : ''

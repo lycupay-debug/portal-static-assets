@@ -1,4 +1,4 @@
-import { Extension, type AnyExtension, type Editor, type MarkdownLexerConfiguration, type MarkdownParseHelpers, type MarkdownToken } from '@tiptap/core'
+import { Extension, Mark, Node, type AnyExtension, type Editor, type MarkdownLexerConfiguration, type MarkdownParseHelpers, type MarkdownToken } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { Paragraph } from '@tiptap/extension-paragraph'
 import { Heading } from '@tiptap/extension-heading'
@@ -13,6 +13,64 @@ import Image from '@tiptap/extension-image'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import Link from '@tiptap/extension-link'
+
+const ColorText = Mark.create({
+  name: 'textColor',
+  addAttributes() { return { color: { default: '#25334D', parseHTML: element => element.getAttribute('data-text-color') || '#25334D', renderHTML: attributes => ({ 'data-text-color': attributes.color, style: 'color: ' + attributes.color }) } } },
+  parseHTML() { return [{ tag: 'span[data-text-color]' }] },
+  renderHTML({ HTMLAttributes }) { return ['span', HTMLAttributes, 0] },
+  markdownTokenName: 'coloredText',
+  markdownTokenizer: {
+    name: 'coloredText', level: 'inline', start: (source: string) => source.indexOf('{{color:'),
+    tokenize(source: string, _tokens: MarkdownToken[], lexer: MarkdownLexerConfiguration): MarkdownToken | undefined {
+      const match = source.match(/^\{\{color:(#[0-9a-fA-F]{6})\|([\s\S]+?)\}\}/)
+      if (!match) return undefined
+      return { type: 'coloredText', raw: match[0], color: match[1], tokens: lexer.inlineTokens(match[2] || '') }
+    },
+  },
+  parseMarkdown: (token: MarkdownToken, helpers: MarkdownParseHelpers) => helpers.applyMark('textColor', helpers.parseInline(token.tokens || []), { color: token.color }),
+  renderMarkdown(node, helpers) { return '{{color:' + (node.attrs?.color || '#25334D') + '|' + helpers.renderChildren(node.content || []) + '}}' },
+})
+
+const ColorHighlight = Highlight.extend({
+  addOptions() { return { ...(this.parent?.() ?? { multicolor: false, HTMLAttributes: {} }), multicolor: true } },
+  markdownTokenName: 'coloredHighlight',
+  markdownTokenizer: {
+    name: 'coloredHighlight', level: 'inline', start: (source: string) => {
+      const custom = source.indexOf('{{bg:')
+      const standard = source.indexOf('==')
+      return custom < 0 ? standard : standard < 0 ? custom : Math.min(custom, standard)
+    },
+    tokenize(source: string, _tokens: MarkdownToken[], lexer: MarkdownLexerConfiguration): MarkdownToken | undefined {
+      const custom = source.match(/^\{\{bg:(#[0-9a-fA-F]{6})\|([\s\S]+?)\}\}/)
+      if (custom) return { type: 'coloredHighlight', raw: custom[0], color: custom[1], tokens: lexer.inlineTokens(custom[2] || '') }
+      const standard = source.match(/^==([\s\S]+?)==/)
+      if (standard) return { type: 'coloredHighlight', raw: standard[0], tokens: lexer.inlineTokens(standard[1] || '') }
+      return undefined
+    },
+  },
+  parseMarkdown: (token: MarkdownToken, helpers: MarkdownParseHelpers) => helpers.applyMark('highlight', helpers.parseInline(token.tokens || []), token.color ? { color: token.color } : {}),
+  renderMarkdown(node, helpers) { const content = helpers.renderChildren(node.content || []); return node.attrs?.color ? '{{bg:' + node.attrs.color + '|' + content + '}}' : '==' + content + '==' },
+})
+
+
+const Callout = Node.create({
+  name: 'callout', group: 'block', content: 'block+', defining: true,
+  addAttributes() { return { backgroundColor: { default: '#FFF2CC', parseHTML: element => element.getAttribute('data-background-color') || '#FFF2CC', renderHTML: attrs => ({ 'data-background-color': attrs.backgroundColor, style: '--callout-bg:' + attrs.backgroundColor }) } } },
+  parseHTML() { return [{ tag: 'div[data-callout]' }] },
+  renderHTML({ HTMLAttributes }) { return ['div', { ...HTMLAttributes, 'data-callout': 'true', class: 'content-callout' }, 0] },
+  markdownTokenName: 'calloutBlock',
+  markdownTokenizer: {
+    name: 'calloutBlock', level: 'block', start: (source: string) => source.match(/^:::callout(?:\s+#[0-9a-fA-F]{6})?\s*$/m)?.index ?? -1,
+    tokenize(source: string, _tokens: MarkdownToken[], lexer: MarkdownLexerConfiguration): MarkdownToken | undefined {
+      const match = source.match(/^:::callout(?:\s+(#[0-9a-fA-F]{6}))?\s*\n([\s\S]*?)\n:::[ \t]*(?:\n|$)/)
+      if (!match) return undefined
+      return { type: 'calloutBlock', raw: match[0], color: match[1] || '#FFF2CC', tokens: lexer.blockTokens(match[2] || '') }
+    },
+  },
+  parseMarkdown: (token: MarkdownToken, helpers: MarkdownParseHelpers) => ({ type: 'callout', attrs: { backgroundColor: token.color || '#FFF2CC' }, content: helpers.parseChildren(token.tokens || []) }),
+  renderMarkdown(node, helpers) { return ':::callout ' + (node.attrs?.backgroundColor || '#FFF2CC') + '\n' + helpers.renderChildren(node.content || []) + '\n:::' },
+})
 
 export type ContentEditorAction = (editor: Editor) => void
 
@@ -97,6 +155,7 @@ export function createContentEditorExtensions(): AnyExtension[] {
     AlignedHeading.configure({ levels: [1, 2, 3] }),
     Markdown,
     AlignmentMarkdown,
+    Callout,
     Table.configure({ resizable: true, allowTableNodeSelection: true }),
     TableRow,
     TableHeader,
@@ -109,9 +168,23 @@ export function createContentEditorExtensions(): AnyExtension[] {
     Placeholder.configure({
       placeholder: ({ node }) => node.type.name === 'heading' ? '标题' : '输入正文，输入 / 插入内容块…',
     }),
-    Image.configure({ inline: false, allowBase64: false }),
-    Highlight,
-    Link.configure({ openOnClick: false, autolink: true, defaultProtocol: 'https', isAllowedUri: url => normalizeEditorLinkUrl(url) !== null }),
+    Image.extend({
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          displayWidth: {
+            default: null,
+            parseHTML: element => element.getAttribute('data-image-width'),
+            renderHTML: attrs => attrs.displayWidth
+              ? { 'data-image-width': attrs.displayWidth, style: 'width:' + attrs.displayWidth + ';height:auto;max-width:100%' }
+              : { style: 'width:100%;height:auto;max-width:100%' },
+          },
+        }
+      },
+    }).configure({ inline: false, allowBase64: true }),
+    ColorHighlight,
+    ColorText,
+    Link.configure({ openOnClick: true, linkOnPaste: true, autolink: true, defaultProtocol: 'https', isAllowedUri: url => normalizeEditorLinkUrl(url) !== null }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
   ]
 }
@@ -134,7 +207,7 @@ export function createContentEditorTools(
     { label: '编号列表', description: '有序列表', icon: '1.', keywords: 'number ordered list', run: run(current => { current.chain().focus().toggleOrderedList().run() }) },
     { label: '待办清单', description: '可勾选任务', icon: '☑', keywords: 'todo task checkbox checklist', run: run(current => { current.chain().focus().toggleTaskList().run() }) },
     { label: '引用', description: '引用一段内容', icon: '❞', keywords: 'quote blockquote', run: run(current => { current.chain().focus().toggleBlockquote().run() }) },
-    { label: '提示块', description: '插入带提示标记的引用块', icon: '💡', keywords: 'callout tip note warning info', run: run(current => { current.chain().focus().toggleBlockquote().insertContent('💡 提示：').run() }) },
+    { label: '提醒', description: '插入可自定义背景色的提醒卡片', icon: '💡', keywords: 'callout tip note warning info 提醒', run: run(current => { current.chain().focus().insertContent({ type: 'callout', attrs: { backgroundColor: '#FFF2CC' }, content: [{ type: 'paragraph' }] }).run() }) },
     { label: '代码块', description: '格式化代码片段', icon: '</>', keywords: 'code block snippet', run: run(current => { current.chain().focus().toggleCodeBlock().run() }) },
     { label: '分割线', description: '分隔文档内容', icon: '—', keywords: 'divider horizontal rule separator', run: run(current => { current.chain().focus().setHorizontalRule().run() }) },
     { label: '表格', description: '插入 3 × 3 表格', icon: '▦', keywords: 'table grid database', run: run(current => { current.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() }) },
@@ -145,7 +218,9 @@ export function createContentEditorTools(
     { label: '下划线', description: '为文字添加下划线', icon: 'U', keywords: 'underline 下划线', run: run(current => { current.chain().focus().toggleUnderline().run() }) },
     { label: '删除线', description: '为文字添加删除线', icon: 'S', keywords: 'strike strikethrough 删除线', run: run(current => { current.chain().focus().toggleStrike().run() }) },
     { label: '行内代码', description: '以代码样式显示文字', icon: '</>', keywords: 'inline code monospace 行内代码', run: run(current => { current.chain().focus().toggleCode().run() }) },
-    { label: '高亮文本', description: '突出显示文字', icon: '▨', keywords: 'highlight mark color', run: run(current => { current.chain().focus().toggleHighlight().run() }) },
+    { label: '高亮文本', description: '使用默认背景突出显示文字', icon: '▨', keywords: 'highlight mark color', run: run(current => { current.chain().focus().toggleHighlight({ color: '#FFF2A8' }).run() }) },
+    { label: '背景色', description: '为选中文字设置背景色', icon: '▧', keywords: 'background highlight background color', run: run(current => { current.chain().focus().setHighlight({ color: '#FFF2A8' }).run() }) },
+    { label: '文字颜色', description: '修改选中文字颜色', icon: 'A', keywords: 'text color font color', run: run(current => { current.chain().focus().setMark('textColor', { color: '#315CF5' }).run() }) },
     { label: '左对齐', description: '段落或标题左对齐', icon: '≡', keywords: 'align left', run: run(current => { current.chain().focus().setTextAlign('left').run() }) },
     { label: '居中对齐', description: '段落或标题居中', icon: '≣', keywords: 'align center middle', run: run(current => { current.chain().focus().setTextAlign('center').run() }) },
     { label: '右对齐', description: '段落或标题右对齐', icon: '≡', keywords: 'align right', run: run(current => { current.chain().focus().setTextAlign('right').run() }) },

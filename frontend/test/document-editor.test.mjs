@@ -42,6 +42,25 @@ test('existing Markdown loads as formatted document blocks and remains Markdown-
   } finally { editor.destroy() }
 })
 
+test('callout cards preserve their background color through Markdown round trips', () => {
+  const source = ':::callout #DDEBFF\n\nA **useful** reminder.\n\n:::'
+  const editor = createEditor(source)
+  try {
+    const json = editor.getJSON()
+    assert.equal(json.content[0].type, 'callout')
+    assert.equal(json.content[0].attrs.backgroundColor, '#DDEBFF')
+    assert.match(editor.getHTML(), /data-callout="true"/)
+    assert.match(editor.getHTML(), /--callout-bg: ?#DDEBFF/)
+    const output = editor.getMarkdown()
+    assert.match(output, /:::callout #DDEBFF/)
+    const reloaded = createEditor(output)
+    try {
+      assert.equal(reloaded.getJSON().content[0].attrs.backgroundColor, '#DDEBFF')
+      assert.match(reloaded.getHTML(), /A <strong>useful<\/strong> reminder\./)
+    } finally { reloaded.destroy() }
+  } finally { editor.destroy() }
+})
+
 test('task lists and images preserve their Markdown representation', () => {
   const source = '## Checklist\n\n- [ ] pending task\n- [x] done task\n\n![example](https://example.com/image.png)'
   const editor = createEditor(source)
@@ -52,6 +71,17 @@ test('task lists and images preserve their Markdown representation', () => {
     assert.match(output, /- \[ \] pending task/)
     assert.match(output, /- \[x\] done task/)
     assert.match(output, /!\[example\]\(https:\/\/example\.com\/image\.png\)/)
+  } finally { editor.destroy() }
+})
+
+test('tables accept block tools and callout cards inside cells', () => {
+  const editor = createEditor('')
+  try {
+    editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: true })
+    assert.doesNotThrow(() => editor.chain().focus().toggleBlockquote().run())
+    assert.doesNotThrow(() => editor.chain().focus().toggleCodeBlock().run())
+    assert.doesNotThrow(() => editor.chain().focus().insertContent({ type: 'callout', attrs: { backgroundColor: '#DDF5E4' }, content: [{ type: 'paragraph' }] }).run())
+    assert.ok(JSON.stringify(editor.getJSON()).includes('"type":"callout"'))
   } finally { editor.destroy() }
 })
 
@@ -105,15 +135,32 @@ test('alignment, underline and highlight survive a Markdown round trip', () => {
   } finally { editor.destroy() }
 })
 
+test('text and background colors survive Markdown persistence round trips', () => {
+  const source = 'A {{color:#315CF5|blue}} and {{bg:#CDE7FF|marked}} text'
+  const editor = createEditor(source)
+  try {
+    assert.match(editor.getHTML(), /data-text-color="#315CF5"/)
+    assert.match(editor.getHTML(), /background-color: rgb\(205, 231, 255\)/i)
+    const saved = editor.getMarkdown()
+    assert.match(saved, /\{\{color:#315CF5\|blue\}\}/i)
+    assert.match(saved, /\{\{bg:#CDE7FF\|marked\}\}/i)
+    const reloaded = createEditor(saved)
+    try {
+      assert.match(reloaded.getHTML(), /data-text-color="#315CF5"/)
+      assert.match(reloaded.getHTML(), /background-color: rgb\(205, 231, 255\)/i)
+    } finally { reloaded.destroy() }
+  } finally { editor.destroy() }
+})
+
 test('every slash-menu tool is registered and executable without throwing', () => {
   const actions = {
     addImage: editor => editor.chain().focus().setImage({ src: 'https://example.com/image.png', alt: 'test image' }).run(),
     addLink: editor => editor.chain().focus().insertContent({ type: 'text', text: 'https://example.com', marks: [{ type: 'link', attrs: { href: 'https://example.com' } }] }).run(),
   }
   const expected = [
-    '文本', '一级标题', '二级标题', '三级标题', '项目符号列表', '编号列表', '待办清单', '引用', '提示块',
+    '文本', '一级标题', '二级标题', '三级标题', '项目符号列表', '编号列表', '待办清单', '引用', '提醒',
     '代码块', '分割线', '表格', '图片', '链接', '加粗', '斜体', '下划线', '删除线', '行内代码',
-    '高亮文本', '左对齐', '居中对齐', '右对齐', '清除格式', '撤销', '重做',
+    '高亮文本', '背景色', '文字颜色', '左对齐', '居中对齐', '右对齐', '清除格式', '撤销', '重做',
   ]
   const editor = createEditor('Tool test text')
   try {
@@ -141,7 +188,7 @@ test('content tools apply their intended block and mark types', () => {
     ['编号列表', node => node.type === 'orderedList'],
     ['待办清单', node => node.type === 'taskList'],
     ['引用', node => node.type === 'blockquote'],
-    ['提示块', node => node.type === 'blockquote' && JSON.stringify(node).includes('提示：')],
+    ['提醒', node => node.type === 'callout' && node.attrs.backgroundColor === '#FFF2CC'],
     ['代码块', node => node.type === 'codeBlock'],
     ['分割线', node => node.type === 'horizontalRule'],
     ['表格', node => node.type === 'table'],

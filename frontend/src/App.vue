@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { renderMarkdown } from './utils/markdown'
+import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
+const contentTypeOptions = [{ label: '知识文章', value: 'article' }, { label: '在线工具', value: 'tool' }, { label: '资源资料', value: 'resource' }, { label: '项目展示', value: 'project' }]
+const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
 type PortalSection = {
@@ -50,6 +53,27 @@ const authNotice = ref('')
 const authForm = ref({ displayName: '', email: '', password: '' })
 const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows'])
 const activeAccountSection = ref('overview')
+const sectionRoutes: Record<string, string> = {
+  overview: '/account', profile: '/profile', security: '/security',
+  'content-management': '/content-management', 'property-management': '/housing/property-management',
+  'room-status': '/housing/room-status', 'student-records': '/education/student-records',
+  'course-calendar': '/education/course-calendar', 'teaching-resources': '/education/teaching-resources',
+  'network-tools': '/tools/network', 'document-converters': '/tools/document-converters',
+  'add-tool': '/tools/add', 'workflow-overview': '/workflows',
+}
+const routeSections = Object.fromEntries(Object.entries(sectionRoutes).map(([id, path]) => [path, id])) as Record<string, string>
+const routeAliases: Record<string, string> = {
+  '/首页': '/', '/个人中心': '/account', '/个人资料': '/profile', '/登录与安全': '/security',
+  '/登录': '/login', '/注册': '/register', '/内容管理': '/content-management',
+  '/房源管理': '/housing/property-management', '/房态管理': '/housing/room-status',
+  '/学生档案': '/education/student-records', '/课程日历': '/education/course-calendar',
+  '/教学资源': '/education/teaching-resources', '/网络工具': '/tools/network',
+  '/文档转换': '/tools/document-converters', '/添加工具': '/tools/add', '/工作流管理': '/workflows',
+}
+const contentEditorRouteId = computed(() => route.value.match(/^\/content-management\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1] || null)
+const isContentEditorPage = computed(() => route.value === '/content-management/new' || contentEditorRouteId.value !== null)
+const isProtectedPage = computed(() => isContentEditorPage.value || route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value))
+const isAccountPage = computed(() => !isContentEditorPage.value && (route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value)))
 const activeSidebarButton = ref('overview')
 const accountNavQuery = ref('')
 const accountGroups = [
@@ -118,6 +142,10 @@ type TableColumn = { key: string; label: string; width?: string }
 type TableRecord = Record<string, string | number>
 const tableQuery = ref('')
 const tableScrollTop = ref(0)
+const virtualTableScrollElement = ref<HTMLElement | null>(null)
+const virtualTableViewportWidth = ref(0)
+let tableResizeObserver: ResizeObserver | null = null
+const selectedTableCell = ref<{ label: string; value: string } | null>(null)
 const contentItems = ref<PortalContent[]>([])
 const contentTrashItems = ref<PortalContent[]>([])
 const contentViewMode = ref<'active' | 'trash'>('active')
@@ -139,6 +167,18 @@ const emptyContentForm = (): ContentForm => ({
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
 const publicContents = ref<PublicContentCard[]>([])
+const knowledgeVisibleCount = ref(10)
+const knowledgePageSize = 10
+const visibleDirectoryContentItems = computed(() => directoryContentItems.value.slice(0, knowledgeVisibleCount.value))
+function loadMoreKnowledge() {
+  if (route.value === '/knowledge' && knowledgeVisibleCount.value < directoryContentItems.value.length) {
+    knowledgeVisibleCount.value = Math.min(knowledgeVisibleCount.value + knowledgePageSize, directoryContentItems.value.length)
+  }
+}
+function onKnowledgeListScroll(event: Event) {
+  const element = event.target as HTMLElement
+  if (element.scrollTop + element.clientHeight >= element.scrollHeight - 80) loadMoreKnowledge()
+}
 const publicArticle = ref<PublicContent | null>(null)
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
@@ -184,6 +224,56 @@ const filteredTableRecords = computed(() => {
 const virtualTableStart = computed(() => Math.max(0, Math.floor(tableScrollTop.value / virtualTableRowHeight) - virtualTableOverscan))
 const virtualTableEnd = computed(() => Math.min(filteredTableRecords.value.length, Math.ceil((tableScrollTop.value + virtualTableViewportHeight) / virtualTableRowHeight) + virtualTableOverscan))
 const visibleTableRecords = computed(() => filteredTableRecords.value.slice(virtualTableStart.value, virtualTableEnd.value))
+function tableCellValue(record: TableRecord, columnKey: string): string {
+  return String(record[columnKey] || (columnKey === 'title' ? '未命名内容' : '—'))
+}
+function tableCellPreview(value: string): string {
+  const chars = Array.from(value)
+  return chars.length > 10 ? chars.slice(0, 10).join('') + '…' : value
+}
+function openTableCell(label: string, value: string) {
+  selectedTableCell.value = { label, value }
+}
+const tableColumnTemplate = computed(() => {
+  const columns = activeTableDefinition.value?.columns || []
+  if (!columns.length) return '100%'
+  const records = filteredTableRecords.value
+  const available = Math.max(320, virtualTableViewportWidth.value || window.innerWidth * 0.75)
+  const actionIndex = columns.findIndex((column) => column.key === 'actions')
+  const widths = columns.map((column) => {
+    if (column.key === 'actions') return 330
+    const values = [column.label, ...records.map((record) => tableCellPreview(tableCellValue(record, column.key)))]
+    const maxChars = Math.max(1, ...values.map((value) => Array.from(value).length))
+    return Math.max(72, maxChars * 14 + 32)
+  })
+  const naturalTotal = widths.reduce((sum, width) => sum + width, 0)
+  if (naturalTotal > available) {
+    const cap = Math.max(72, Math.floor(available * 0.15))
+    return widths.map((width, index) => index === actionIndex ? 'minmax(330px, max-content)' : `${Math.min(width, cap)}px`).join(' ')
+  }
+  const flexibleWidth = Math.max(0, available - (actionIndex >= 0 ? (widths[actionIndex] ?? 0) : 0))
+  const naturalFlexibleTotal = widths.reduce((sum, width, index) => sum + (index === actionIndex ? 0 : width), 0)
+  return widths.map((width, index) => {
+    if (index === actionIndex) return 'minmax(330px, max-content)'
+    const proportional = naturalFlexibleTotal ? flexibleWidth * width / naturalFlexibleTotal : flexibleWidth / columns.length
+    return `${Math.max(72, Math.floor(proportional))}px`
+  }).join(' ')
+})
+function observeVirtualTableWidth() {
+  tableResizeObserver?.disconnect()
+  const element = virtualTableScrollElement.value
+  if (!element) { virtualTableViewportWidth.value = 0; return }
+  virtualTableViewportWidth.value = element.clientWidth
+  tableResizeObserver = new ResizeObserver((entries) => {
+    const entry = entries[0]
+    if (entry) virtualTableViewportWidth.value = Math.floor(entry.contentRect.width)
+  })
+  tableResizeObserver.observe(element)
+}
+watch(activeTableDefinition, async () => {
+  await nextTick()
+  observeVirtualTableWidth()
+})
 const virtualTableTopSpace = computed(() => virtualTableStart.value * virtualTableRowHeight)
 const virtualTableBottomSpace = computed(() => Math.max(0, (filteredTableRecords.value.length - virtualTableEnd.value) * virtualTableRowHeight))
 function onVirtualTableScroll(event: Event) {
@@ -210,6 +300,28 @@ function switchContentView(mode: 'active' | 'trash') {
   versionsContentId.value = null
   tableQuery.value = ''
   void loadContentList()
+}
+async function initializeContentEditorRoute() {
+  const id = contentEditorRouteId.value
+  contentError.value = ''
+  contentEditorOpen.value = false
+  if (!id) {
+    editingContentId.value = null
+    contentForm.value = emptyContentForm()
+    return
+  }
+  if (editingContentId.value === id && contentForm.value.title) return
+  contentBusy.value = true
+  try {
+    const response = await fetch('/api/content/' + encodeURIComponent(id), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { item?: PortalContent; error?: string }
+    if (!response.ok || !result.item) throw new Error(result.error || '读取内容详情失败。')
+    const item = result.item
+    editingContentId.value = item.id
+    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, summary: item.summary, body: item.body, visibility: item.visibility }
+  } catch (error) {
+    contentError.value = error instanceof Error ? error.message : '读取内容详情失败。'
+  } finally { contentBusy.value = false }
 }
 async function openContentVersions(id: string) {
   const item = contentItems.value.find((content) => content.id === id)
@@ -280,14 +392,30 @@ function selectAccountSection(id: string) {
   contentEditorOpen.value = false
   versionsContentId.value = null
   contentViewMode.value = 'active'
-  if (id === 'content-management') void loadContentList()
+  const target = sectionRoutes[id] || '/account'
+  if (route.value !== target) void navigate(target)
+  else if (id === 'content-management') void loadContentList()
 }
 function openNewContent() {
   editingContentId.value = null
   contentForm.value = emptyContentForm()
   contentError.value = ''
   contentNotice.value = ''
-  contentEditorOpen.value = true
+  contentEditorOpen.value = false
+  void navigate('/content-management/new')
+}
+function returnToContentList() {
+  contentEditorOpen.value = false
+  editingContentId.value = null
+  contentError.value = ''
+  void navigate('/content-management')
+}
+function cancelContentEditor() {
+  if (contentBusy.value) return
+  if ((contentForm.value.title.trim() || contentForm.value.body.trim() || contentForm.value.summary.trim()) && !window.confirm('当前内容尚未保存，确定取消并返回内容列表吗？')) return
+  contentEditorOpen.value = false
+  contentError.value = ''
+  void navigate('/content-management')
 }
 async function editContent(id: string) {
   contentBusy.value = true
@@ -302,7 +430,8 @@ async function editContent(id: string) {
       title: item.title, slug: item.slug, contentType: item.contentType,
       summary: item.summary, body: item.body, visibility: item.visibility,
     }
-    contentEditorOpen.value = true
+    contentEditorOpen.value = false
+    await navigate('/content-management/' + encodeURIComponent(item.id))
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '读取内容详情失败。'
   } finally {
@@ -310,10 +439,9 @@ async function editContent(id: string) {
   }
 }
 async function saveContent() {
-  if (!contentForm.value.body.trim()) {
-    contentError.value = '正文不能为空。'
-    return
-  }
+  if (!contentForm.value.title.trim()) { contentError.value = '请填写内容标题。'; return }
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(contentForm.value.slug.trim())) { contentError.value = '请填写有效的 URL 别名，仅允许小写英文字母、数字和连字符。'; return }
+  if (!contentForm.value.body.trim()) { contentError.value = '正文不能为空。'; return }
   contentBusy.value = true
   contentError.value = ''
   contentNotice.value = ''
@@ -327,9 +455,10 @@ async function saveContent() {
     })
     const result = await response.json() as { item?: PortalContent; error?: string }
     if (!response.ok || !result.item) throw new Error(result.error || '保存内容失败。')
+    if (!editing) editingContentId.value = result.item.id
     contentEditorOpen.value = false
     contentNotice.value = editing ? '内容已保存。' : '草稿已创建。'
-    await loadContentList()
+    await navigate('/content-management')
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '保存内容失败。'
   } finally {
@@ -430,9 +559,36 @@ const directoryContentItems = computed(() => {
 })
 const directoryContentHeading = computed(() => route.value === '/knowledge' ? '最新文章' : route.value === '/education-resources' ? '已发布的学习资料' : '已发布的工具')
 
-
 function closeMenu() { menuOpen.value = false }
-function setRouteFromLocation() { route.value = window.location.pathname || '/' }
+function setRouteFromLocation() {
+  const rawPath = decodeURI(window.location.pathname || '/')
+  const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath
+  route.value = routeAliases[pathname] || pathname
+  if (isAccountPage.value) {
+    const section = routeSections[route.value] || 'overview'
+    activeAccountSection.value = section
+    activeSidebarButton.value = section
+  }
+}
+const scrollStorageKey = (path = route.value) => `portal:scroll:${path}`
+function saveScrollPosition() {
+  try {
+    const read = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.scrollTop || 0
+    sessionStorage.setItem(scrollStorageKey(), JSON.stringify({ windowY: window.scrollY, accountContent: read('.account-content'), accountSidebar: read('.account-sidebar'), table: read('.virtual-table-scroll') }))
+  } catch { /* Storage may be unavailable. */ }
+}
+async function restoreScrollPosition() {
+  await nextTick()
+  try {
+    const saved = sessionStorage.getItem(scrollStorageKey())
+    if (!saved) return
+    const state = JSON.parse(saved) as { windowY?: number; accountContent?: number; accountSidebar?: number; table?: number }
+    window.scrollTo({ top: state.windowY || 0, behavior: 'auto' })
+    const write = (selector: string, value?: number) => { const el = document.querySelector(selector) as HTMLElement | null; if (el && typeof value === 'number') el.scrollTop = value }
+    write('.account-content', state.accountContent); write('.account-sidebar', state.accountSidebar); write('.virtual-table-scroll', state.table)
+  } catch { /* Ignore malformed state. */ }
+}
+function onScrollCapture() { saveScrollPosition() }
 async function loadPublicContents() {
   publicContentLoading.value = true
   publicContentError.value = ''
@@ -441,6 +597,7 @@ async function loadPublicContents() {
     const result = await response.json() as { items?: PublicContentCard[]; error?: string }
     if (!response.ok) throw new Error(result.error || '读取公开内容失败。')
     publicContents.value = result.items || []
+    knowledgeVisibleCount.value = knowledgePageSize
   } catch (error) {
     publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
   } finally {
@@ -463,27 +620,37 @@ async function loadPublicArticle(slug: string) {
   }
 }
 async function navigate(target: string) {
+  saveScrollPosition()
   closeMenu()
   history.pushState({}, '', target)
   setRouteFromLocation()
   authError.value = ''
   authNotice.value = ''
-  if (route.value === '/account') {
+  if (isProtectedPage.value) {
     const valid = await loadSession()
     if (!valid) {
       history.replaceState({}, '', '/login')
       route.value = '/login'
-      authNotice.value = '请先登录，再进入个人中心。'
+      authNotice.value = '请先登录，再进入工作空间。'
       return
     }
   }
   if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
+  if (route.value === '/content-management') await loadContentList()
+  if (isContentEditorPage.value) void initializeContentEditorRoute()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (route.value === '/' && window.location.hash) {
     await nextTick()
     document.querySelector(window.location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   } else {
     window.scrollTo({ top: 0, behavior: 'auto' })
+    if (isAccountPage.value) {
+      await nextTick()
+      const content = document.querySelector('.account-content') as HTMLElement | null
+      const table = document.querySelector('.virtual-table-scroll') as HTMLElement | null
+      if (content) content.scrollTop = 0
+      if (table) table.scrollTop = 0
+    }
   }
 }
 async function loadSession(): Promise<boolean> {
@@ -540,29 +707,45 @@ function onPopState() {
   authError.value = ''
   if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
-  if (route.value === '/account') void loadSession().then((valid) => { if (!valid) void navigate('/login') })
+  if (route.value === '/content-management') void loadContentList()
+  if (isProtectedPage.value) void loadSession().then((valid) => { if (!valid) void navigate('/login') })
+  if (isContentEditorPage.value) void initializeContentEditorRoute()
+  void restoreScrollPosition()
 }
 onMounted(() => {
+  setRouteFromLocation()
+  void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
+  document.addEventListener('scroll', onScrollCapture, true)
+  window.addEventListener('beforeunload', saveScrollPosition)
   if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   void loadSession().then((valid) => {
-    if (route.value === '/account' && !valid) {
+    if (isProtectedPage.value && !valid) {
       history.replaceState({}, '', '/login')
       route.value = '/login'
-      authNotice.value = '请先登录，再进入个人中心。'
+      authNotice.value = '请先登录，再进入工作空间。'
     }
   })
+  if (isAccountPage.value && activeAccountSection.value === 'content-management') void loadContentList()
+  if (isContentEditorPage.value) void initializeContentEditorRoute()
+  void restoreScrollPosition()
 })
-onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
+onBeforeUnmount(() => {
+  saveScrollPosition()
+  tableResizeObserver?.disconnect()
+  window.removeEventListener('popstate', onPopState)
+  document.removeEventListener('scroll', onScrollCapture, true)
+  window.removeEventListener('beforeunload', saveScrollPosition)
+})
 </script>
 
 <template>
   <div class="site-shell">
-    <header v-if="route !== '/account'" class="site-header">
-      <a class="brand" href="/" aria-label="个人门户首页" @click.prevent="navigate('/')">
-        <span class="brand-mark">P.</span>
-        <span class="brand-copy"><strong>PERSONAL PORTAL</strong><small>知识 · 工具 · 实践</small></span>
+    <header v-if="!isAccountPage && !isContentEditorPage" class="site-header">
+      <a class="brand" href="/" aria-label="资源与服务平台首页" @click.prevent="navigate('/')">
+        <span class="brand-mark">R.</span>
+        <span class="brand-copy"><strong>资源平台</strong><small>资源 · 信息 · 行业服务</small></span>
       </a>
       <button class="menu-toggle" type="button" :aria-expanded="menuOpen" aria-label="切换导航菜单" @click="menuOpen = !menuOpen">
        <span></span>
@@ -580,7 +763,34 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
       </nav>
     </header>
 
-    <main v-if="route === '/'" id="top">
+    <main v-if="isContentEditorPage" class="content-workspace-page">
+      <header class="content-workspace-topbar">
+        <a class="workspace-brand" href="/content-management" @click.prevent="returnToContentList"><span class="workspace-brand-mark">R.</span><span><strong>内容工作台</strong><small></small></span></a>
+        <div class="workspace-document-name"><span class="workspace-status-dot"></span><span>{{ contentForm.title.trim() || '未命名内容' }}</span><em>草稿</em></div>
+        <button type="button" class="content-secondary-button workspace-return" :disabled="contentBusy" @click="cancelContentEditor">← 返回列表</button>
+      </header>
+      <ContentDocumentEditor v-model="contentForm.body" workspace :disabled="contentBusy">
+        <template #workspace-actions>
+          <details class="workspace-fold workspace-settings-fold" open>
+            <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron">⌄</span></summary>
+            <section class="workspace-properties">
+              <label><span>内容标题</span><input v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
+              <label><span>类型</span><VirtualizedSelect v-model="contentForm.contentType" label="内容类型" :options="contentTypeOptions" /></label>
+              <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
+              <label><span>URL 别名</span><input v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
+              <label><span>摘要</span><textarea v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
+              <p class="workspace-privacy-note"><span>◈</span> 内容默认保存为草稿；保存后可在内容列表单独发布。</p>
+            </section>
+          </details>
+          <div class="workspace-create-actions">
+            <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="cancelContentEditor">取消</button>
+            <button type="button" class="workspace-save-draft" :disabled="contentBusy" @click="saveContent()">{{ contentBusy ? '正在保存…' : '保存草稿' }}</button>
+          </div>
+        </template>
+      </ContentDocumentEditor>
+    </main>
+
+    <main v-else-if="route === '/'" id="top">
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow"><span class="status-dot"></span> A PERSONAL KNOWLEDGE SPACE</p>
@@ -598,8 +808,8 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         <div class="hero-bottom"><span>独立构建的个人空间</span><span>01 / 04 <i></i> PUBLIC SECTIONS</span></div>
       </section>
       <section id="explore" class="explore-section">
-        <div class="section-heading"><div><p class="eyebrow">EXPLORE THE PORTAL <span class="heading-rule"></span></p><h2>从一个方向开始。</h2></div><p class="section-intro">四个入口，承载不同类型的内容。<br />结构先行，内容逐步积累。</p></div>
-        <label class="search-box"><span class="search-icon" aria-hidden="true">⌕</span><input v-model="query" type="search" placeholder="搜索文章、工具、资源或项目分类…" aria-label="搜索门户分类" /><kbd>⌘ K</kbd></label>
+        <div class="section-heading"><div><p class="eyebrow">EXPLORE THE PORTAL <span class="heading-rule"></span></p><h2>探索你需要的资源。</h2></div><p class="section-intro">从知识信息到实用工具，逐步拓展更多行业与服务。</p></div>
+        <label class="search-box"><span class="search-icon" aria-hidden="true">⌕</span><input v-model="query" name="portalSearch" type="search" placeholder="搜索资源、信息、工具或行业服务…" aria-label="搜索门户分类" /><kbd>⌘ K</kbd></label>
         <div v-if="filteredSections.length" class="section-grid">
           <article v-for="section in filteredSections" :key="section.id" class="section-card">
             <div class="card-topline"><span>{{ section.number }}</span><span class="card-arrow">↗</span></div><p class="card-kicker">{{ section.subtitle }}</p><h3>{{ section.title }}</h3><p class="card-description">{{ section.description }}</p>
@@ -608,20 +818,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         </div>
         <div v-else class="empty-search"><strong>没有匹配的分类</strong><p>试试“知识”“工具”“资源”或“项目”。</p><button type="button" @click="query = ''">清除搜索</button></div>
       </section>
-      <section v-if="publicContents.length || publicContentLoading" class="published-content-section">
-        <div class="published-content-heading"><div><p class="eyebrow">LATEST PUBLICATIONS</p><h2>最新发布</h2></div><span>{{ publicContents.length }} 篇公开内容</span></div>
-        <p v-if="publicContentError" class="published-content-empty">{{ publicContentError }}</p>
-        <div v-else-if="publicContentLoading && !publicContents.length" class="published-content-empty">正在读取公开内容…</div>
-        <div v-else class="published-content-grid">
-          <a v-for="item in publicContents" :key="item.id" class="published-content-card" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
-            <span class="published-content-type">{{ contentTypeLabels[item.contentType] }}</span>
-            <h3>{{ item.title }}</h3>
-            <p>{{ item.summary || '打开内容查看详情。' }}</p>
-            <span class="published-content-link">阅读内容 ↗</span>
-          </a>
-        </div>
-      </section>
-      <section id="about" class="about-section"><div class="about-mark">P.</div><div class="about-copy"><p class="eyebrow">ABOUT THIS SPACE</p><h2>不是内容的终点，<br />而是持续实践的起点。</h2><p>这里将逐步收录公开的知识文章、在线工具、参考资料与项目记录。内容会在经过整理后发布；私人工作区与公开页面保持分离。</p></div><div class="about-meta"><span>DESIGNED TO GROW</span><span>Built with intention.</span></div></section>
+      <section id="about" class="about-section"><div class="about-mark">R.</div><div class="about-copy"><p class="eyebrow">ONE PLATFORM, MULTIPLE INDUSTRIES</p><h2>从信息发现，<br />到业务真正落地。</h2><p>这里汇集跨领域的资源信息、实用工具与专业服务，并逐步构建面向商家和不同行业的专属管理工作空间。用户获取信息，商家经营业务，各类服务在统一的平台体系中连接起来。</p></div><div class="about-meta"><span>DESIGNED FOR MANY</span><span>Resources meet business.</span></div></section>
     </main>
 
     <main v-else-if="isPublicDirectoryPage" class="directory-page">
@@ -647,6 +844,15 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         <div class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
         <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
         <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
+        <div v-else-if="route === '/knowledge' && directoryContentItems.length" class="knowledge-infinite-list" @scroll.passive="onKnowledgeListScroll">
+          <a v-for="(item, index) in visibleDirectoryContentItems" :key="item.id" class="knowledge-list-item" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
+            <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.summary">{{ item.summary }}</span></span>
+            <time>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</time>
+            <span class="knowledge-list-arrow" aria-hidden="true">↗</span>
+          </a>
+          <p class="knowledge-list-status">{{ visibleDirectoryContentItems.length < directoryContentItems.length ? '向下滚动加载更多' : `已显示全部 ${directoryContentItems.length} 篇文章` }}</p>
+        </div>
         <div v-else-if="directoryContentItems.length" class="published-content-grid">
           <a v-for="(item, index) in directoryContentItems" :key="item.id" class="published-content-card" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
             <div class="published-content-meta"><span class="published-content-type">{{ contentTypeLabels[item.contentType] }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
@@ -660,13 +866,13 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
 
     <main v-else-if="isAuthPage" class="route-main">
       <section class="auth-panel glass-panel">
-        <p class="eyebrow"><span class="status-dot"></span> PERSONAL PORTAL ACCOUNT</p>
+        <p class="eyebrow"><span class="status-dot"></span> PLATFORM ACCOUNT</p>
         <h1>{{ isRegister ? '创建你的账户' : '欢迎回来' }}</h1>
         <p class="auth-intro">{{ isRegister ? '注册后即可进入个人中心。你的账户信息将安全保存。' : '登录后进入个人中心，管理你的账户信息。' }}</p>
         <form class="auth-form" @submit.prevent="submitAuth">
-          <label v-if="isRegister" class="field-label">昵称 <input v-model="authForm.displayName" type="text" autocomplete="nickname" maxlength="60" placeholder="怎么称呼你" /></label>
-          <label class="field-label">邮箱地址 <input v-model="authForm.email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com" /></label>
-          <label class="field-label">密码 <input v-model="authForm.password" type="password" :autocomplete="isRegister ? 'new-password' : 'current-password'" :minlength="isRegister ? 10 : 1" maxlength="72" required :placeholder="isRegister ? '至少 10 个字符' : '输入你的密码'" /></label>
+          <label v-if="isRegister" class="field-label">昵称 <input v-model="authForm.displayName" name="displayName" type="text" autocomplete="nickname" maxlength="60" placeholder="怎么称呼你" /></label>
+          <label class="field-label">邮箱地址 <input v-model="authForm.email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com" /></label>
+          <label class="field-label">密码 <input v-model="authForm.password" name="password" type="password" :autocomplete="isRegister ? 'new-password' : 'current-password'" :minlength="isRegister ? 10 : 1" maxlength="72" required :placeholder="isRegister ? '至少 10 个字符' : '输入你的密码'" /></label>
           <p v-if="isRegister" class="field-help">密码长度为 10–72 个字符。请勿重复使用其他网站的密码。</p>
           <button class="button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
         </form>
@@ -687,7 +893,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
       <section v-else class="public-content-state"><h1>内容暂不可用</h1><p>{{ publicContentError || '内容不存在或尚未公开。' }}</p><a class="button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section>
     </main>
 
-    <main v-else-if="route === '/account'" class="account-layout">
+    <main v-else-if="isAccountPage" class="account-layout">
 
       <aside class="account-sidebar">
         <div v-for="group in filteredAccountGroups" :key="group.id" class="account-nav-group">
@@ -764,29 +970,7 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
         <template v-else>
           <h1 v-if="activeAccountSection !== 'content-management' && !activeTableDefinition" class="account-page-title">{{ activeAccountItem?.label || '业务中心' }}</h1>
           <p v-if="activeAccountSection !== 'content-management'" class="auth-intro">{{ activeAccountItem?.description || '管理你的业务内容与工作入口。' }}</p>
-          <section v-if="activeAccountSection === 'content-management' && contentEditorOpen" class="content-editor-panel">
-            <div class="content-editor-heading">
-              <div><h2>{{ editingContentId ? '编辑内容' : '创建内容' }}</h2><p>{{ editingContentId ? '保存后会保留当前发布状态与可见范围。' : '内容以草稿形式保存；确认后可单独发布。' }}</p></div>
-              <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="contentEditorOpen = false">返回列表</button>
-            </div>
-            <form class="content-editor-form notion-content-form" @submit.prevent="saveContent">
-              <input v-model="contentForm.title" class="notion-title-input" required maxlength="200" placeholder="无标题" aria-label="内容标题" />
-              <div class="notion-document-properties">
-                <label><span>类型</span><select v-model="contentForm.contentType"><option value="article">知识文章</option><option value="tool">在线工具</option><option value="resource">资源资料</option><option value="project">项目展示</option></select></label>
-                <label><span>可见范围</span><select v-model="contentForm.visibility"><option value="private">仅自己可见</option><option value="public">公开</option></select></label>
-                <label class="notion-slug-property"><span>URL 别名</span><input v-model="contentForm.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
-              </div>
-              <label class="notion-summary-property"><span>摘要</span><textarea v-model="contentForm.summary" maxlength="500" rows="2" placeholder="添加简短描述，方便在内容列表和公开首页展示…"></textarea></label>
-              <div class="notion-document-divider"></div>
-              <ContentDocumentEditor v-model="contentForm.body" :disabled="contentBusy" />
-              <div class="content-editor-actions notion-document-actions">
-                <span class="notion-save-hint">正文以 Markdown 格式保存，兼容现有文章和公开页面。</span>
-                <div><button type="button" class="content-secondary-button" :disabled="contentBusy" @click="contentEditorOpen = false">取消</button>
-                <button type="submit" class="content-primary-button" :disabled="contentBusy">{{ contentBusy ? '正在保存…' : (editingContentId ? '保存修改' : '保存草稿') }}</button></div>
-              </div>
-            </form>
-          </section>
-          <section v-else-if="activeAccountSection === 'content-management' && versionsContentId" class="content-editor-panel content-versions-panel">
+          <section v-if="activeAccountSection === 'content-management' && versionsContentId" class="content-editor-panel content-versions-panel">
             <div class="content-editor-heading">
               <div><h2>版本历史</h2><p>“{{ versionsContentTitle }}” · 每次有效编辑前自动保存快照，最多显示最近 100 个版本；恢复只替换内容字段，保留当前发布状态。</p></div>
               <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="versionsContentId = null">返回内容列表</button>
@@ -803,14 +987,14 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
             <div class="virtual-table-toolbar">
               <div class="virtual-table-heading"><h2>{{ activeTableDefinition.title }}</h2><span class="virtual-table-count">{{ contentLoading && activeAccountSection === 'content-management' ? '正在加载…' : filteredTableRecords.length + ' 条记录' }}</span></div>
               <div class="content-toolbar-actions">
-                <input v-model="tableQuery" class="virtual-table-search" type="search" placeholder="搜索表格内容…" aria-label="搜索表格内容" @input="tableScrollTop = 0" />
+                <input v-model="tableQuery" name="tableSearch" class="virtual-table-search" type="search" placeholder="搜索表格内容…" aria-label="搜索表格内容" @input="tableScrollTop = 0" />
                 <template v-if="activeAccountSection === 'content-management'">
                   <button type="button" class="content-secondary-button" @click="switchContentView(contentViewMode === 'active' ? 'trash' : 'active')">{{ contentViewMode === 'active' ? '回收站' : '返回内容列表' }}</button>
                   <button v-if="contentViewMode === 'active'" type="button" class="content-primary-button" @click="openNewContent">新建内容</button>
                 </template>
               </div>
             </div>
-            <div class="virtual-table-scroll" :style="{ '--table-columns': activeTableDefinition.columns.map((column) => column.width || 'minmax(100px, 1fr)').join(' ') }" @scroll="onVirtualTableScroll">
+            <div ref="virtualTableScrollElement" class="virtual-table-scroll" :style="{ '--table-columns': tableColumnTemplate }" @scroll="onVirtualTableScroll">
               <div class="virtual-table-header" role="row">
                 <span v-for="column in activeTableDefinition.columns" :key="column.key" role="columnheader">{{ column.label }}</span>
               </div>
@@ -831,14 +1015,13 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
                         <button type="button" class="content-danger-action" :disabled="contentBusy" @click="deleteContent(String(record.id))">删除</button>
                       </template>
                     </div>
-                    <span v-else role="cell">{{ record[column.key] ?? '—' }}</span>
+                    <span v-else role="cell"><button type="button" class="table-cell-preview" :title="Array.from(tableCellValue(record, column.key)).length > 10 ? '点击查看完整内容' : undefined" @click="openTableCell(column.label, tableCellValue(record, column.key))">{{ tableCellPreview(tableCellValue(record, column.key)) }}</button></span>
                   </template>
                 </div>
                 <div class="virtual-table-spacer" :style="{ height: virtualTableBottomSpace + 'px' }"></div>
               </div>
               <div v-else class="virtual-table-empty"><span class="virtual-table-empty-icon">▤</span><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? (contentViewMode === 'trash' ? '回收站为空。已删除内容可以恢复，也可以永久删除。' : '创建第一篇内容，保存为草稿后再发布。') : activeTableDefinition.note }}</p></div>
             </div>
-            <p class="virtual-table-footnote">虚拟滚动表格 · 仅渲染可视区域内的行</p>
           </section>
         </template>
       </section>
@@ -846,9 +1029,17 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
 
     <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
 
+    <div v-if="selectedTableCell" class="table-cell-detail-backdrop" @click.self="selectedTableCell = null" @keydown.esc="selectedTableCell = null">
+      <section class="table-cell-detail" role="dialog" aria-modal="true" :aria-label="selectedTableCell.label">
+        <div class="table-cell-detail-heading"><h2>{{ selectedTableCell.label }}</h2><button type="button" aria-label="关闭" @click="selectedTableCell = null">×</button></div>
+        <p>{{ selectedTableCell.value }}</p>
+        <button type="button" class="content-primary-button" @click="selectedTableCell = null">关闭</button>
+      </section>
+    </div>
+
     <NotificationHost />
 
-    <footer v-if="route !== '/account'" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">PERSONAL PORTAL <span>©</span></a><span>一个持续构建中的个人空间</span><a href="/#top" @click.prevent="navigate('/#top')">返回顶部 ↑</a></footer>
+    <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span><a href="/#top" @click.prevent="navigate('/#top')">返回顶部 ↑</a></footer>
   </div>
 </template>
 
@@ -884,8 +1075,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .brand-mark { display: grid; place-items: center; width: 40px; height: 40px; background: var(--green); color: #fff; font-size: 21px; font-weight: 700; letter-spacing: -2px; border-radius: 11px 11px 11px 3px; }
 .brand-copy { display: flex; flex-direction: column; gap: 3px; }
 .brand-copy strong { font: 500 11px var(--mono); letter-spacing: .12em; }
-.brand-copy small { color: var(--muted); font-size: 11px; letter-spacing: .08em; }
-.main-nav { display: flex; align-items: center; gap: clamp(22px, 3.4vw, 52px); font-size: 13px; color: #56615b; }
+.brand-copy small { color: var(--muted); font-size: 14px; letter-spacing: .08em; }
+.main-nav { display: flex; align-items: center; gap: clamp(22px, 3.4vw, 52px); font-size: 14px; color: #56615b; }
 .main-nav a { transition: color .2s, transform .22s ease; }
 .main-nav a:hover { transform: translateY(-1px) scale(1.04); }
 .main-nav a:hover { color: var(--green); }
@@ -901,10 +1092,10 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .hero h1 span { color: var(--green); }
 .hero-description { max-width: 440px; margin: 22px 0 29px; color: #68726d; font-size: 14px; line-height: 2; }
 .hero-actions { display: flex; align-items: center; gap: 25px; }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: 0; text-align: center; min-height: 46px; padding: 0 18px; border-radius: 4px; font-size: 13px; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 0; text-align: center; min-height: 46px; padding: 0 18px; border-radius: 4px; font-size: 14px; }
 .button-primary { color: #fff; background: var(--green); transition: background .2s, transform .2s; }
 .button-primary:hover { background: #1c5141; transform: translateY(-2px); }
-.text-link { font-size: 12px; color: #58645d; }
+.text-link { font-size: 14px; color: #58645d; }
 .text-link span { margin-left: 8px; }
 .hero-note { display: flex; align-items: center; gap: 12px; margin-top: 48px; color: #8a938e; font: 10px var(--mono); letter-spacing: .04em; }
 .note-line { width: 28px; height: 1px; background: #a8b5aa; }
@@ -927,7 +1118,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .art-spark { position: absolute; color: #73927a; }
 .spark-one { top: 32px; right: 20px; font-size: 28px; }
 .spark-two { bottom: 60px; left: 5px; font-size: 24px; font-weight: 300; }
-.hero-bottom { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--line); color: #8a948d; font-size: 10px; letter-spacing: .04em; }
+.hero-bottom { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--line); color: #8a948d; font-size: 14px; letter-spacing: .04em; }
 .hero-bottom span:last-child { font: 9px var(--mono); letter-spacing: .08em; }
 .hero-bottom i { display: inline-block; width: 40px; height: 1px; margin: 0 10px 3px; background: #b7c2b8; }
 
@@ -936,10 +1127,10 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .section-heading .eyebrow { margin-bottom: 18px; }
 .heading-rule { display: inline-block; width: 35px; height: 1px; background: #b3c0b4; }
 .section-heading h2 { margin: 0; font-size: clamp(27px, 3vw, 39px); letter-spacing: -.04em; }
-.section-intro { margin: 0 0 3px; color: #7b857e; font-size: 12px; line-height: 1.9; }
+.section-intro { margin: 0 0 3px; color: #7b857e; font-size: 14px; line-height: 1.9; }
 .search-box { display: flex; align-items: center; gap: 13px; height: 52px; margin: 38px 0 20px; padding: 0 16px; background: #fff; border: 1px solid #e0e5de; border-radius: 5px; }
 .search-icon { font-size: 26px; line-height: 1; color: #73847a; transform: rotate(-20deg); }
-.search-box input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 12px; }
+.search-box input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 14px; }
 .search-box input::placeholder { color: #a1aaa2; }
 .search-box kbd { white-space: nowrap; padding: 4px 6px; border: 1px solid #e2e6df; border-radius: 3px; color: #a0a8a0; font: 9px var(--mono); }
 .section-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
@@ -950,25 +1141,25 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .section-card:hover .card-arrow { transform: translate(2px, -2px); }
 .card-kicker { margin: 26px 0 8px; color: #688372; font: 9px var(--mono); letter-spacing: .12em; }
 .section-card h3 { margin: 0; font-size: 21px; letter-spacing: -.03em; }
-.card-description { min-height: 68px; margin: 12px 0 15px; color: #7a847c; font-size: 11px; line-height: 1.85; }
+.card-description { min-height: 68px; margin: 12px 0 15px; color: #7a847c; font-size: 14px; line-height: 1.85; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 22px; }
-.tag-list span { padding: 5px 7px; border: 1px solid #e5e9e2; border-radius: 3px; color: #8b958c; font-size: 9px; }
-.card-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding: 13px 0; border-top: 1px solid #e8ebe5; color: #6f7c72; font-size: 10px; }
+.tag-list span { padding: 5px 7px; border: 1px solid #e5e9e2; border-radius: 3px; color: #8b958c; font-size: 14px; }
+.card-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding: 13px 0; border-top: 1px solid #e8ebe5; color: #6f7c72; font-size: 14px; }
 .card-bottom span:last-child { color: var(--green); font-size: 14px; }
 .empty-search { padding: 45px 20px; text-align: center; border: 1px dashed #d7dfd5; color: var(--muted); }
 .empty-search strong { color: var(--ink); }
-.empty-search p { font-size: 12px; }
+.empty-search p { font-size: 14px; }
 .empty-search button { text-align: center; padding: 8px 12px; border: 1px solid #d2ddd2; border-radius: 4px; background: transparent; color: var(--green); cursor: pointer; }
 
 .about-section { position: relative; display: grid; grid-template-columns: .35fr 1.3fr .7fr; align-items: center; gap: 40px; padding: 64px clamp(22px, 11vw, 176px); background: #eaf0e8; border-top: 1px solid #dce5db; border-bottom: 1px solid #dce5db; }
 .about-mark { display: grid; place-items: center; width: 86px; height: 86px; border: 1px solid #bdcdbd; border-radius: 50%; color: #31634e; font-size: 39px; font-weight: 700; letter-spacing: -.12em; }
 .about-copy .eyebrow { margin-bottom: 15px; color: #64816c; }
 .about-copy h2 { margin: 0; font-size: clamp(25px, 2.8vw, 35px); line-height: 1.5; letter-spacing: -.04em; }
-.about-copy > p:last-child { max-width: 500px; margin: 14px 0 0; color: #68766b; font-size: 12px; line-height: 2; }
+.about-copy > p:last-child { max-width: 500px; margin: 14px 0 0; color: #68766b; font-size: 14px; line-height: 2; }
 .about-meta { align-self: end; display: flex; flex-direction: column; gap: 9px; padding-bottom: 5px; color: #788a7b; font: 9px var(--mono); letter-spacing: .08em; }
 .about-meta span:last-child { color: #8c9a8d; font: 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: 0; }
 
-.site-footer { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px clamp(22px, 7.1vw, 112px); color: #89928b; font-size: 10px; }
+.site-footer { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px clamp(22px, 7.1vw, 112px); color: #89928b; font-size: 14px; }
 .footer-brand { color: #5c6e60; font: 10px var(--mono); letter-spacing: .08em; }
 .footer-brand span { margin-left: 5px; }
 .site-footer > a:last-child { color: #526d5b; }
@@ -989,8 +1180,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 @media (max-width: 700px) {
   .site-header { height: 70px; padding-inline: 20px; }
   .brand-mark { width: 36px; height: 36px; }
-  .brand-copy strong { font-size: 9px; }
-  .brand-copy small { font-size: 10px; }
+  .brand-copy strong { font-size: 14px; }
+  .brand-copy small { font-size: 14px; }
   .menu-toggle { display: flex; flex-direction: column; gap: 5px; padding: 10px 4px; border: 0; background: transparent; }
   .menu-toggle span { display: block; width: 23px; height: 1px; background: var(--ink); }
   .main-nav { position: absolute; z-index: 5; top: 69px; left: 0; right: 0; display: none; align-items: stretch; gap: 0; padding: 8px 20px 16px; background: var(--paper); border-bottom: 1px solid var(--line); }
@@ -999,17 +1190,17 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   .main-nav .nav-contact { border: 0; padding: 13px 0; }
   .hero { grid-template-columns: 1fr; padding: 67px 22px 25px; }
   .hero-copy { padding-bottom: 0; }
-  .hero .eyebrow { margin-bottom: 22px; font-size: 9px; }
+  .hero .eyebrow { margin-bottom: 22px; font-size: 14px; }
   .hero h1 { font-size: clamp(34px, 9vw, 49px); }
-  .hero-description { margin-top: 17px; font-size: 13px; }
+  .hero-description { margin-top: 17px; font-size: 14px; }
   .hero-note { margin-top: 30px; }
   .hero-art { min-height: 310px; margin-top: 10px; }
   .art-card { width: min(270px, 72%); height: 200px; }
   .orbit-one { width: 78vw; height: 55vw; }
   .orbit-two { width: 60vw; height: 85vw; }
-  .art-index { right: 4px; bottom: 0; font-size: 8px; }
-  .hero-bottom { margin-top: 26px; padding-top: 17px; font-size: 9px; }
-  .hero-bottom span:last-child { font-size: 8px; }
+  .art-index { right: 4px; bottom: 0; font-size: 14px; }
+  .hero-bottom { margin-top: 26px; padding-top: 17px; font-size: 14px; }
+  .hero-bottom span:last-child { font-size: 14px; }
   .hero-bottom i { width: 18px; margin-inline: 5px; }
   .explore-section { padding: 65px 20px 70px; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 15px; }
@@ -1340,39 +1531,39 @@ body {
 }
 
 /* Typography scale: Cloudflare-inspired, clearer hierarchy and larger readable text */
-.brand-copy strong { font-size: 12px; }
-.brand-copy small { font-size: 13px; }
+.brand-copy strong { font-size: 14px; }
+.brand-copy small { font-size: 14px; }
 .main-nav { font-size: 15px; }
 .main-nav .nav-contact { padding: 12px 17px; }
 .hero .eyebrow,
 .section-heading .eyebrow,
-.about-copy .eyebrow { font-size: 12px; }
+.about-copy .eyebrow { font-size: 14px; }
 .hero h1 { font-size: clamp(44px, 5vw, 72px); line-height: 1.24; }
 .hero-description { max-width: 510px; font-size: 17px; line-height: 1.9; }
 .button { min-height: 52px; padding-inline: 22px; font-size: 15px; }
 .hero-actions { gap: 28px; }
 .text-link { font-size: 15px; }
-.hero-note { font-size: 12px; }
-.hero-bottom { font-size: 12px; }
-.hero-bottom span:last-child { font-size: 11px; }
-.art-card-label { font-size: 11px; }
-.art-card-footer { font-size: 9px; }
-.art-index { font-size: 10px; }
+.hero-note { font-size: 14px; }
+.hero-bottom { font-size: 14px; }
+.hero-bottom span:last-child { font-size: 14px; }
+.art-card-label { font-size: 14px; }
+.art-card-footer { font-size: 14px; }
+.art-index { font-size: 14px; }
 .explore-section { padding-top: 100px; padding-bottom: 112px; }
 .section-heading h2 { font-size: clamp(34px, 3.4vw, 48px); }
 .section-intro { font-size: 15px; line-height: 1.85; }
 .search-box { min-height: 60px; }
 .search-box input { font-size: 15px; }
-.search-box kbd { font-size: 11px; padding: 5px 7px; }
+.search-box kbd { font-size: 14px; padding: 5px 7px; }
 .section-grid { gap: 18px; }
 .section-card { min-height: 340px; padding: 25px 22px 0; }
-.card-topline { font-size: 12px; }
-.card-kicker { font-size: 11px; margin-top: 28px; }
+.card-topline { font-size: 14px; }
+.card-kicker { font-size: 14px; margin-top: 28px; }
 .section-card h3 { font-size: 25px; }
 .card-description { min-height: 84px; font-size: 14px; line-height: 1.9; }
 .tag-list { gap: 6px; }
-.tag-list span { padding: 6px 9px; font-size: 12px; }
-.card-bottom { padding: 15px 0; font-size: 12px; }
+.tag-list span { padding: 6px 9px; font-size: 14px; }
+.card-bottom { padding: 15px 0; font-size: 14px; }
 .card-bottom span:last-child { font-size: 16px; }
 .empty-search strong { font-size: 18px; }
 .empty-search p { font-size: 15px; }
@@ -1380,10 +1571,10 @@ body {
 .about-section { padding-top: 72px; padding-bottom: 72px; }
 .about-copy h2 { font-size: clamp(30px, 3.2vw, 43px); line-height: 1.4; }
 .about-copy > p:last-child { max-width: 560px; font-size: 15px; line-height: 1.9; }
-.about-meta { font-size: 11px; }
-.about-meta span:last-child { font-size: 13px; }
-.site-footer { font-size: 12px; }
-.footer-brand { font-size: 11px; }
+.about-meta { font-size: 14px; }
+.about-meta span:last-child { font-size: 14px; }
+.site-footer { font-size: 14px; }
+.footer-brand { font-size: 14px; }
 @media (min-width: 1400px) {
   .section-card { min-height: 355px; padding-inline: 25px; }
 }
@@ -1395,46 +1586,46 @@ body {
   .about-copy h2 { font-size: clamp(30px, 3.6vw, 40px); }
 }
 @media (max-width: 700px) {
-  .brand-copy strong { font-size: 11px; }
-  .brand-copy small { font-size: 12px; }
+  .brand-copy strong { font-size: 14px; }
+  .brand-copy small { font-size: 14px; }
   .main-nav { font-size: 16px; }
   .main-nav a, .main-nav .nav-contact { padding-top: 15px; padding-bottom: 15px; }
   .hero { padding-top: 62px; }
-  .hero .eyebrow { font-size: 10px; line-height: 1.6; letter-spacing: .09em; }
+  .hero .eyebrow { font-size: 14px; line-height: 1.6; letter-spacing: .09em; }
   .hero h1 { font-size: clamp(36px, 8.8vw, 50px); line-height: 1.3; }
   .hero-description { font-size: 15px; line-height: 1.9; }
   .button { min-height: 49px; padding-inline: 18px; font-size: 14px; }
   .hero-actions { gap: 18px; flex-wrap: wrap; }
   .text-link { font-size: 14px; }
-  .hero-note { margin-top: 27px; font-size: 11px; }
-  .hero-bottom { font-size: 11px; }
-  .hero-bottom span:last-child { font-size: 9px; }
-  .art-card-label { font-size: 10px; }
-  .art-card-footer { font-size: 8px; }
-  .art-index { font-size: 9px; }
+  .hero-note { margin-top: 27px; font-size: 14px; }
+  .hero-bottom { font-size: 14px; }
+  .hero-bottom span:last-child { font-size: 14px; }
+  .art-card-label { font-size: 14px; }
+  .art-card-footer { font-size: 14px; }
+  .art-index { font-size: 14px; }
   .explore-section { padding-top: 70px; padding-bottom: 76px; }
-  .section-heading .eyebrow { font-size: 10px; }
+  .section-heading .eyebrow { font-size: 14px; }
   .section-heading h2 { font-size: clamp(30px, 7.4vw, 36px); }
   .section-intro { font-size: 14px; line-height: 1.85; }
   .search-box { min-height: 56px; margin-top: 25px; gap: 10px; padding-inline: 14px; }
   .search-box input { font-size: 14px; }
   .section-grid { gap: 13px; }
   .section-card { min-height: 0; padding: 22px 20px 0; }
-  .card-topline { font-size: 11px; }
-  .card-kicker { margin-top: 21px; font-size: 10px; }
+  .card-topline { font-size: 14px; }
+  .card-kicker { margin-top: 21px; font-size: 14px; }
   .section-card h3 { font-size: 24px; }
   .card-description { min-height: 0; margin-top: 11px; margin-bottom: 16px; font-size: 14px; line-height: 1.85; }
   .tag-list { margin-bottom: 19px; gap: 6px; }
-  .tag-list span { padding: 6px 9px; font-size: 11px; }
-  .card-bottom { padding: 13px 0; font-size: 11px; }
+  .tag-list span { padding: 6px 9px; font-size: 14px; }
+  .card-bottom { padding: 13px 0; font-size: 14px; }
   .about-section { gap: 21px; padding-top: 45px; padding-bottom: 45px; }
-  .about-copy .eyebrow { font-size: 10px; }
+  .about-copy .eyebrow { font-size: 14px; }
   .about-copy h2 { font-size: clamp(28px, 7vw, 34px); line-height: 1.45; }
   .about-copy > p:last-child { font-size: 14px; line-height: 1.9; }
-  .about-meta { font-size: 10px; }
-  .about-meta span:last-child { font-size: 12px; }
-  .site-footer { font-size: 12px; }
-  .footer-brand { font-size: 11px; }
+  .about-meta { font-size: 14px; }
+  .about-meta span:last-child { font-size: 14px; }
+  .site-footer { font-size: 14px; }
+  .footer-brand { font-size: 14px; }
 }
 
 
@@ -1447,7 +1638,7 @@ body {
 .field-label { display: grid; gap: 9px; color: var(--ink); font-weight: 600; font-size: 15px; }
 .field-label input { width: 100%; min-height: 52px; border: 1px solid rgba(133,151,169,.35); border-radius: 14px; padding: 0 16px; outline: none; color: var(--ink); background: rgba(255,255,255,.78); transition: border-color .18s, box-shadow .18s; }
 .field-label input:focus { border-color: #7296c3; box-shadow: 0 0 0 4px rgba(91,139,196,.13); }
-.field-help { margin: -8px 0 0; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.field-help { margin: -8px 0 0; font-size: 14px; line-height: 1.7; color: var(--muted); }
 .form-error, .form-notice { padding: 12px 14px; border-radius: 12px; margin: 0; font-size: 14px; line-height: 1.65; }
 .form-error { color: #8b302c; background: rgba(255,232,229,.85); border: 1px solid rgba(185,91,83,.2); }
 .form-notice { color: #315f4f; background: rgba(225,243,235,.78); border: 1px solid rgba(76,140,112,.2); margin-bottom: 18px; }
@@ -1540,20 +1731,20 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .virtual-table-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 18px; border-bottom: 1px solid rgba(133,157,181,.16); }
 .virtual-table-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .virtual-table-heading h2 { margin: 0; color: #304760; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
-.virtual-table-count { color: #8795a6; font-size: 12px; white-space: nowrap; }
-.virtual-table-search { width: min(260px, 42%); min-width: 140px; height: 38px; padding: 0 12px; border: 1px solid rgba(126,150,176,.2); border-radius: 10px; color: #344b63; background: rgba(255,255,255,.56); font-size: 13px; outline: none; }
+.virtual-table-count { color: #8795a6; font-size: 14px; white-space: nowrap; }
+.virtual-table-search { width: min(260px, 42%); min-width: 140px; height: 38px; padding: 0 12px; border: 1px solid rgba(126,150,176,.2); border-radius: 10px; color: #344b63; background: rgba(255,255,255,.56); font-size: 14px; outline: none; }
 .virtual-table-search:focus { border-color: rgba(66,124,190,.5); box-shadow: 0 0 0 3px rgba(66,124,190,.08); }
-.virtual-table-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; }
-.virtual-table-header, .virtual-table-row { display: grid; grid-template-columns: var(--table-columns); min-width: max-content; align-items: center; }
-.virtual-table-header { position: sticky; top: 0; z-index: 1; min-height: 44px; color: #71849a; background: rgba(242,247,251,.96); border-bottom: 1px solid rgba(133,157,181,.16); font-size: 12px; font-weight: 600; }
+.virtual-table-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; max-height: none; overflow-x: scroll; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.virtual-table-header, .virtual-table-row { display: grid; grid-template-columns: var(--table-columns); width: 100%; min-width: 100%; align-items: center; box-sizing: border-box; }
+.virtual-table-header { position: sticky; top: 0; z-index: 1; min-height: 44px; color: #71849a; background: rgba(242,247,251,.96); border-bottom: 1px solid rgba(133,157,181,.16); font-size: 14px; font-weight: 600; }
 .virtual-table-header span, .virtual-table-row span { overflow: hidden; padding: 0 16px; text-overflow: ellipsis; white-space: nowrap; }
-.virtual-table-row { min-height: 44px; color: #40566e; border-bottom: 1px solid rgba(133,157,181,.11); font-size: 13px; }
+.virtual-table-row { min-height: 44px; color: #40566e; border-bottom: 1px solid rgba(133,157,181,.11); font-size: 14px; }
 .virtual-table-row:hover { background: rgba(255,255,255,.5); }
 .virtual-table-empty { display: flex; min-height: 220px; flex-direction: column; align-items: center; justify-content: center; padding: 30px 18px; text-align: center; }
 .virtual-table-empty-icon { display: grid; place-items: center; width: 38px; height: 38px; margin-bottom: 12px; border: 1px solid rgba(133,157,181,.18); border-radius: 12px; color: #6685a7; background: rgba(255,255,255,.52); font-size: 18px; }
 .virtual-table-empty strong { color: #52677e; font-size: 14px; font-weight: 600; }
-.virtual-table-empty p { margin: 7px 0 0; color: #8a98a8; font-size: 12px; }
-.virtual-table-footnote { margin: 0; padding: 10px 16px; border-top: 1px solid rgba(133,157,181,.12); color: #9aa6b4; font-size: 11px; }
+.virtual-table-empty p { margin: 7px 0 0; color: #8a98a8; font-size: 14px; }
+.virtual-table-footnote { margin: 0; padding: 10px 16px; border-top: 1px solid rgba(133,157,181,.12); color: #9aa6b4; font-size: 14px; }
 @media (max-width: 680px) { .virtual-table-toolbar { align-items: stretch; flex-direction: column; gap: 12px; padding: 12px; } .virtual-table-search { width: 100%; } .account-content-table-mode h1.account-page-title { margin: 12px 12px 4px; } .account-content-table-mode > .auth-intro { margin: 0 12px 8px; } .virtual-table-panel { height: calc(100% - 86px); } }
 .workspace-placeholder { margin-top: 28px; padding: 34px; border-radius: 22px; text-align: center; background: rgba(255,255,255,.28); }
 .workspace-placeholder-icon { display: grid; place-items: center; width: 54px; height: 54px; margin: 0 auto 14px; border-radius: 18px; color: #315f9e; background: rgba(255,255,255,.55); font-size: 28px; }
@@ -1561,7 +1752,7 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .workspace-placeholder p { margin: 0; color: #75869a; font-size: 14px; }
 .sidebar-item-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: rgba(94,125,158,.4); }
 .account-sidebar-item.is-active .sidebar-item-dot { background: #2868bd; box-shadow: 0 0 0 4px rgba(52,120,212,.16); }
-.account-sidebar-home { display: block; margin: 4px 20px 20px; padding-top: 16px; border-top: 1px solid rgba(51,76,105,.07); color: #718197; font-size: 13px; }
+.account-sidebar-home { display: block; margin: 4px 20px 20px; padding-top: 16px; border-top: 1px solid rgba(51,76,105,.07); color: #718197; font-size: 14px; }
 .account-sidebar-home:hover { color: #315f9e; }
 .account-content {
   width: 100%;
@@ -1584,8 +1775,8 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 }
 .account-content.account-content-table-mode { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .account-content-table-mode h1.account-page-title { flex: 0 0 auto; margin: 16px 18px 4px; font-size: clamp(26px, 2.4vw, 34px); }
-.account-content-table-mode > .auth-intro { flex: 0 0 auto; margin: 0 18px 10px; font-size: 13px; }
-.account-search-empty { padding: 10px 8px; color: #7a8ca2; font-size: 12px; text-align: center; }
+.account-content-table-mode > .auth-intro { display: none; }
+.account-search-empty { padding: 10px 8px; color: #7a8ca2; font-size: 14px; text-align: center; }
 .account-content::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .account-content h1 { margin: 14px 0 12px; font-size: clamp(34px, 3.4vw, 48px); line-height: 1.16; letter-spacing: -.045em; }
 .account-content h1.account-page-title { margin-top: 0; }
@@ -1604,12 +1795,12 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .account-summary-card > div:nth-child(2) { display: grid; min-width: 0; gap: 6px; }
 .account-summary-name { color: #2b415a; font-size: 18px; overflow-wrap: anywhere; }
 .account-summary-email { color: #72839a; font-size: 14px; overflow-wrap: anywhere; }
-.account-status { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; white-space: nowrap; color: #4d806d; font-size: 12px; }
+.account-status { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; white-space: nowrap; color: #4d806d; font-size: 14px; }
 .account-status i { width: 6px; height: 6px; border-radius: 50%; background: #58a17d; }
 .security-info-row { display: flex; align-items: center; gap: 14px; padding: 20px; border: 1px solid rgba(72,143,111,.12); border-radius: 18px; background: rgba(228,246,237,.35); }
 .security-info-icon { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: #39775b; background: rgba(255,255,255,.6); font-size: 18px; }
 .security-info-row strong { color: #315f4f; font-size: 15px; }
-.security-info-row p { margin: 5px 0 0; color: #72867b; font-size: 13px; }
+.security-info-row p { margin: 5px 0 0; color: #72867b; font-size: 14px; }
 @media (max-width: 760px) {
   .account-layout { height: 100dvh; min-height: 0; max-height: 100dvh; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); align-content: stretch; gap: 0; padding: 0; overflow: hidden; }
   .account-sidebar { position: relative; height: auto; max-height: 34dvh; border-radius: 0; border-right: 0; border-bottom: 1px solid rgba(51,76,105,.09); padding: 10px 12px; }
@@ -1637,45 +1828,45 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .content-editor-panel { width: 100%; min-width: 0; padding: 18px clamp(12px, 2vw, 28px) 28px; overflow: auto; }
 .content-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
 .content-editor-heading h2 { margin: 0; color: #304760; font-size: 21px; font-weight: 650; }
-.content-editor-heading p { margin: 7px 0 0; color: #71849a; font-size: 13px; line-height: 1.6; }
+.content-editor-heading p { margin: 7px 0 0; color: #71849a; font-size: 14px; line-height: 1.6; }
 .content-editor-form { display: grid; gap: 17px; max-width: 1000px; }
 .notion-content-form { max-width: 1180px; margin: 0 auto; gap: 0; }
 .notion-title-input { margin: 12px 0 22px; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; color: #222f3d !important; font-size: clamp(30px, 4vw, 42px) !important; font-weight: 720 !important; letter-spacing: -.045em; line-height: 1.25; }
 .notion-title-input::placeholder { color: #b7c0ca; }
 .notion-document-properties { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(160px, .7fr) minmax(250px, 1.6fr); gap: 10px; padding: 0 0 20px; border-bottom: 1px solid #edf0f2; }
 .notion-document-properties label, .notion-summary-property { display: grid; gap: 7px; min-width: 0; }
-.notion-document-properties label > span, .notion-summary-property > span { color: #7b8794; font-size: 11px; font-weight: 600; }
-.notion-document-properties input, .notion-document-properties select { min-height: 36px !important; padding: 7px 9px !important; border: 1px solid #e7ebef !important; border-radius: 6px !important; background: #fbfcfd !important; font-size: 12px !important; }
-.notion-document-properties small { font-size: 10px !important; }
+.notion-document-properties label > span, .notion-summary-property > span { color: #7b8794; font-size: 14px; font-weight: 600; }
+.notion-document-properties input, .notion-document-properties select { min-height: 36px !important; padding: 7px 9px !important; border: 1px solid #e7ebef !important; border-radius: 6px !important; background: #fbfcfd !important; font-size: 14px !important; }
+.notion-document-properties small { font-size: 14px !important; }
 .notion-summary-property { padding: 17px 0 14px; }
-.notion-summary-property textarea { min-height: 48px; resize: vertical; border: 0 !important; border-radius: 0 !important; padding: 5px 0 !important; background: transparent !important; box-shadow: none !important; font-size: 13px !important; }
+.notion-summary-property textarea { min-height: 48px; resize: vertical; border: 0 !important; border-radius: 0 !important; padding: 5px 0 !important; background: transparent !important; box-shadow: none !important; font-size: 14px !important; }
 .notion-document-divider { height: 1px; background: #edf0f2; margin-bottom: 12px; }
 .notion-document-actions { align-items: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid #edf0f2; }
 .notion-document-actions > div { display: flex; gap: 8px; }
-.notion-save-hint { color: #8b96a3; font-size: 11px; }
-.content-editor-form label { display: grid; gap: 8px; color: #40566e; font-size: 13px; font-weight: 650; }
+.notion-save-hint { color: #8b96a3; font-size: 14px; }
+.content-editor-form label { display: grid; gap: 8px; color: #40566e; font-size: 14px; font-weight: 650; }
 .content-editor-form input, .content-editor-form select, .content-editor-form textarea { width: 100%; min-width: 0; border: 1px solid rgba(126,150,176,.24); border-radius: 11px; padding: 11px 13px; color: #344b63; background: rgba(255,255,255,.65); font: inherit; font-weight: 400; outline: none; }
 .content-editor-form input, .content-editor-form select { min-height: 42px; }
 .content-editor-form textarea { resize: vertical; line-height: 1.75; }
 .content-editor-form input:focus, .content-editor-form select:focus, .content-editor-form textarea:focus { border-color: rgba(66,124,190,.56); box-shadow: 0 0 0 3px rgba(66,124,190,.09); }
-.content-editor-form small { color: #8190a1; font-size: 11px; font-weight: 400; }
+.content-editor-form small { color: #8190a1; font-size: 14px; font-weight: 400; }
 .content-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .content-editor-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
-.content-primary-button, .content-secondary-button { flex: 0 0 auto; min-height: 38px; padding: 0 15px; border: 1px solid transparent; border-radius: 10px; font-size: 12px; font-weight: 650; cursor: pointer; transition: transform .18s, background .18s, box-shadow .18s; }
+.content-primary-button, .content-secondary-button { flex: 0 0 auto; min-height: 38px; padding: 0 15px; border: 1px solid transparent; border-radius: 10px; font-size: 14px; font-weight: 650; cursor: pointer; transition: transform .18s, background .18s, box-shadow .18s; }
 .content-primary-button { color: white; background: linear-gradient(135deg, #4c91dc, #315bb1); box-shadow: 0 5px 14px rgba(47,94,171,.16); }
 .content-secondary-button { color: #52677e; background: rgba(255,255,255,.52); border-color: rgba(126,150,176,.2); }
 .content-primary-button:hover, .content-secondary-button:hover { transform: translateY(-1px); }
 .content-primary-button:disabled, .content-secondary-button:disabled, .content-row-actions button:disabled { opacity: .55; cursor: wait; }
-.content-feedback { margin: 0 0 12px; padding: 10px 13px; border-radius: 10px; font-size: 12px; line-height: 1.65; }
+.content-feedback { margin: 0 0 12px; padding: 10px 13px; border-radius: 10px; font-size: 14px; line-height: 1.65; }
 .content-feedback-error { color: #8b302c; background: rgba(255,232,229,.8); }
 .content-feedback-success { color: #315f4f; background: rgba(225,243,235,.78); }
 .content-row-actions { display: flex; align-items: center; gap: 7px; padding: 0 10px; white-space: nowrap; }
-.content-row-actions button { padding: 5px 8px; border: 1px solid rgba(126,150,176,.18); border-radius: 7px; color: #315f9e; background: rgba(255,255,255,.48); font-size: 11px; cursor: pointer; }
+.content-row-actions button { padding: 5px 8px; border: 1px solid rgba(126,150,176,.18); border-radius: 7px; color: #315f9e; background: rgba(255,255,255,.48); font-size: 14px; cursor: pointer; }
 .content-row-actions .content-danger-action { color: #a34b46; }
 .content-version-list { display: grid; gap: 0; border-top: 1px solid rgba(126,150,176,.2); }
 .content-version-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 4px; border-bottom: 1px solid rgba(126,150,176,.16); }
-.content-version-row strong { color: #344b63; font-size: 13px; }
-.content-version-row p { margin: 6px 0 0; color: #8190a1; font-size: 11px; }
+.content-version-row strong { color: #344b63; font-size: 14px; }
+.content-version-row p { margin: 6px 0 0; color: #8190a1; font-size: 14px; }
 @media (max-width: 680px) { .content-version-row { align-items: flex-start; flex-direction: column; gap: 10px; } }
 @media (max-width: 680px) {
   .content-toolbar-actions { width: 100%; align-items: stretch; flex-direction: column; }
@@ -1687,8 +1878,8 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 
 
 /* Tiptap block editor */
-.content-editor-shell{position:relative;min-width:0;background:#fff;border-radius:13px}.content-editor-hint{display:flex;justify-content:space-between;gap:16px;padding:12px 24px;border-bottom:1px solid #eef0f3;color:#919aa6;font-size:11px}.content-editor-hint>span:first-child{font-weight:650;color:#566272}.content-editor-hint kbd{border:1px solid #dce1e7;border-radius:4px;padding:1px 4px;background:#fafbfc;font:inherit}.content-editor-canvas{position:relative;min-height:480px;padding:32px clamp(22px,6vw,78px) 56px}.content-editor-document{min-height:380px;outline:none;color:#343e49;font-size:15px;line-height:1.85;overflow-wrap:anywhere;caret-color:#376db2}.content-editor-document>*{margin-top:0;margin-bottom:12px}.content-editor-document p{min-height:1.85em}.content-editor-document h1,.content-editor-document h2,.content-editor-document h3{color:#202d3a;font-weight:700;line-height:1.35;letter-spacing:-.025em}.content-editor-document h1{font-size:30px}.content-editor-document h2{font-size:23px}.content-editor-document h3{font-size:18px}.content-editor-document ul,.content-editor-document ol{padding-left:1.7em}.content-editor-document blockquote{margin:12px 0;padding:4px 0 4px 15px;border-left:3px solid #c6cdd6;color:#5c6875}.content-editor-document pre{overflow:auto;padding:15px;border-radius:7px;color:#e7edf5;background:#202b38;font-size:12px}.content-editor-document code{padding:2px 5px;border-radius:4px;color:#a44331;background:#f5f1ef;font-family:ui-monospace,monospace;font-size:.88em}.content-editor-document pre code{padding:0;color:inherit;background:transparent}.content-editor-document a{color:#356fb5;text-underline-offset:3px}.content-editor-document mark{background:#fff0a8}.content-editor-document img{max-width:100%;height:auto;border-radius:6px}.content-editor-document table{width:100%;border-collapse:collapse;table-layout:fixed}.content-editor-document th,.content-editor-document td{min-width:80px;padding:7px 10px;border:1px solid #e1e6eb;vertical-align:top}.content-editor-document th{background:#f5f7f9}.content-editor-document ul[data-type=taskList]{list-style:none;padding-left:0}.content-editor-document ul[data-type=taskList]>li{display:flex;gap:8px;align-items:flex-start}.content-editor-document ul[data-type=taskList]>li>label{margin-top:5px}.content-editor-document ul[data-type=taskList]>li>div{flex:1;min-width:0}.content-editor-document ul[data-type=taskList]>li[data-checked=true]>div{color:#9aa3ad;text-decoration:line-through}.content-editor-document p.is-editor-empty:first-child:before{float:left;height:0;color:#a4adb8;content:attr(data-placeholder);pointer-events:none}.content-editor-bubble-menu{display:flex;gap:3px;padding:5px;border:1px solid #e0e4e9;border-radius:9px;background:#202833;box-shadow:0 8px 24px #15202d25}.content-editor-bubble-menu button{min-width:28px;height:28px;border:0;border-radius:5px;color:#fff;background:transparent;cursor:pointer}.content-editor-bubble-menu button:hover,.content-editor-bubble-menu button.active{background:#465263}.content-editor-drag-handle{display:grid;place-items:center;width:25px;height:29px;border:0;border-radius:5px;background:transparent;color:#9aa3ad;cursor:grab;font-size:19px}.content-editor-drag-handle:hover{background:#f0f2f5;color:#3f4b59}.content-editor-slash-menu,.content-editor-block-menu{position:absolute;z-index:20;top:20px;left:24px;display:grid;width:min(300px,calc(100% - 48px));max-height:330px;overflow:auto;padding:7px;border:1px solid #e3e7ec;border-radius:10px;background:#fff;box-shadow:0 12px 35px #1d2b3a20}.content-editor-menu-caption{display:flex;justify-content:space-between;gap:8px;padding:8px;color:#8993a0;font-size:10px;font-weight:650}.content-editor-menu-caption small{font-size:9px;font-weight:400}.content-editor-slash-menu button,.content-editor-block-menu button{display:flex;align-items:center;gap:9px;padding:7px;border:0;border-radius:6px;background:transparent;color:#344252;text-align:left;font:inherit;font-size:12px;cursor:pointer}.content-editor-slash-menu button.selected,.content-editor-slash-menu button:hover,.content-editor-block-menu button:hover{background:#f1f4f7}.content-editor-menu-icon{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border:1px solid #e5e9ee;border-radius:6px;color:#566576;font-size:11px}.content-editor-slash-menu button>span:last-child{display:grid;gap:2px}.content-editor-slash-menu strong{font-size:11px;font-weight:600}.content-editor-slash-menu small{color:#8a95a2;font-size:10px}.content-editor-block-menu .content-editor-cancel-action{color:#8a95a2}.content-editor-footer{display:flex;justify-content:space-between;gap:10px;padding:10px 24px;border-top:1px solid #edf0f3;color:#8b96a3;font-size:10px}
-.content-editor-no-results{padding:8px;color:#8993a0;font-size:12px}
+.content-editor-shell{position:relative;min-width:0;background:#fff;border-radius:13px}.content-editor-hint{display:flex;justify-content:space-between;gap:16px;padding:12px 24px;border-bottom:1px solid #eef0f3;color:#919aa6;font-size: 14px}.content-editor-hint>span:first-child{font-weight:650;color:#566272}.content-editor-hint kbd{border:1px solid #dce1e7;border-radius:4px;padding:1px 4px;background:#fafbfc;font:inherit}.content-editor-canvas{position:relative;min-height:480px;padding:32px clamp(22px,6vw,78px) 56px}.content-editor-document{min-height:380px;outline:none;color:#343e49;font-size:15px;line-height:1.85;overflow-wrap:anywhere;caret-color:#376db2}.content-editor-document>*{margin-top:0;margin-bottom:12px}.content-editor-document p{min-height:1.85em}.content-editor-document h1,.content-editor-document h2,.content-editor-document h3{color:#202d3a;font-weight:700;line-height:1.35;letter-spacing:-.025em}.content-editor-document h1{font-size:30px}.content-editor-document h2{font-size:23px}.content-editor-document h3{font-size:18px}.content-editor-document ul,.content-editor-document ol{padding-left:1.7em}.content-editor-document blockquote{margin:12px 0;padding:4px 0 4px 15px;border-left:3px solid #c6cdd6;color:#5c6875}.content-editor-document pre{overflow:auto;padding:15px;border-radius:7px;color:#e7edf5;background:#202b38;font-size: 14px}.content-editor-document code{padding:2px 5px;border-radius:4px;color:#a44331;background:#f5f1ef;font-family:ui-monospace,monospace;font-size: 14px}.content-editor-document pre code{padding:0;color:inherit;background:transparent}.content-editor-document a{color:#356fb5;text-underline-offset:3px}.content-editor-document mark{background:#fff0a8}.content-editor-document img{max-width:100%;height:auto;border-radius:6px}.content-editor-document table{width:100%;border-collapse:collapse;table-layout:fixed}.content-editor-document th,.content-editor-document td{min-width:80px;padding:7px 10px;border:1px solid #e1e6eb;vertical-align:top}.content-editor-document th{background:#f5f7f9}.content-editor-document ul[data-type=taskList]{list-style:none;padding-left:0}.content-editor-document ul[data-type=taskList]>li{display:flex;gap:8px;align-items:flex-start}.content-editor-document ul[data-type=taskList]>li>label{margin-top:5px}.content-editor-document ul[data-type=taskList]>li>div{flex:1;min-width:0}.content-editor-document ul[data-type=taskList]>li[data-checked=true]>div{color:#9aa3ad;text-decoration:line-through}.content-editor-document p.is-editor-empty:first-child:before{float:left;height:0;color:#a4adb8;content:attr(data-placeholder);pointer-events:none}.content-editor-bubble-menu{display:flex;gap:3px;padding:5px;border:1px solid #e0e4e9;border-radius:9px;background:#202833;box-shadow:0 8px 24px #15202d25}.content-editor-bubble-menu button{min-width:28px;height:28px;border:0;border-radius:5px;color:#fff;background:transparent;cursor:pointer}.content-editor-bubble-menu button:hover,.content-editor-bubble-menu button.active{background:#465263}.content-editor-drag-handle{display:grid;place-items:center;width:25px;height:29px;border:0;border-radius:5px;background:transparent;color:#9aa3ad;cursor:grab;font-size:19px}.content-editor-drag-handle:hover{background:#f0f2f5;color:#3f4b59}.content-editor-slash-menu,.content-editor-block-menu{position:absolute;z-index:20;top:20px;left:24px;display:grid;width:min(300px,calc(100% - 48px));max-height:330px;overflow:auto;padding:7px;border:1px solid #e3e7ec;border-radius:10px;background:#fff;box-shadow:0 12px 35px #1d2b3a20}.content-editor-menu-caption{display:flex;justify-content:space-between;gap:8px;padding:8px;color:#8993a0;font-size: 14px;font-weight:650}.content-editor-menu-caption small{font-size: 14px;font-weight:400}.content-editor-slash-menu button,.content-editor-block-menu button{display:flex;align-items:center;gap:9px;padding:7px;border:0;border-radius:6px;background:transparent;color:#344252;text-align:left;font:inherit;font-size: 14px;cursor:pointer}.content-editor-slash-menu button.selected,.content-editor-slash-menu button:hover,.content-editor-block-menu button:hover{background:#f1f4f7}.content-editor-menu-icon{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border:1px solid #e5e9ee;border-radius:6px;color:#566576;font-size: 14px}.content-editor-slash-menu button>span:last-child{display:grid;gap:2px}.content-editor-slash-menu strong{font-size: 14px;font-weight:600}.content-editor-slash-menu small{color:#8a95a2;font-size: 14px}.content-editor-block-menu .content-editor-cancel-action{color:#8a95a2}.content-editor-footer{display:flex;justify-content:space-between;gap:10px;padding:10px 24px;border-top:1px solid #edf0f3;color:#8b96a3;font-size: 14px}
+.content-editor-no-results{padding:8px;color:#8993a0;font-size: 14px}
 .content-editor-shell.is-disabled{opacity:.76}
 .content-editor-bubble-menu button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:680px){.content-editor-hint,.content-editor-footer{flex-direction:column;padding:10px 14px}.content-editor-canvas{padding:24px 20px 42px}.content-editor-document h1{font-size:25px}}
@@ -1697,29 +1888,29 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .published-content-section { padding: 10px clamp(22px, 11vw, 176px) 96px; }
 .published-content-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
 .published-content-heading h2 { margin: 8px 0 0; color: #304760; font-size: clamp(26px, 3vw, 38px); letter-spacing: -.035em; }
-.published-content-heading > span { color: #71849a; font-size: 12px; }
+.published-content-heading > span { color: #71849a; font-size: 14px; }
 .published-content-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .published-content-card { display: flex; min-width: 0; flex-direction: column; padding: 22px; border: 1px solid rgba(51,76,105,.075); border-radius: 18px; color: inherit; text-decoration: none; background: rgba(245,249,255,.42); box-shadow: 0 10px 34px rgba(34,55,83,.06); -webkit-backdrop-filter: blur(22px) saturate(145%); backdrop-filter: blur(22px) saturate(145%); transition: transform .2s, box-shadow .2s, background .2s; }
 .published-content-card:hover { transform: translateY(-3px); background: rgba(250,252,255,.65); box-shadow: 0 16px 38px rgba(34,55,83,.11); }
-.published-content-type { color: #527caf; font-size: 11px; font-weight: 650; }
+.published-content-type { color: #527caf; font-size: 14px; font-weight: 650; }
 .published-content-card h3 { margin: 12px 0 8px; color: #304760; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
-.published-content-card p { flex: 1; margin: 0 0 20px; color: #71849a; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
-.published-content-link { color: #315f9e; font-size: 12px; font-weight: 650; }
-.published-content-empty { padding: 22px; border-radius: 14px; color: #71849a; background: rgba(245,249,255,.35); font-size: 13px; }
+.published-content-card p { flex: 1; margin: 0 0 20px; color: #71849a; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.published-content-link { color: #315f9e; font-size: 14px; font-weight: 650; }
+.published-content-empty { padding: 22px; border-radius: 14px; color: #71849a; background: rgba(245,249,255,.35); font-size: 14px; }
 .public-content-page { min-height: 76vh; padding: clamp(32px, 7vw, 82px) 24px; }
 .public-article { width: min(100%, 900px); margin: 0 auto; }
-.public-article-back { display: inline-block; margin-bottom: 36px; color: #527caf; font-size: 13px; text-decoration: none; }
-.public-article-type { margin: 0 0 15px; color: #527caf; font-size: 12px; font-weight: 650; }
+.public-article-back { display: inline-block; margin-bottom: 36px; color: #527caf; font-size: 14px; text-decoration: none; }
+.public-article-type { margin: 0 0 15px; color: #527caf; font-size: 14px; font-weight: 650; }
 .public-article-type span { padding: 0 6px; color: #8a98a8; }
 .public-article h1 { margin: 0; color: #263e58; font-size: clamp(34px, 5vw, 58px); line-height: 1.25; letter-spacing: -.04em; overflow-wrap: anywhere; }
 .public-article-summary { margin: 22px 0 0; color: #62768c; font-size: 17px; line-height: 1.9; }
 .public-article-body { margin-top: 38px; padding-top: 30px; border-top: 1px solid rgba(42,66,96,.09); color: #40566e; font-size: 16px; line-height: 1.85; overflow-wrap: anywhere; }
 .content-markdown-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; gap: 16px; }
 .content-markdown-source { min-width: 0; }
-.content-markdown-source textarea { min-height: 390px; resize: vertical; font-family: var(--mono); font-size: 13px; tab-size: 2; }
+.content-markdown-source textarea { min-height: 390px; resize: vertical; font-family: var(--mono); font-size: 14px; tab-size: 2; }
 .content-markdown-preview { min-width: 0; min-height: 390px; overflow: auto; border: 1px solid rgba(126,150,176,.2); border-radius: 11px; background: rgba(255,255,255,.5); }
-.content-markdown-preview-heading { position: sticky; top: 0; z-index: 1; padding: 12px 14px; border-bottom: 1px solid rgba(126,150,176,.16); color: #71849a; background: rgba(244,248,252,.96); font-size: 12px; font-weight: 650; }
-.content-markdown-preview-empty { padding: 18px; color: #8a98a8; font-size: 12px; }
+.content-markdown-preview-heading { position: sticky; top: 0; z-index: 1; padding: 12px 14px; border-bottom: 1px solid rgba(126,150,176,.16); color: #71849a; background: rgba(244,248,252,.96); font-size: 14px; font-weight: 650; }
+.content-markdown-preview-empty { padding: 18px; color: #8a98a8; font-size: 14px; }
 .markdown-rendered { color: #40566e; font-size: 15px; line-height: 1.85; overflow-wrap: anywhere; }
 .markdown-rendered > :first-child { margin-top: 0; }
 .markdown-rendered > :last-child { margin-bottom: 0; }
@@ -1735,10 +1926,10 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .markdown-rendered blockquote { margin: 1em 0; padding: .15em 1em; border-left: 3px solid #9ab7d5; color: #687e94; background: rgba(228,238,248,.35); }
 .markdown-rendered a { color: #2869ad; text-decoration: underline; text-underline-offset: 3px; }
 .markdown-rendered hr { border: 0; border-top: 1px solid rgba(126,150,176,.24); margin: 1.6em 0; }
-.markdown-rendered code { padding: .12em .35em; border-radius: 5px; color: #8b4e35; background: rgba(229,235,242,.75); font-family: var(--mono); font-size: .88em; }
+.markdown-rendered code { padding: .12em .35em; border-radius: 5px; color: #8b4e35; background: rgba(229,235,242,.75); font-family: var(--mono); font-size: 14px; }
 .markdown-rendered pre { max-width: 100%; overflow: auto; padding: 15px; border-radius: 9px; color: #e7edf5; background: #243448; line-height: 1.65; }
-.markdown-rendered pre code { padding: 0; color: inherit; background: transparent; font-size: .88em; }
-.markdown-rendered table { width: 100%; border-collapse: collapse; margin: 1.2em 0; font-size: .9em; }
+.markdown-rendered pre code { padding: 0; color: inherit; background: transparent; font-size: 14px; }
+.markdown-rendered table { width: 100%; border-collapse: collapse; margin: 1.2em 0; font-size: 14px; }
 .markdown-rendered th, .markdown-rendered td { padding: 8px 10px; border: 1px solid rgba(126,150,176,.24); text-align: left; }
 .markdown-rendered th { background: rgba(226,236,247,.6); font-weight: 650; }
 .markdown-rendered img { max-width: 100%; height: auto; border-radius: 8px; }
