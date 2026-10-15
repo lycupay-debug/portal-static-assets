@@ -1259,11 +1259,11 @@ body { overflow-x: clip; }
 /* Knowledge category selector inspired by a segmented control. */
 .knowledge-toolbar { position: relative; z-index: 60; align-items: center; justify-content: flex-start; margin-bottom: 24px; }
 .knowledge-toolbar-controls { display: flex; align-items: center; justify-content: stretch; gap: 14px; width: 100%; min-width: 0; }
-.knowledge-segmented { display: flex; align-items: center; gap: 3px; flex: 1 1 0; min-width: 0; max-width: 100%; overflow-x: auto; padding: 4px; border: 1px solid rgba(25, 29, 36, .045); border-radius: 14px; background: rgba(255, 255, 255, .38); -webkit-backdrop-filter: blur(6px) saturate(118%); backdrop-filter: blur(6px) saturate(118%); scrollbar-width: none; }
+.knowledge-segmented { display: flex; align-items: center; gap: 3px; flex: 0 1 auto; min-width: 0; max-width: 100%; height: 44px; overflow-x: auto; padding: 3px; border: 1px solid rgba(25, 29, 36, .045); border-radius: 14px; background: rgba(255, 255, 255, .38); -webkit-backdrop-filter: blur(6px) saturate(118%); backdrop-filter: blur(6px) saturate(118%); scrollbar-width: none; }
 .knowledge-segmented::-webkit-scrollbar { display: none; }
 .knowledge-toolbar-splitter { display: block; flex: 0 0 1px; align-self: center; width: 1px; height: 28px; border-radius: 1px; background: rgba(25, 29, 36, .14); }
 .knowledge-segment-wrap { position: relative; flex: 0 0 auto; }
-.knowledge-segment { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 15px; border: 0; border-radius: 12px; color: #454951; background: transparent; font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
+.knowledge-segment { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 15px; border: 0; border-radius: 12px; color: #454951; background: transparent; font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
 .knowledge-segment-wrap.is-active > .knowledge-segment { color: #17191d; background: #ffd100; box-shadow: 0 1px 2px rgba(20, 20, 20, .06); }
 .knowledge-segment:hover { color: #17191d; }
 .knowledge-segment-chevron { color: #777b83; font-size: 13px; line-height: 1; }
@@ -1274,7 +1274,7 @@ body { overflow-x: clip; }
   .knowledge-toolbar { overflow: visible; }
   .knowledge-toolbar-controls { gap: 10px; }
   .knowledge-segmented { width: 100%; justify-content: flex-start; border-radius: 13px; }
-  .knowledge-segment { min-height: 36px; padding: 0 12px; }
+  .knowledge-segment { min-height: 34px; padding: 0 12px; }
   .knowledge-category-popover { position: fixed; top: auto; left: 12px; right: 12px; bottom: 18px; min-width: 0; max-height: 45vh; }
 }
 
@@ -1325,6 +1325,6 @@ body { overflow-x: clip; }
 .knowledge-autocomplete-option .knowledge-suggestion-copy strong { overflow: hidden; color: #20242c; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-autocomplete-option .knowledge-suggestion-copy small { overflow: hidden; color: #7b8290; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-autocomplete-option .knowledge-suggestion-arrow { flex: 0 0 auto; color: #7b8290; }
-.knowledge-autocomplete.knowledge-search-form { position: relative; display: block; flex: 0 0 clamp(220px, 29%, 320px); width: clamp(220px, 29%, 320px); min-width: 0; max-width: 38%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+.knowledge-autocomplete.knowledge-search-form { position: relative; display: block; flex: 1 1 0; width: auto; min-width: 220px; max-width: none; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
 
-@media (max-width: 900px) { .knowledge-autocomplete.knowledge-search-form { flex: 1 1 100%; width: 100%; max-width: none; } }
+@media (max-width: 900px) { .knowledge-segmented { flex: 1 1 100%; } .knowledge-autocomplete.knowledge-search-form { flex: 1 1 100%; width: 100%; min-width: 0; max-width: none; } }
