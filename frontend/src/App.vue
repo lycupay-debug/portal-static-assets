@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { renderMarkdown } from './utils/markdown'
-import { ArrowDown } from '@element-plus/icons-vue'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
@@ -173,6 +172,8 @@ const knowledgePageSize = 10
 const knowledgeCategory = ref('recent')
 const knowledgeSubcategory = ref('')
 const knowledgeSearchQuery = ref('')
+const knowledgeDropdownOpen = ref(false)
+const highlightedKnowledgeSuggestion = ref(-1)
 const knowledgeCategoryMenus = [
   { value: 'recent', label: '最近更新', children: [] },
   { value: 'education', label: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
@@ -271,6 +272,30 @@ function queryKnowledgeSearch(queryString: string, callback: (results: Array<Rec
 function handleKnowledgeAutocompleteSelect(item: { value: string; kind: 'theme' | 'article' }) {
   const suggestion = knowledgeSearchSuggestions.value.find(candidate => candidate.label === item.value && candidate.kind === item.kind)
   if (suggestion) chooseKnowledgeSuggestion(suggestion)
+  highlightedKnowledgeSuggestion.value = -1
+}
+function onKnowledgeSearchKeydown(event: KeyboardEvent) {
+  const suggestions = knowledgeSearchSuggestions.value
+  if (event.key === 'ArrowDown' && suggestions.length) {
+    event.preventDefault()
+    highlightedKnowledgeSuggestion.value = (highlightedKnowledgeSuggestion.value + 1) % suggestions.length
+  } else if (event.key === 'ArrowUp' && suggestions.length) {
+    event.preventDefault()
+    highlightedKnowledgeSuggestion.value = highlightedKnowledgeSuggestion.value <= 0 ? suggestions.length - 1 : highlightedKnowledgeSuggestion.value - 1
+  } else if (event.key === 'Enter' && highlightedKnowledgeSuggestion.value >= 0 && suggestions[highlightedKnowledgeSuggestion.value]) {
+    event.preventDefault()
+    chooseKnowledgeSuggestion(suggestions[highlightedKnowledgeSuggestion.value]!)
+    highlightedKnowledgeSuggestion.value = -1
+  } else if (event.key === 'Escape') {
+    knowledgeDropdownOpen.value = false
+    highlightedKnowledgeSuggestion.value = -1
+  }
+}
+function onKnowledgeOutsideClick(event: MouseEvent) {
+  if (!(event.target instanceof Element) || !event.target.closest('.knowledge-toolbar-controls')) {
+    knowledgeDropdownOpen.value = false
+    highlightedKnowledgeSuggestion.value = -1
+  }
 }
 function submitKnowledgeSearch() {
   knowledgeVisibleCount.value = knowledgePageSize
@@ -846,6 +871,7 @@ onMounted(() => {
   void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
   document.addEventListener('scroll', onScrollCapture, true)
+  document.addEventListener('click', onKnowledgeOutsideClick)
   window.addEventListener('beforeunload', saveScrollPosition)
   if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
@@ -865,6 +891,7 @@ onBeforeUnmount(() => {
   tableResizeObserver?.disconnect()
   window.removeEventListener('popstate', onPopState)
   document.removeEventListener('scroll', onScrollCapture, true)
+  document.removeEventListener('click', onKnowledgeOutsideClick)
   window.removeEventListener('beforeunload', saveScrollPosition)
 })
 </script>
@@ -970,46 +997,37 @@ onBeforeUnmount(() => {
       </section>
       <section v-if="route === '/knowledge'" class="directory-published-section knowledge-filter-section">
         <div class="knowledge-toolbar" aria-label="文章筛选与搜索">
-          <div class="knowledge-toolbar-controls">
-            <el-dropdown trigger="click" placement="bottom-start" :teleported="true" popper-class="knowledge-dropdown-popper" @command="(command: string) => { const [category, ...rest] = command.split('::'); chooseKnowledgeCategory(category || 'recent', rest.join('::')) }">
-              <button type="button" class="knowledge-dropdown-trigger" aria-label="选择文章分类">
+          <div class="knowledge-toolbar-controls" @keydown.esc="knowledgeDropdownOpen = false">
+            <div class="knowledge-dropdown-wrap">
+              <button type="button" class="knowledge-dropdown-trigger" aria-label="选择文章分类" :aria-expanded="knowledgeDropdownOpen" @click="knowledgeDropdownOpen = !knowledgeDropdownOpen">
                 <span class="knowledge-dropdown-label">{{ selectedKnowledgeCategoryLabel }}</span>
-                <el-icon class="knowledge-dropdown-arrow"><ArrowDown /></el-icon>
+                <span class="knowledge-dropdown-arrow" aria-hidden="true">⌄</span>
               </button>
-              <template #dropdown>
-                <el-dropdown-menu class="knowledge-dropdown-menu">
-                  <template v-for="(category, categoryIndex) in knowledgeCategoryMenus" :key="category.value">
-                    <el-dropdown-item :command="category.value" :divided="categoryIndex > 0" :class="{ 'is-current': knowledgeCategory === category.value && !knowledgeSubcategory }">
-                      <span>{{ category.label }}</span><span v-if="knowledgeCategory === category.value && !knowledgeSubcategory" class="knowledge-dropdown-check">✓</span>
-                    </el-dropdown-item>
-                    <el-dropdown-item v-for="child in category.children" :key="child" :command="category.value + '::' + child" class="knowledge-dropdown-subitem" :class="{ 'is-current': knowledgeCategory === category.value && knowledgeSubcategory === child }">
-                      <span>{{ child }}</span><span v-if="knowledgeCategory === category.value && knowledgeSubcategory === child" class="knowledge-dropdown-check">✓</span>
-                    </el-dropdown-item>
-                  </template>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-autocomplete
-              v-model="knowledgeSearchQuery"
-              class="knowledge-search-form knowledge-autocomplete"
-              :fetch-suggestions="queryKnowledgeSearch"
-              popper-class="knowledge-autocomplete-popper"
-              placeholder="搜索文章…"
-              aria-label="模糊搜索知识文章"
-              clearable
-              :trigger-on-focus="false"
-              @input="knowledgeVisibleCount = knowledgePageSize"
-              @select="handleKnowledgeAutocompleteSelect"
-            >
-              <template #prefix><span class="knowledge-search-icon" aria-hidden="true">⌕</span></template>
-              <template #default="{ item }">
-                <div class="knowledge-autocomplete-option">
+              <div v-if="knowledgeDropdownOpen" class="knowledge-dropdown-menu" role="menu" aria-label="文章分类">
+                <template v-for="(category, categoryIndex) in knowledgeCategoryMenus" :key="category.value">
+                  <button type="button" role="menuitem" class="knowledge-dropdown-item" :class="{ 'is-current': knowledgeCategory === category.value && !knowledgeSubcategory, 'has-divider': categoryIndex > 0 }" @click="chooseKnowledgeCategory(category.value); knowledgeDropdownOpen = false">
+                    <span>{{ category.label }}</span><span v-if="knowledgeCategory === category.value && !knowledgeSubcategory" class="knowledge-dropdown-check">✓</span>
+                  </button>
+                  <button v-for="child in category.children" :key="child" type="button" role="menuitem" class="knowledge-dropdown-item knowledge-dropdown-subitem" :class="{ 'is-current': knowledgeCategory === category.value && knowledgeSubcategory === child }" @click="chooseKnowledgeCategory(category.value, child); knowledgeDropdownOpen = false">
+                    <span>{{ child }}</span><span v-if="knowledgeCategory === category.value && knowledgeSubcategory === child" class="knowledge-dropdown-check">✓</span>
+                  </button>
+                </template>
+              </div>
+            </div>
+            <div class="knowledge-search-wrap">
+              <label class="knowledge-search-form knowledge-autocomplete">
+                <span class="knowledge-search-icon" aria-hidden="true">⌕</span>
+                <input v-model="knowledgeSearchQuery" type="search" placeholder="搜索文章…" aria-label="模糊搜索知识文章" autocomplete="off" @input="knowledgeVisibleCount = knowledgePageSize; highlightedKnowledgeSuggestion = -1" @keydown="onKnowledgeSearchKeydown" />
+                <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeVisibleCount = knowledgePageSize; highlightedKnowledgeSuggestion = -1">×</button>
+              </label>
+              <div v-if="knowledgeSearchQuery.trim() && knowledgeSearchSuggestions.length" class="knowledge-autocomplete-popper" role="listbox" aria-label="搜索建议">
+                <button v-for="(item, index) in knowledgeSearchSuggestions" :key="item.kind + ':' + item.label" type="button" role="option" :aria-selected="highlightedKnowledgeSuggestion === index" class="knowledge-autocomplete-option" :class="{ highlighted: highlightedKnowledgeSuggestion === index }" @mouseenter="highlightedKnowledgeSuggestion = index" @click="handleKnowledgeAutocompleteSelect({ value: item.label, kind: item.kind })">
                   <span class="knowledge-suggestion-kind">{{ item.kind === 'theme' ? '主题' : '文章' }}</span>
-                  <span class="knowledge-suggestion-copy"><strong>{{ item.value }}</strong><small v-if="item.summary">{{ item.summary }}</small></span>
-                  <span class="knowledge-suggestion-arrow">↗</span>
-                </div>
-              </template>
-            </el-autocomplete>
+                  <span class="knowledge-suggestion-copy"><strong>{{ item.label }}</strong><small v-if="'summary' in item && item.summary">{{ item.summary }}</small></span>
+                  <span class="knowledge-suggestion-arrow" aria-hidden="true">↗</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
