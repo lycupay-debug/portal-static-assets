@@ -4,7 +4,14 @@ import { renderMarkdown } from './utils/markdown'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
-const contentTypeOptions = [{ label: '知识文章', value: 'article' }, { label: '在线工具', value: 'tool' }, { label: '资源资料', value: 'resource' }, { label: '项目展示', value: 'project' }]
+const knowledgeTagOptions = [
+  { value: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
+  { value: '旅游', children: ['住宿', '交通', '景点攻略', '旅行规划', '美食体验'] },
+  { value: '网络', children: ['网络安全', '网络维护', '网络基础知识', '网络诊断', '云与服务器'] },
+  { value: '系统', children: ['操作系统', '系统配置', '系统维护', '部署运维', '故障排查'] },
+  { value: '编程', children: ['前端开发', '后端开发', 'Python', 'JavaScript / TypeScript', '数据库', 'API 与集成', '代码实践'] },
+  { value: '软件工具', children: ['效率工具', '开发工具', '文档工具', 'AI 工具', '自动化工具'] },
+]
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
@@ -22,6 +29,7 @@ type PortalContent = {
   title: string
   slug: string
   contentType: 'article' | 'tool' | 'resource' | 'project'
+  tags: string[]
   summary: string
   body: string
   visibility: 'public' | 'private'
@@ -35,11 +43,12 @@ type ContentForm = {
   title: string
   slug: string
   contentType: PortalContent['contentType']
+  tags: string[]
   summary: string
   body: string
   visibility: PortalContent['visibility']
 }
-type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'summary' | 'publishedAt'>
+type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'tags' | 'summary' | 'publishedAt'>
 type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt' | 'updatedAt'>
 
 const query = ref('')
@@ -163,7 +172,7 @@ watch(authNotice, (message) => { if (message) portalNotify.info(message) }, { fl
 watch(contentError, (message) => { if (message) portalNotify.error(message, '内容操作失败') }, { flush: 'sync' })
 watch(contentNotice, (message) => { if (message) portalNotify.success(message) }, { flush: 'sync' })
 const emptyContentForm = (): ContentForm => ({
-  title: '', slug: '', contentType: 'article', summary: '', body: '', visibility: 'private',
+  title: '', slug: '', contentType: 'article', tags: [], summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
 const publicContents = ref<PublicContentCard[]>([])
@@ -233,7 +242,10 @@ const knowledgeFilteredItems = computed(() => {
       programming: ['编程', '代码', 'Python', 'JavaScript', 'TypeScript', 'API', '数据库'], software: ['软件', '工具', '效率', '自动化', 'AI'],
     }
     const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(terms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
-    filtered = filtered.filter(item => keywords.some(keyword => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, keyword)))
+    filtered = filtered.filter(item => {
+      if (item.tags?.length) return item.tags.some(tag => tag === selected || tag === knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.label || (!knowledgeSubcategory.value && knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.children.includes(tag)))
+      return keywords.some(keyword => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, keyword))
+    })
   }
   const searchTerm = knowledgeSearchQuery.value.trim().toLocaleLowerCase()
   if (searchTerm) filtered = filtered.filter(item => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, searchTerm))
@@ -474,7 +486,7 @@ async function initializeContentEditorRoute() {
     if (!response.ok || !result.item) throw new Error(result.error || '读取内容详情失败。')
     const item = result.item
     editingContentId.value = item.id
-    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, summary: item.summary, body: item.body, visibility: item.visibility }
+    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [], summary: item.summary, body: item.body, visibility: item.visibility }
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '读取内容详情失败。'
   } finally { contentBusy.value = false }
@@ -583,7 +595,7 @@ async function editContent(id: string) {
     const item = result.item
     editingContentId.value = item.id
     contentForm.value = {
-      title: item.title, slug: item.slug, contentType: item.contentType,
+      title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [],
       summary: item.summary, body: item.body, visibility: item.visibility,
     }
     contentEditorOpen.value = false
@@ -598,6 +610,7 @@ async function saveContent() {
   if (!contentForm.value.title.trim()) { contentError.value = '请填写内容标题。'; return }
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(contentForm.value.slug.trim())) { contentError.value = '请填写有效的 URL 别名，仅允许小写英文字母、数字和连字符。'; return }
   if (!contentForm.value.body.trim()) { contentError.value = '正文不能为空。'; return }
+  if (!contentForm.value.tags.length) { contentError.value = '请至少选择一个知识广场标签。'; return }
   contentBusy.value = true
   contentError.value = ''
   contentNotice.value = ''
@@ -941,7 +954,7 @@ onBeforeUnmount(() => {
             <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron">⌄</span></summary>
             <section class="workspace-properties">
               <label><span>内容标题</span><input v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
-              <label><span>类型</span><VirtualizedSelect v-model="contentForm.contentType" label="内容类型" :options="contentTypeOptions" /></label>
+              <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><div v-for="category in knowledgeTagOptions" :key="category.value" class="workspace-tag-group"><strong>{{ category.value }}</strong><div class="workspace-tag-options"><label v-for="tag in [category.value, ...category.children]" :key="tag" class="workspace-tag-option"><input v-model="contentForm.tags" type="checkbox" :value="tag" :disabled="contentBusy" /><span>{{ tag }}</span></label></div></div></fieldset>
               <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
               <label><span>URL 别名</span><input v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               <label><span>摘要</span><textarea v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
@@ -1056,7 +1069,7 @@ onBeforeUnmount(() => {
         <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
         <div v-else-if="directoryContentItems.length" class="published-content-grid">
           <a v-for="(item, index) in directoryContentItems" :key="item.id" class="published-content-card" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
-            <div class="published-content-meta"><span class="published-content-type">{{ contentTypeLabels[item.contentType] }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
+            <div class="published-content-meta"><span class="published-content-type">{{ (item.tags?.length ? item.tags.join(' · ') : contentTypeLabels[item.contentType]) }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
             <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 ↗</span></div></div>
           </a>
         </div>
@@ -1086,7 +1099,7 @@ onBeforeUnmount(() => {
       <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
       <section v-else-if="publicArticle" class="public-article">
         <header class="public-article-route-header" aria-label="文章信息">
-          <span class="public-article-route-type">{{ contentTypeLabels[publicArticle.contentType] }}</span>
+          <span class="public-article-route-type">{{ publicArticle.tags?.length ? publicArticle.tags.join(' · ') : contentTypeLabels[publicArticle.contentType] }}</span>
           <span v-if="publicArticle.publishedAt" class="public-article-route-date">{{ new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') }}</span>
         </header>
         <h1>{{ publicArticle.title }}</h1>

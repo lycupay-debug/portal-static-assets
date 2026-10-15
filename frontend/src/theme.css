@@ -1312,3 +1312,17 @@ body { overflow-x: clip; }
   .directory-carousel-controls > span { margin-right: 2px; font-size: 12px; }
   .directory-carousel-controls button { width: 34px; height: 34px; }
 }
+
+
+/* Multi-select knowledge tags in the content workspace */
+.workspace-tag-field { min-width: 0; margin: 0; padding: 12px; border: 1px solid rgba(31, 41, 55, .12); border-radius: 12px; }
+.workspace-tag-field legend { padding: 0 5px; color: #202833; font-size: 14px; font-weight: 650; }
+.workspace-tag-field legend small { margin-left: 6px; color: #858d99; font-size: 12px; font-weight: 400; }
+.workspace-tag-group { display: grid; gap: 7px; padding: 8px 0; }
+.workspace-tag-group + .workspace-tag-group { border-top: 1px solid rgba(31, 41, 55, .08); }
+.workspace-tag-group > strong { color: #4b5563; font-size: 12px; font-weight: 650; }
+.workspace-tag-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.workspace-properties .workspace-tag-option { display: inline-flex; grid-template-columns: none; align-items: center; gap: 6px; min-height: 30px; padding: 5px 9px; border: 1px solid rgba(31, 41, 55, .12); border-radius: 999px; background: rgba(255,255,255,.62); cursor: pointer; }
+.workspace-properties .workspace-tag-option input { width: 13px; min-height: 13px; height: 13px; margin: 0; accent-color: #202833; }
+.workspace-properties .workspace-tag-option span { color: #374151; font-size: 12px; font-weight: 500; }
+.workspace-properties .workspace-tag-option:has(input:checked) { border-color: rgba(31, 41, 55, .42); background: rgba(31, 41, 55, .07); }

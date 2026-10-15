@@ -5,7 +5,7 @@ import { createContentHandlers } from './handlers.mjs';
 const authorId = '11111111-1111-4111-8111-111111111111';
 const contentId = '22222222-2222-4222-8222-222222222222';
 const initialItem = () => ({
-  id: contentId, title: 'Original title', slug: 'original-title', contentType: 'article',
+  id: contentId, title: 'Original title', slug: 'original-title', contentType: 'article', tags: ['编程', 'Python'],
   summary: 'Original summary', body: '# Original', visibility: 'private', status: 'draft',
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', publishedAt: null,
 });
@@ -29,8 +29,8 @@ function createHarness() {
         return { rows: version ? [{ snapshot: clone(version.snapshot) }] : [], rowCount: version ? 1 : 0 };
       }
       if (sql.includes('UPDATE portal.portal_content SET')) {
-        const columns = { title: 'title', slug: 'slug', content_type: 'contentType', summary: 'summary', body: 'body', visibility: 'visibility' };
-        for (const match of sql.matchAll(/(title|slug|content_type|summary|body|visibility) = \$(\d+)/g)) {
+        const columns = { title: 'title', slug: 'slug', content_type: 'contentType', tags: 'tags', summary: 'summary', body: 'body', visibility: 'visibility' };
+        for (const match of sql.matchAll(/(title|slug|content_type|tags|summary|body|visibility) = \$(\d+)/g)) {
           item[columns[match[1]]] = params[Number(match[2]) - 1];
         }
         item.updatedAt = '2026-10-15T00:00:00.000Z';
@@ -90,4 +90,13 @@ test('saving unchanged fields does not create a duplicate history entry', async 
   assert.equal(result.status, 200);
   assert.equal(result.payload.versionCreated, false);
   assert.equal(h.versions.length, 0);
+});
+
+test('new content requires at least one approved Knowledge Plaza tag', async () => {
+  const h = createHarness();
+  const missing = await h.call('POST', '/content', { title: 'Tagged content', slug: 'tagged-content', contentType: 'article', body: '# Content' });
+  assert.equal(missing.status, 400);
+  assert.match(missing.payload.error, /至少选择一个知识广场标签/);
+  const invalid = await h.call('PATCH', `/content/${contentId}`, { tags: ['not-a-real-tag'] });
+  assert.equal(invalid.status, 400);
 });
