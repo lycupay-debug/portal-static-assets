@@ -1267,7 +1267,25 @@ body { overflow-x: clip; }
   .knowledge-category-popover { position: fixed; top: auto; left: 12px; right: 12px; bottom: 18px; min-width: 0; max-height: 45vh; }
 }
 
-/* Knowledge page: combine the category area into a horizontal carousel below the unchanged hero. */
+/* Knowledge page: left editorial introduction, right category carousel; articles remain full-width below. */
+.knowledge-directory-page {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  column-gap: clamp(32px, 4.5vw, 72px);
+  align-items: start;
+}
+.knowledge-directory-page > .directory-hero { min-width: 0; }
+.knowledge-directory-page > .knowledge-category-section {
+  min-width: 0;
+  padding-top: clamp(36px, 6vh, 72px);
+}
+.knowledge-directory-page > .directory-published-section { grid-column: 1 / -1; min-width: 0; }
+.knowledge-directory-page .directory-tile-track { grid-auto-columns: calc((100% - 16px) / 2); }
+@media (max-width: 900px) {
+  .knowledge-directory-page { display: block; }
+  .knowledge-directory-page > .knowledge-category-section { padding-top: 24px; }
+  .knowledge-directory-page .directory-tile-track { grid-auto-columns: calc((100% - 16px) / 2); }
+}
 .knowledge-category-section { padding-top: 28px; }
 .directory-carousel-controls { display: flex; align-items: center; gap: 8px; }
 .directory-carousel-controls > span { margin-right: 8px; color: #858c99; font-size: 14px; white-space: nowrap; }

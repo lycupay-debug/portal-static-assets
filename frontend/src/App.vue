@@ -855,7 +855,7 @@ onBeforeUnmount(() => {
       <section id="about" class="about-section"><div class="about-mark">R.</div><div class="about-copy"><p class="eyebrow">ONE PLATFORM, MULTIPLE INDUSTRIES</p><h2>从信息发现，<br />到业务真正落地。</h2><p>这里汇集跨领域的资源信息、实用工具与专业服务，并逐步构建面向商家和不同行业的专属管理工作空间。用户获取信息，商家经营业务，各类服务在统一的平台体系中连接起来。</p></div><div class="about-meta"><span>DESIGNED FOR MANY</span><span>Resources meet business.</span></div></section>
     </main>
 
-    <main v-else-if="isPublicDirectoryPage" class="directory-page">
+    <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge' }">
       <section class="directory-hero">
         <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
         <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
