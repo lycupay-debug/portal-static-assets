@@ -264,6 +264,16 @@ function chooseKnowledgeSuggestion(suggestion: (typeof knowledgeSearchSuggestion
   knowledgeSearchQuery.value = ''
   knowledgeVisibleCount.value = knowledgePageSize
 }
+function queryKnowledgeSearch(queryString: string, callback: (results: Array<Record<string, unknown>>) => void) {
+  const results = knowledgeSearchSuggestions.value
+    .map(suggestion => ({ ...suggestion, value: suggestion.label }))
+    .filter(suggestion => !queryString.trim() || knowledgeFuzzyMatch(`${suggestion.value} ${'summary' in suggestion ? suggestion.summary : ''}`, queryString))
+  callback(results)
+}
+function handleKnowledgeAutocompleteSelect(item: { value: string; kind: 'theme' | 'article' }) {
+  const suggestion = knowledgeSearchSuggestions.value.find(candidate => candidate.label === item.value && candidate.kind === item.kind)
+  if (suggestion) chooseKnowledgeSuggestion(suggestion)
+}
 function submitKnowledgeSearch() {
   knowledgeSearchOpen.value = false
   knowledgeVisibleCount.value = knowledgePageSize
@@ -860,7 +870,6 @@ onBeforeUnmount(() => {
        <span></span>
       </button>
       <nav class="main-nav" :class="{ 'is-open': menuOpen }" aria-label="主导航">
-        <a href="/#journal" @click.prevent="navigate('/#journal')">文章</a>
         <a href="/knowledge" @click.prevent="navigate('/knowledge')">知识广场</a>
         <a href="/education-resources" @click.prevent="navigate('/education-resources')">教育资源</a>
         <a href="/homestays" @click.prevent="navigate('/homestays')">民宿房源</a>
@@ -960,18 +969,28 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-            <form class="knowledge-search-form" role="search" @submit.prevent="submitKnowledgeSearch">
-              <span class="knowledge-search-icon" aria-hidden="true">⌕</span>
-              <input v-model="knowledgeSearchQuery" type="search" autocomplete="off" aria-label="模糊搜索知识文章" placeholder="搜索文章…" @focus="knowledgeSearchOpen = true" @input="knowledgeSearchOpen = true; knowledgeVisibleCount = knowledgePageSize" @keydown.esc="knowledgeSearchOpen = false" />
-              <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeSearchOpen = false; knowledgeVisibleCount = knowledgePageSize">×</button>
-              <div v-if="knowledgeSearchOpen && knowledgeSearchSuggestions.length" class="knowledge-search-suggestions" role="listbox" aria-label="搜索建议">
-                <button v-for="suggestion in knowledgeSearchSuggestions" :key="`${suggestion.kind}-${suggestion.label}`" type="button" role="option" class="knowledge-search-suggestion" @mousedown.prevent="chooseKnowledgeSuggestion(suggestion)">
-                  <span class="knowledge-suggestion-kind">{{ suggestion.kind === 'theme' ? '主题' : '文章' }}</span>
-                  <span class="knowledge-suggestion-copy"><strong>{{ suggestion.label }}</strong><small v-if="'summary' in suggestion && suggestion.summary">{{ suggestion.summary }}</small></span>
+            <el-autocomplete
+              v-model="knowledgeSearchQuery"
+              class="knowledge-search-form knowledge-autocomplete"
+              :fetch-suggestions="queryKnowledgeSearch"
+              popper-class="knowledge-autocomplete-popper"
+              placeholder="搜索文章…"
+              aria-label="模糊搜索知识文章"
+              clearable
+              :trigger-on-focus="false"
+              @input="knowledgeVisibleCount = knowledgePageSize"
+              @select="handleKnowledgeAutocompleteSelect"
+              @clear="knowledgeSearchOpen = false"
+            >
+              <template #prefix><span class="knowledge-search-icon" aria-hidden="true">⌕</span></template>
+              <template #default="{ item }">
+                <div class="knowledge-autocomplete-option">
+                  <span class="knowledge-suggestion-kind">{{ item.kind === 'theme' ? '主题' : '文章' }}</span>
+                  <span class="knowledge-suggestion-copy"><strong>{{ item.value }}</strong><small v-if="item.summary">{{ item.summary }}</small></span>
                   <span class="knowledge-suggestion-arrow">↗</span>
-                </button>
-              </div>
-            </form>
+                </div>
+              </template>
+            </el-autocomplete>
           </div>
         </div>
         <div v-else class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>

@@ -1257,7 +1257,7 @@ body { overflow-x: clip; }
 }
 
 /* Knowledge category selector inspired by a segmented control. */
-.knowledge-toolbar { align-items: center; justify-content: flex-start; margin-bottom: 24px; }
+.knowledge-toolbar { position: relative; z-index: 60; align-items: center; justify-content: flex-start; margin-bottom: 24px; }
 .knowledge-toolbar-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-width: 0; }
 .knowledge-segmented { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; min-width: 0; max-width: 100%; padding: 4px; border: 1px solid rgba(25, 29, 36, .055); border-radius: 16px; background: rgba(244, 245, 247, .82); -webkit-backdrop-filter: blur(20px) saturate(140%); backdrop-filter: blur(20px) saturate(140%); }
 .knowledge-segment-wrap { position: relative; flex: 0 0 auto; }
@@ -1265,7 +1265,7 @@ body { overflow-x: clip; }
 .knowledge-segment-wrap.is-active > .knowledge-segment { color: #17191d; background: #ffd100; box-shadow: 0 1px 2px rgba(20, 20, 20, .06); }
 .knowledge-segment:hover { color: #17191d; }
 .knowledge-segment-chevron { color: #777b83; font-size: 13px; line-height: 1; }
-.knowledge-category-popover { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; display: grid; min-width: 178px; max-height: min(340px, 60vh); overflow: auto; padding: 6px; border: 1px solid rgba(28, 32, 40, .09); border-radius: 12px; background: rgba(255, 255, 255, .96); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); box-shadow: 0 14px 38px rgba(20, 26, 36, .13); }
+.knowledge-category-popover { position: absolute; z-index: 1000; top: calc(100% + 7px); left: 0; display: grid; min-width: 178px; max-height: min(340px, 60vh); overflow: auto; padding: 6px; border: 1px solid rgba(28, 32, 40, .09); border-radius: 12px; background: rgba(255, 255, 255, .96); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); box-shadow: 0 14px 38px rgba(20, 26, 36, .13); }
 .knowledge-category-popover button { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 36px; padding: 7px 10px; border: 0; border-radius: 7px; color: #343840; background: transparent; text-align: left; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .knowledge-category-popover button:hover, .knowledge-category-popover button.selected { color: #17191d; background: rgba(255, 209, 0, .22); }
 @media (max-width: 760px) {
@@ -1303,3 +1303,25 @@ body { overflow-x: clip; }
   .directory-carousel-controls > span { margin-right: 2px; font-size: 12px; }
   .directory-carousel-controls button { width: 34px; height: 34px; }
 }
+
+/* Element Plus autocomplete: keep suggestion poppers above article cards and match the glass toolbar. */
+.knowledge-autocomplete { display: block; }
+.knowledge-autocomplete .el-input { width: 100%; }
+.knowledge-autocomplete .el-input__wrapper { min-height: 44px; padding: 0 12px; border: 1px solid rgba(25, 29, 36, .10); border-radius: 14px; background: rgba(255,255,255,.78); box-shadow: 0 8px 24px rgba(24, 30, 42, .035); transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.knowledge-autocomplete .el-input__wrapper:hover { box-shadow: 0 8px 24px rgba(24, 30, 42, .05); }
+.knowledge-autocomplete .el-input__wrapper.is-focus { border-color: rgba(49,95,206,.35); box-shadow: 0 0 0 3px rgba(49,95,206,.08); }
+.knowledge-autocomplete .el-input__inner { height: 42px; color: #17191d; font-size: 13px; }
+.knowledge-autocomplete .el-input__inner::placeholder { color: #858991; }
+.knowledge-autocomplete .el-input__prefix-inner { color: #737780; font-size: 20px; }
+.knowledge-autocomplete-popper.el-popper { z-index: 3000 !important; overflow: hidden; border: 1px solid rgba(28,32,40,.09); border-radius: 14px; background: rgba(255,255,255,.97); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); box-shadow: 0 18px 44px rgba(20,26,36,.16); }
+.knowledge-autocomplete-popper .el-autocomplete-suggestion__wrap { max-height: min(360px, 55vh); padding: 6px; }
+.knowledge-autocomplete-popper .el-autocomplete-suggestion li { height: auto; min-height: 48px; padding: 8px 10px; border-radius: 9px; line-height: normal; }
+.knowledge-autocomplete-popper .el-autocomplete-suggestion li:hover, .knowledge-autocomplete-popper .el-autocomplete-suggestion li.highlighted { background: rgba(49,95,206,.07); }
+.knowledge-autocomplete-option { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.knowledge-autocomplete-option .knowledge-suggestion-kind { flex: 0 0 auto; padding: 3px 6px; border-radius: 5px; color: #5f6c80; background: rgba(225,232,242,.7); font-size: 11px; }
+.knowledge-autocomplete-option .knowledge-suggestion-copy { display: grid; flex: 1 1 auto; min-width: 0; gap: 3px; }
+.knowledge-autocomplete-option .knowledge-suggestion-copy strong { overflow: hidden; color: #20242c; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-autocomplete-option .knowledge-suggestion-copy small { overflow: hidden; color: #7b8290; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-autocomplete-option .knowledge-suggestion-arrow { flex: 0 0 auto; color: #7b8290; }
+@media (max-width: 900px) { .knowledge-autocomplete { flex: 1 1 100%; width: 100%; max-width: none; } }
+.knowledge-autocomplete.knowledge-search-form { position: relative; display: block; flex: 0 1 320px; width: 320px; min-width: 210px; max-width: 36%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
