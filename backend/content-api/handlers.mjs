@@ -310,8 +310,7 @@ async function handleContentRequest(req, res, url) {
 }
 
 async function handlePublicContentRequest(req, res, url) {
-  if (req.method !== 'GET') return json(res, 405, { error: '不支持的请求方式。' });
-  if (url.pathname === '/public/content') {
+  if (url.pathname === '/public/content' && req.method === 'GET') {
     const result = await pool.query(
       `SELECT content_id AS "id", title, slug, content_type AS "contentType",
         tags, summary, published_at AS "publishedAt"
@@ -322,18 +321,60 @@ async function handlePublicContentRequest(req, res, url) {
     );
     return json(res, 200, { items: result.rows });
   }
-  const match = url.pathname.match(/^\/public\/content\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
-  if (!match) return json(res, 404, { error: '未找到公开内容。' });
-  const result = await pool.query(
-    `SELECT content_id AS "id", title, slug, content_type AS "contentType",
-      tags, summary, body, visibility, status, created_at AS "createdAt",
-      updated_at AS "updatedAt", published_at AS "publishedAt"
-     FROM portal.portal_content
-     WHERE slug = $1 AND status = 'published' AND visibility = 'public' AND deleted_at IS NULL`,
-    [match[1]],
+  const interactionMatch = url.pathname.match(/^\/public\/content\/([a-z0-9]+(?:-[a-z0-9]+)*)\/interactions$/);
+  const articleMatch = url.pathname.match(/^\/public\/content\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if (!articleMatch && !interactionMatch) return json(res, 404, { error: '未找到公开内容。' });
+  const slug = (interactionMatch || articleMatch)[1];
+  const article = await pool.query(
+    `SELECT c.content_id AS "id", c.title, c.slug, c.content_type AS "contentType",
+      c.tags, c.summary, c.body, c.visibility, c.status, c.created_at AS "createdAt",
+      c.updated_at AS "updatedAt", c.published_at AS "publishedAt",
+      u.display_name AS "authorName", u.created_at AS "authorJoinedAt"
+     FROM portal.portal_content c
+     JOIN portal.portal_users u ON u.user_id = c.author_id
+     WHERE c.slug = $1 AND c.status = 'published' AND c.visibility = 'public' AND c.deleted_at IS NULL`,
+    [slug],
   );
-  if (!result.rowCount) return json(res, 404, { error: '内容不存在或尚未公开。' });
-  return json(res, 200, { item: result.rows[0] });
+  if (!article.rowCount) return json(res, 404, { error: '内容不存在或尚未公开。' });
+  const item = article.rows[0];
+  if (interactionMatch) {
+    if (req.method !== 'POST') return json(res, 405, { error: '不支持的请求方式。' });
+    const user = await getSessionUser(req);
+    if (!user) return json(res, 401, { error: '请先登录，再进行点赞或收藏。' });
+    const body = await readBody(req, 4096);
+    const type = String(body.type || '');
+    if (!['like', 'favorite'].includes(type)) return json(res, 400, { error: '互动类型不正确。' });
+    const existing = await pool.query(
+      `DELETE FROM portal.portal_content_interactions
+       WHERE content_id = $1 AND user_id = $2 AND interaction_type = $3
+       RETURNING interaction_type`, [item.id, user.user_id, type]);
+    const active = existing.rowCount ? false : Boolean((await pool.query(
+      `INSERT INTO portal.portal_content_interactions (content_id, user_id, interaction_type)
+       VALUES ($1, $2, $3) ON CONFLICT (content_id, user_id, interaction_type) DO NOTHING
+       RETURNING interaction_type`, [item.id, user.user_id, type])).rowCount);
+    const counts = await pool.query(
+      `SELECT interaction_type, count(*)::int AS count
+       FROM portal.portal_content_interactions WHERE content_id = $1 GROUP BY interaction_type`, [item.id]);
+    const countMap = Object.fromEntries(counts.rows.map(row => [row.interaction_type, row.count]));
+    return json(res, 200, { active, likeCount: countMap.like || 0, favoriteCount: countMap.favorite || 0 });
+  }
+  const counts = await pool.query(
+    `SELECT interaction_type, count(*)::int AS count
+     FROM portal.portal_content_interactions WHERE content_id = $1 GROUP BY interaction_type`, [item.id]);
+  const countMap = Object.fromEntries(counts.rows.map(row => [row.interaction_type, row.count]));
+  const user = await getSessionUser(req);
+  let viewerInteractions = [];
+  if (user) {
+    const viewer = await pool.query(
+      `SELECT interaction_type FROM portal.portal_content_interactions
+       WHERE content_id = $1 AND user_id = $2`, [item.id, user.user_id]);
+    viewerInteractions = viewer.rows.map(row => row.interaction_type);
+  }
+  item.likeCount = countMap.like || 0;
+  item.favoriteCount = countMap.favorite || 0;
+  item.viewerLiked = viewerInteractions.includes('like');
+  item.viewerFavorited = viewerInteractions.includes('favorite');
+  return json(res, 200, { item });
 }
 
   return { handleContentRequest, handlePublicContentRequest };

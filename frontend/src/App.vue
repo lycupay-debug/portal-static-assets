@@ -49,7 +49,7 @@ type ContentForm = {
   visibility: PortalContent['visibility']
 }
 type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'tags' | 'summary' | 'publishedAt'>
-type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt' | 'updatedAt'>
+type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt' | 'updatedAt'> & { authorName: string; authorJoinedAt: string; likeCount: number; favoriteCount: number; viewerLiked: boolean; viewerFavorited: boolean }
 
 const query = ref('')
 const menuOpen = ref(false)
@@ -350,6 +350,7 @@ onUpdated(ensureKnowledgeListFilled)
 const publicArticle = ref<PublicContent | null>(null)
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
+const publicInteractionBusy = ref(false)
 watch(publicContentError, (message) => { if (message) portalNotify.error(message, '内容读取失败') }, { flush: 'sync' })
 const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
@@ -799,6 +800,43 @@ async function loadPublicArticle(slug: string) {
     publicContentLoading.value = false
   }
 }
+async function togglePublicInteraction(type: 'like' | 'favorite') {
+  if (!publicArticle.value || publicInteractionBusy.value) return
+  publicInteractionBusy.value = true
+  try {
+    const response = await fetch(`/api/public/content/${encodeURIComponent(publicArticle.value.slug)}/interactions`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ type }),
+    })
+    const result = await response.json() as { active?: boolean; likeCount?: number; favoriteCount?: number; error?: string }
+    if (response.status === 401) {
+      authNotice.value = '请先登录，再进行点赞或收藏。'
+      await navigate('/login')
+      return
+    }
+    if (!response.ok) throw new Error(result.error || '操作失败，请稍后重试。')
+    publicArticle.value = { ...publicArticle.value,
+      likeCount: result.likeCount ?? publicArticle.value.likeCount,
+      favoriteCount: result.favoriteCount ?? publicArticle.value.favoriteCount,
+      ...(type === 'like' ? { viewerLiked: Boolean(result.active) } : { viewerFavorited: Boolean(result.active) }),
+    }
+    portalNotify.success(type === 'like' ? (result.active ? '已点赞' : '已取消点赞') : (result.active ? '已收藏' : '已取消收藏'))
+  } catch (error) {
+    portalNotify.error(error instanceof Error ? error.message : '操作失败。')
+  } finally { publicInteractionBusy.value = false }
+}
+async function sharePublicArticle() {
+  if (!publicArticle.value) return
+  const shareData = { title: publicArticle.value.title, text: publicArticle.value.summary || publicArticle.value.title, url: window.location.href }
+  try {
+    if (navigator.share) await navigator.share(shareData)
+    else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(shareData.url); portalNotify.success('文章链接已复制') }
+    else throw new Error('当前浏览器不支持直接分享或复制链接。')
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') return
+    portalNotify.error(error instanceof Error ? error.message : '分享失败。')
+  }
+}
 async function navigate(target: string) {
   saveScrollPosition()
   closeMenu()
@@ -1097,14 +1135,30 @@ onBeforeUnmount(() => {
 
     <main v-else-if="isPublicContentPage" class="public-content-page">
       <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
-      <section v-else-if="publicArticle" class="public-article">
-        <header class="public-article-route-header" aria-label="文章信息">
-          <span class="public-article-route-type">{{ publicArticle.tags?.length ? publicArticle.tags.join(' · ') : contentTypeLabels[publicArticle.contentType] }}</span>
-          <span v-if="publicArticle.publishedAt" class="public-article-route-date">{{ new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') }}</span>
-        </header>
-        <h1>{{ publicArticle.title }}</h1>
-        <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
-        <div class="public-article-body markdown-rendered" v-html="renderMarkdown(publicArticle.body)"></div>
+      <section v-else-if="publicArticle" class="public-article-layout">
+        <article class="public-article">
+          <header class="public-article-route-header" aria-label="文章信息">
+            <span class="public-article-route-type">{{ publicArticle.tags?.length ? publicArticle.tags.join(' · ') : contentTypeLabels[publicArticle.contentType] }}</span>
+            <span v-if="publicArticle.publishedAt" class="public-article-route-date">{{ new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') }}</span>
+          </header>
+          <h1>{{ publicArticle.title }}</h1>
+          <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
+          <div class="public-article-body markdown-rendered" v-html="renderMarkdown(publicArticle.body)"></div>
+        </article>
+        <aside class="public-article-sidebar" aria-label="作者信息与文章操作">
+          <section class="public-author-card">
+            <div class="public-author-avatar" aria-hidden="true">{{ (publicArticle.authorName || '作者').slice(0, 1) }}</div>
+            <div class="public-author-heading"><span>本文作者</span><strong>{{ publicArticle.authorName || '平台作者' }}</strong></div>
+            <p>持续整理经验、知识与实践记录。</p>
+            <div class="public-author-meta">发布于 {{ publicArticle.publishedAt ? new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') : '近期' }}</div>
+          </section>
+          <section class="public-article-actions" aria-label="文章互动">
+            <button type="button" :class="['public-article-action', { active: publicArticle.viewerLiked }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerLiked" @click="togglePublicInteraction('like')"><span class="public-action-symbol" aria-hidden="true">♥</span><span>{{ publicArticle.viewerLiked ? '已点赞' : '点赞' }}</span><strong>{{ publicArticle.likeCount || 0 }}</strong></button>
+            <button type="button" :class="['public-article-action', { active: publicArticle.viewerFavorited }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerFavorited" @click="togglePublicInteraction('favorite')"><span class="public-action-symbol" aria-hidden="true">★</span><span>{{ publicArticle.viewerFavorited ? '已收藏' : '收藏' }}</span><strong>{{ publicArticle.favoriteCount || 0 }}</strong></button>
+            <button type="button" class="public-article-action" @click="sharePublicArticle"><span class="public-action-symbol" aria-hidden="true">↗</span><span>转发 / 分享</span></button>
+          </section>
+          <p class="public-article-login-hint" v-if="!user">登录后可点赞和收藏文章。</p>
+        </aside>
       </section>
       <section v-else class="public-content-state"><h1>内容暂不可用</h1><p>{{ publicContentError || '内容不存在或尚未公开。' }}</p><a class="button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section>
     </main>
