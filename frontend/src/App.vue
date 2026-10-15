@@ -172,6 +172,8 @@ const knowledgePageSize = 10
 const knowledgeCategory = ref('recent')
 const knowledgeSubcategory = ref('')
 const knowledgeCategoryHover = ref('')
+const knowledgeSearchQuery = ref('')
+const knowledgeSearchOpen = ref(false)
 const knowledgeCategoryMenus = [
   { value: 'recent', label: '最近更新', children: [] },
   { value: 'education', label: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
@@ -183,17 +185,50 @@ const knowledgeCategoryMenus = [
 ]
 const knowledgeFilteredItems = computed(() => {
   const items = [...directoryContentItems.value]
-  if (knowledgeCategory.value === 'recent') return items.sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
-  const selected = knowledgeSubcategory.value || knowledgeCategoryMenus.find(item => item.value === knowledgeCategory.value)?.label || ''
-  const terms: Record<string, string[]> = {
-    education: ['教育', '学习', '课程', '教学', '学生', '学校'], travel: ['旅游', '旅行', '住宿', '交通', '景点'],
-    network: ['网络', '安全', '维护', 'DNS', 'TCP', 'HTTP'], system: ['系统', '部署', '运维', 'Linux', 'FreeBSD', 'Windows'],
-    programming: ['编程', '代码', 'Python', 'JavaScript', 'TypeScript', 'API', '数据库'], software: ['软件', '工具', '效率', '自动化', 'AI'],
+  let filtered = items
+  if (knowledgeCategory.value !== 'recent') {
+    const selected = knowledgeSubcategory.value || knowledgeCategoryMenus.find(item => item.value === knowledgeCategory.value)?.label || ''
+    const terms: Record<string, string[]> = {
+      education: ['教育', '学习', '课程', '教学', '学生', '学校'], travel: ['旅游', '旅行', '住宿', '交通', '景点'],
+      network: ['网络', '安全', '维护', 'DNS', 'TCP', 'HTTP'], system: ['系统', '部署', '运维', 'Linux', 'FreeBSD', 'Windows'],
+      programming: ['编程', '代码', 'Python', 'JavaScript', 'TypeScript', 'API', '数据库'], software: ['软件', '工具', '效率', '自动化', 'AI'],
+    }
+    const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(terms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
+    filtered = filtered.filter(item => keywords.some(keyword => `${item.title} ${item.summary || ''}`.toLocaleLowerCase().includes(keyword)))
   }
-  const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(terms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
-  return items.filter(item => keywords.some(keyword => `${item.title} ${item.summary || ''}`.toLocaleLowerCase().includes(keyword)))
-    .sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
+  const searchTerm = knowledgeSearchQuery.value.trim().toLocaleLowerCase()
+  if (searchTerm) filtered = filtered.filter(item => `${item.title} ${item.summary || ''}`.toLocaleLowerCase().includes(searchTerm))
+  return filtered.sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
 })
+const knowledgeSearchSuggestions = computed(() => {
+  const term = knowledgeSearchQuery.value.trim().toLocaleLowerCase()
+  if (!term) return []
+  const themes = knowledgeCategoryMenus.flatMap(category => [
+    { label: category.label, kind: 'theme' as const },
+    ...category.children.map(child => ({ label: child, kind: 'theme' as const })),
+  ])
+  const articles = directoryContentItems.value.map(item => ({ label: item.title, kind: 'article' as const, slug: item.slug, summary: item.summary || '' }))
+  const matches = [...themes, ...articles].filter(item => `${item.label} ${'summary' in item ? item.summary : ''}`.toLocaleLowerCase().includes(term))
+  return matches.filter((item, index) => matches.findIndex(other => other.label === item.label) === index).slice(0, 8)
+})
+function chooseKnowledgeSuggestion(suggestion: (typeof knowledgeSearchSuggestions.value)[number]) {
+  knowledgeSearchOpen.value = false
+  if (suggestion.kind === 'article' && 'slug' in suggestion) {
+    navigate(`/content/${suggestion.slug}`)
+    return
+  }
+  const childCategory = knowledgeCategoryMenus.find(category => category.children.includes(suggestion.label))
+  const parentCategory = knowledgeCategoryMenus.find(category => category.label === suggestion.label)
+  if (childCategory) selectKnowledgeCategory(childCategory.value, suggestion.label)
+  else if (parentCategory) selectKnowledgeCategory(parentCategory.value)
+  knowledgeSearchQuery.value = ''
+  knowledgeVisibleCount.value = knowledgePageSize
+}
+function submitKnowledgeSearch() {
+  knowledgeSearchOpen.value = false
+  knowledgeVisibleCount.value = knowledgePageSize
+}
+
 const visibleDirectoryContentItems = computed(() => knowledgeFilteredItems.value.slice(0, knowledgeVisibleCount.value))
 function selectKnowledgeCategory(category: string, subcategory = '') {
   knowledgeCategory.value = category
@@ -856,12 +891,31 @@ onBeforeUnmount(() => {
     </main>
 
     <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge' }">
-      <section class="directory-hero">
-        <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
-        <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
-        <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
-        <h2>{{ currentDirectoryPage.subtitle }}</h2>
-        <p class="directory-description">{{ currentDirectoryPage.description }}</p>
+      <section class="directory-hero" :class="{ 'knowledge-search-hero': route === '/knowledge' }">
+        <template v-if="route === '/knowledge'">
+          <p class="eyebrow">KNOWLEDGE &amp; IDEAS</p>
+          <h1>按主题搜索<span>.</span></h1>
+          <form class="knowledge-search-form" role="search" @submit.prevent="submitKnowledgeSearch">
+            <span class="knowledge-search-icon" aria-hidden="true">⌕</span>
+            <input v-model="knowledgeSearchQuery" type="search" autocomplete="off" aria-label="按主题搜索知识文章" placeholder="搜索主题、关键词或文章标题…" @focus="knowledgeSearchOpen = true" @input="knowledgeSearchOpen = true; knowledgeVisibleCount = knowledgePageSize" @keydown.esc="knowledgeSearchOpen = false" />
+            <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeSearchOpen = false">×</button>
+            <div v-if="knowledgeSearchOpen && knowledgeSearchSuggestions.length" class="knowledge-search-suggestions" role="listbox" aria-label="搜索建议">
+              <button v-for="suggestion in knowledgeSearchSuggestions" :key="`${suggestion.kind}-${suggestion.label}`" type="button" role="option" class="knowledge-search-suggestion" @mousedown.prevent="chooseKnowledgeSuggestion(suggestion)">
+                <span class="knowledge-suggestion-kind">{{ suggestion.kind === 'theme' ? '主题' : '文章' }}</span>
+                <span class="knowledge-suggestion-copy"><strong>{{ suggestion.label }}</strong><small v-if="'summary' in suggestion && suggestion.summary">{{ suggestion.summary }}</small></span>
+                <span class="knowledge-suggestion-arrow">↗</span>
+              </button>
+            </div>
+          </form>
+          <p class="knowledge-search-hint">输入关键词，实时筛选文章；也可以从补全建议中直接选择主题或文章。</p>
+        </template>
+        <template v-else>
+          <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
+          <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
+          <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
+          <h2>{{ currentDirectoryPage.subtitle }}</h2>
+          <p class="directory-description">{{ currentDirectoryPage.description }}</p>
+        </template>
       </section>
       <section class="directory-section" :class="{ 'knowledge-category-section': route === '/knowledge' }">
         <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><div class="directory-carousel-controls"><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span><template v-if="route === '/knowledge'"><button type="button" aria-label="向左浏览分类" @click="scrollKnowledgeCategories(-1)">←</button><button type="button" aria-label="向右浏览分类" @click="scrollKnowledgeCategories(1)">→</button></template></div></div>
@@ -913,6 +967,7 @@ onBeforeUnmount(() => {
             <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 ↗</span></div></div>
           </a>
         </div>
+        <p v-else-if="route === '/knowledge' && knowledgeSearchQuery.trim()" class="directory-empty">没有找到匹配“{{ knowledgeSearchQuery.trim() }}”的文章。试试其他关键词或选择下方主题。</p>
         <p v-else-if="route === '/knowledge' && knowledgeCategory !== 'recent'" class="directory-empty">当前分类暂时没有匹配的文章。现有文章尚未单独标注分类，筛选暂按标题和摘要中的主题词匹配。</p>
         <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
       </section>
