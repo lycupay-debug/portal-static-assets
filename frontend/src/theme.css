@@ -1362,3 +1362,21 @@ body { overflow-x: clip; }
   .public-article-sidebar { grid-template-columns: minmax(0, 1fr); }
   .public-author-card, .public-article-actions { padding: 16px; border-radius: 14px; }
 }
+
+/* Manual article sharing dialog */
+.share-dialog-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(18, 24, 33, .34); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.share-dialog { position: relative; width: min(100%, 460px); padding: 30px; border: 1px solid rgba(255,255,255,.72); border-radius: 22px; color: #202833; background: rgba(255,255,255,.9); box-shadow: 0 24px 80px rgba(18,24,33,.2); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); }
+.share-dialog-close { position: absolute; top: 14px; right: 16px; display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 50%; color: #667085; background: transparent; font-size: 25px; line-height: 1; cursor: pointer; }
+.share-dialog-close:hover { background: rgba(31,41,55,.07); }
+.share-dialog-eyebrow { color: #7c8796; font-size: 10px; font-weight: 700; letter-spacing: .16em; }
+.share-dialog h2 { margin: 10px 0 8px; color: #202833; font-size: 24px; letter-spacing: -.035em; }
+.share-dialog > p { margin: 0 0 24px; color: #687384; font-size: 14px; line-height: 1.7; }
+.share-dialog-label { display: block; margin-bottom: 8px; color: #4d5868; font-size: 12px; font-weight: 650; }
+.share-dialog-url { display: block; width: 100%; min-width: 0; padding: 12px 13px; border: 1px solid rgba(31,41,55,.12); border-radius: 10px; outline: none; color: #344054; background: rgba(247,248,250,.85); font: inherit; font-size: 13px; }
+.share-dialog-url:focus { border-color: rgba(31,41,55,.28); box-shadow: none; }
+.share-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.share-dialog-cancel, .share-dialog-copy { min-height: 42px; padding: 0 16px; border-radius: 10px; font: inherit; font-size: 14px; cursor: pointer; }
+.share-dialog-cancel { border: 1px solid rgba(31,41,55,.12); color: #4d5868; background: rgba(255,255,255,.72); }
+.share-dialog-copy { border: 1px solid #202833; color: #fff; background: #202833; }
+.share-dialog-copy:hover { background: #344054; }
+@media (max-width: 480px) { .share-dialog { padding: 26px 20px 20px; border-radius: 18px; } .share-dialog h2 { font-size: 22px; } }

@@ -351,6 +351,8 @@ const publicArticle = ref<PublicContent | null>(null)
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
 const publicInteractionBusy = ref(false)
+const shareDialogOpen = ref(false)
+const shareUrl = ref('')
 watch(publicContentError, (message) => { if (message) portalNotify.error(message, '内容读取失败') }, { flush: 'sync' })
 const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
@@ -825,16 +827,27 @@ async function togglePublicInteraction(type: 'like' | 'favorite') {
     portalNotify.error(error instanceof Error ? error.message : '操作失败。')
   } finally { publicInteractionBusy.value = false }
 }
-async function sharePublicArticle() {
+function sharePublicArticle() {
   if (!publicArticle.value) return
-  const shareData = { title: publicArticle.value.title, text: publicArticle.value.summary || publicArticle.value.title, url: window.location.href }
+  shareUrl.value = window.location.href
+  shareDialogOpen.value = true
+}
+async function copyShareUrl() {
+  if (!shareUrl.value) return
   try {
-    if (navigator.share) await navigator.share(shareData)
-    else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(shareData.url); portalNotify.success('文章链接已复制') }
-    else throw new Error('当前浏览器不支持直接分享或复制链接。')
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(shareUrl.value)
+    } else {
+      const input = document.querySelector<HTMLInputElement>('.share-dialog-url')
+      if (!input) throw new Error('无法读取分享链接。')
+      input.focus()
+      input.select()
+      if (!document.execCommand('copy')) throw new Error('浏览器未能复制链接，请手动选择并复制。')
+    }
+    portalNotify.success('分享链接已复制')
+    shareDialogOpen.value = false
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') return
-    portalNotify.error(error instanceof Error ? error.message : '分享失败。')
+    portalNotify.error(error instanceof Error ? error.message : '复制失败，请手动复制链接。')
   }
 }
 async function navigate(target: string) {
@@ -1161,6 +1174,20 @@ onBeforeUnmount(() => {
         </aside>
       </section>
       <section v-else class="public-content-state"><h1>内容暂不可用</h1><p>{{ publicContentError || '内容不存在或尚未公开。' }}</p><a class="button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section>
+      <div v-if="shareDialogOpen" class="share-dialog-backdrop" @click.self="shareDialogOpen = false" @keydown.esc="shareDialogOpen = false">
+        <section class="share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
+          <button type="button" class="share-dialog-close" aria-label="关闭分享窗口" @click="shareDialogOpen = false">×</button>
+          <span class="share-dialog-eyebrow">SHARE ARTICLE</span>
+          <h2 id="share-dialog-title">分享这篇文章</h2>
+          <p>复制下方链接，发送给需要阅读的人。</p>
+          <label class="share-dialog-label" for="share-dialog-url">文章链接</label>
+          <input id="share-dialog-url" class="share-dialog-url" type="text" :value="shareUrl" readonly @focus="($event.target as HTMLInputElement).select()" />
+          <div class="share-dialog-actions">
+            <button type="button" class="share-dialog-cancel" @click="shareDialogOpen = false">取消</button>
+            <button type="button" class="share-dialog-copy" @click="copyShareUrl"><span aria-hidden="true">▢</span> 复制链接</button>
+          </div>
+        </section>
+      </div>
     </main>
 
     <main v-else-if="isAccountPage" class="account-layout">
