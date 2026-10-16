@@ -1,11 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
+import { readFile } from 'node:fs/promises';
 import { publishEventNotification } from './handlers.mjs';
 import { createContentHandlers } from './handlers.mjs';
 
 const authorId = '11111111-1111-4111-8111-111111111111';
 const contentId = '22222222-2222-4222-8222-222222222222';
+
+test('Go event validation and Node content API use the same approved tag catalog', async () => {
+  const [goSource, nodeSource] = await Promise.all([
+    readFile(new URL('../api/content_validation.go', import.meta.url), 'utf8'),
+    readFile(new URL('./handlers.mjs', import.meta.url), 'utf8'),
+  ]);
+  const goBlock = goSource.match(/var approvedContentTags = map\[string\]struct\{\}\{([\s\S]*?)\n\}/)?.[1];
+  const nodeBlock = nodeSource.match(/const contentTags = new Set\(\[([\s\S]*?)\]\);/)?.[1];
+  assert.ok(goBlock, 'Go approved tag map should exist');
+  assert.ok(nodeBlock, 'Node approved tag set should exist');
+  const goTags = [...goBlock.matchAll(/"([^"]+)": \{\}/g)].map((match) => match[1]).sort();
+  const nodeTags = [...nodeBlock.matchAll(/'([^']*)'/g)].map((match) => match[1]).sort();
+  assert.deepEqual(goTags, nodeTags);
+});
+
 const initialItem = () => ({
   id: contentId, title: 'Original title', slug: 'original-title', contentType: 'article', tags: ['编程', 'Python'],
   summary: 'Original summary', body: '# Original', visibility: 'private', status: 'draft',
