@@ -13,6 +13,7 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 - 后端：唯一业务 API 使用 Go（`database/sql` + pgx），统一处理认证、会话、内容、教学资源和事件生命周期；C 仅负责 FreeBSD 本地 IPC/kqueue 元数据通知，PostgreSQL 保存业务与事件持久状态。
 - 服务管理：FreeBSD `rc.d`。
 - 内容：初期由项目自身管理，不接入 Notion。
+- 教学资源：资源类型与适用年级分开保存；适用年级复用 `frontend/src/utils/taxonomy.ts` 的“年级”子项，未限定年级保存为 `NULL`；数据库通过版本化迁移维护字段，Go API 校验并返回年级，前端创建/编辑表单和表格共用该字段。
 - 分类字段：文章内容独立保存父类与子类，年级与教育人力资源分类由共享 taxonomy 定义驱动。全站自定义下拉菜单统一使用 `VirtualizedSelect.vue`，设计参数通过 `frontend/src/monochrome.css` 中的 `--portal-select-*` CSS 变量集中维护。
 - 依赖原则：优先标准库和系统原生能力；没有明确需求时不增加第三方服务。
 

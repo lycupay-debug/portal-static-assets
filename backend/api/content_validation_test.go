@@ -99,3 +99,17 @@ func TestValidateContentEventRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("result = %#v, expected invalid payload result", result)
 	}
 }
+
+func TestResourceGradeUsesCanonicalGradeTaxonomy(t *testing.T) {
+	for _, grade := range portalTaxonomy["年级"] {
+		if got := resourceGrade(grade); got != grade {
+			t.Errorf("resourceGrade(%q) = %q, want same canonical grade", grade, got)
+		}
+	}
+	if got := resourceGrade(""); got != "" {
+		t.Errorf("resourceGrade(empty) = %q, want empty for unrestricted grade", got)
+	}
+	if got := resourceGrade("幼儿园"); got != "__invalid_grade__" {
+		t.Errorf("resourceGrade(unsupported) = %q, want invalid sentinel", got)
+	}
+}

@@ -111,6 +111,7 @@ type resourceInput struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Type        string `json:"type"`
+	Grade       string `json:"grade"`
 	URL         string `json:"url"`
 	Filename    string `json:"filename"`
 	Data        string `json:"data"`
@@ -1235,7 +1236,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.Trim(r.URL.Path, "/")
 	if path == "resources" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`, u.ID)
+		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`, u.ID)
 		if err != nil {
 			a.dbError(w, err, "读取资源失败。")
 			return
@@ -1244,7 +1245,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if path == "resources/trash" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",deleted_at AS "deletedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500) x`, u.ID)
+		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",deleted_at AS "deletedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500) x`, u.ID)
 		if err != nil {
 			a.dbError(w, err, "读取回收站失败。")
 			return
@@ -1293,7 +1294,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			urlAny = strings.TrimSpace(b.URL)
 		}
 		var resourceID string
-		err = a.db.QueryRowContext(r.Context(), `INSERT INTO portal.teaching_resources(owner_id,title,description,resource_type,resource_url,original_filename,stored_filename,mime_type,file_size) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING resource_id::text`, u.ID, strings.TrimSpace(b.Title), strings.TrimSpace(b.Description), resourceType(b.Type), urlAny, filenameAny, storedAny, mimeAny, fileSize).Scan(&resourceID)
+		err = a.db.QueryRowContext(r.Context(), `INSERT INTO portal.teaching_resources(owner_id,title,description,resource_type,grade,resource_url,original_filename,stored_filename,mime_type,file_size) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING resource_id::text`, u.ID, strings.TrimSpace(b.Title), strings.TrimSpace(b.Description), resourceType(b.Type), nullableString(resourceGrade(b.Grade)), urlAny, filenameAny, storedAny, mimeAny, fileSize).Scan(&resourceID)
 		if err != nil {
 			if stored != "" {
 				_ = os.Remove(filepath.Join(a.resourceDir, stored))
@@ -1301,7 +1302,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			a.dbError(w, err, "资源保存失败。")
 			return
 		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
 		if err != nil {
 			a.dbError(w, err, "资源已保存，但读取结果失败。")
 			return
@@ -1355,7 +1356,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "资源不存在或无权恢复。", nil)
 			return
 		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 		if err != nil {
 			a.dbError(w, err, "读取恢复结果失败。")
 			return
@@ -1400,6 +1401,19 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	}
 	writeError(w, 405, "不支持的请求方式。", nil)
 }
+func resourceGrade(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	for _, grade := range portalTaxonomy["年级"] {
+		if s == grade {
+			return s
+		}
+	}
+	return "__invalid_grade__"
+}
+
 func resourceType(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -1411,8 +1425,9 @@ func validateResourceFile(b resourceInput) ([]byte, string, string, error) {
 	title := strings.TrimSpace(b.Title)
 	desc := strings.TrimSpace(b.Description)
 	typ := resourceType(b.Type)
-	if title == "" || runeLen(title) > 200 || runeLen(desc) > 2000 || runeLen(typ) > 50 {
-		return nil, "", "", errors.New("请填写有效的资源名称、类型和资源说明。")
+	grade := resourceGrade(b.Grade)
+	if title == "" || runeLen(title) > 200 || runeLen(desc) > 2000 || runeLen(typ) > 50 || grade == "__invalid_grade__" {
+		return nil, "", "", errors.New("请填写有效的资源名称、类型、年级和资源说明。")
 	}
 	if strings.TrimSpace(b.URL) != "" && (!strings.HasPrefix(strings.ToLower(strings.TrimSpace(b.URL)), "http://") && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(b.URL)), "https://") || len(strings.TrimSpace(b.URL)) > 2048) {
 		return nil, "", "", errors.New("资源 URL 必须是有效的 HTTP/HTTPS 链接，且不超过 2048 个字符。")
@@ -1487,8 +1502,9 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 	b.Title = strings.TrimSpace(b.Title)
 	b.Description = strings.TrimSpace(b.Description)
 	b.Type = resourceType(b.Type)
-	if b.Title == "" || runeLen(b.Title) > 200 || runeLen(b.Description) > 2000 || runeLen(b.Type) > 50 {
-		writeError(w, 400, "资源名称、类型或资源说明长度不正确。", nil)
+	b.Grade = resourceGrade(b.Grade)
+	if b.Title == "" || runeLen(b.Title) > 200 || runeLen(b.Description) > 2000 || runeLen(b.Type) > 50 || b.Grade == "__invalid_grade__" {
+		writeError(w, 400, "资源名称、类型、年级或资源说明不正确。", nil)
 		return
 	}
 	if b.URL != "" && (!strings.HasPrefix(strings.ToLower(strings.TrimSpace(b.URL)), "http://") && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(b.URL)), "https://") || len(b.URL) > 2048) {
@@ -1538,7 +1554,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		mimeValue = mt
 		sizeValue = len(data)
 	}
-	res, err := a.db.ExecContext(r.Context(), `UPDATE portal.teaching_resources SET title=$3,description=$4,resource_type=$5,resource_url=$6,original_filename=COALESCE($7,original_filename),stored_filename=$8,mime_type=COALESCE($9,mime_type),file_size=COALESCE($10,file_size),updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL`, id, u.ID, b.Title, b.Description, b.Type, urlValue, fileNameValue, nullableString(stored), mimeValue, sizeValue)
+	res, err := a.db.ExecContext(r.Context(), `UPDATE portal.teaching_resources SET title=$3,description=$4,resource_type=$5,grade=$6,resource_url=$7,original_filename=COALESCE($8,original_filename),stored_filename=$9,mime_type=COALESCE($10,mime_type),file_size=COALESCE($11,file_size),updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL`, id, u.ID, b.Title, b.Description, b.Type, nullableString(b.Grade), urlValue, fileNameValue, nullableString(stored), mimeValue, sizeValue)
 	if err != nil {
 		if newStored != "" {
 			_ = os.Remove(filepath.Join(a.resourceDir, newStored))
@@ -1554,7 +1570,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 	if newStored != "" && old.Valid {
 		_ = os.Remove(filepath.Join(a.resourceDir, filepath.Base(old.String)))
 	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
+	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 	if err != nil {
 		a.dbError(w, err, "资源已更新，但读取结果失败。")
 		return

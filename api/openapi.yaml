@@ -708,6 +708,7 @@ components:
         title: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string, maxLength: 2000 }
         type: { type: string, maxLength: 50 }
+        grade: { type: [string, 'null'], enum: [一年级, 二年级, 三年级, 四年级, 五年级, 六年级, 初一, 初二, 初三, 高一, 高二, 高三, 本科, 硕士, null] }
         url: { type: [string, 'null'], format: uri }
         filename: { type: [string, 'null'] }
         mimeType: { type: [string, 'null'] }
@@ -722,6 +723,7 @@ components:
         title: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string, maxLength: 2000 }
         type: { type: string, maxLength: 50 }
+        grade: { type: [string, 'null'], enum: [一年级, 二年级, 三年级, 四年级, 五年级, 六年级, 初一, 初二, 初三, 高一, 高二, 高三, 本科, 硕士, null] }
         url: { type: [string, 'null'], maxLength: 2048, format: uri }
         filename: { type: string, maxLength: 255 }
         data: { type: string, contentEncoding: base64 }
