@@ -12,13 +12,16 @@ const initialItem = () => ({
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', publishedAt: null,
 });
 
-function createHarness() {
-  let item = initialItem();
+function createHarness({ initial = initialItem(), notifyEvent = async () => {} } = {}) {
+  let item = structuredClone(initial);
   const versions = [];
+  const events = [];
+  const transactionLog = [];
   const clone = (value) => structuredClone(value);
   const client = {
     async query(sql, params = []) {
-      if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(sql.trim())) return { rows: [], rowCount: 0 };
+      if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(sql.trim())) { transactionLog.push(sql.trim()); return { rows: [], rowCount: 0 }; }
+      if (sql.includes('INSERT INTO portal.event_inbox')) { events.push({ eventId: params[0], payload: JSON.parse(params[1]) }); return { rows: [], rowCount: 1 }; }
       if (sql.includes('FOR UPDATE')) return { rows: [clone(item)], rowCount: 1 };
       if (sql.includes('COALESCE(MAX(version_number)')) return { rows: [{ next_version: versions.length + 1 }], rowCount: 1 };
       if (sql.includes('INSERT INTO portal.portal_content_versions')) {
@@ -56,11 +59,12 @@ function createHarness() {
     getSessionUser: async () => ({ user_id: authorId }),
     json: (_res, status, payload) => ({ status, payload }),
     readBody: async (req) => req.body || {},
+    notifyEvent,
   });
   async function call(method, path, body) {
     return handlers.handleContentRequest({ method, body }, {}, new URL(`http://local${path}`));
   }
-  return { call, versions, current: () => clone(item) };
+  return { call, versions, events, transactionLog, current: () => clone(item) };
 }
 
 test('changed edits snapshot the prior content and version listing returns owner history', async () => {
@@ -134,4 +138,29 @@ test('event notification publisher sends PUBLISH and validates the acknowledgeme
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+
+test('published historical restore commits its event before notifying C; notification failure does not undo the restore', async () => {
+  const order = [];
+  const h = createHarness({
+    initial: { ...initialItem(), status: 'published', visibility: 'public' },
+    notifyEvent: async (eventId, eventType) => {
+      order.push('notify');
+      assert.equal(eventId, h.events[0].eventId);
+      assert.equal(eventType, 'portal.content.validate');
+      assert.equal(h.transactionLog.at(-1), 'COMMIT', 'notification must only happen after COMMIT');
+      throw new Error('simulated C IPC outage');
+    },
+  });
+  await h.call('PATCH', `/content/${contentId}`, { title: 'Updated published title' });
+  const versionId = h.versions[0].versionId;
+  const restored = await h.call('POST', `/content/${contentId}/versions/${versionId}/restore`);
+  assert.equal(restored.status, 200);
+  assert.equal(restored.payload.item.title, 'Original title');
+  assert.equal(h.events.length, 1);
+  assert.ok(h.transactionLog.lastIndexOf('COMMIT') >= 0);
+  assert.equal(order[0], 'notify');
+  assert.equal(restored.payload.eventId, h.events[0].eventId);
+  await new Promise((resolve) => setImmediate(resolve));
 });
