@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 type Option = { label: string; value: string }
-const props = withDefaults(defineProps<{ modelValue: string; options: Option[]; label: string; placeholder?: string; disabled?: boolean }>(), { placeholder: '请选择', disabled: false })
+const props = withDefaults(defineProps<{ modelValue: string | null; options: Option[]; label: string; placeholder?: string; disabled?: boolean }>(), { placeholder: '请选择', disabled: false })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const open = ref(false)
 const query = ref('')

@@ -34,12 +34,12 @@ const contentStatuses = new Set(['draft', 'published', 'unpublished']);
 const contentTags = new Set(['教育','学前教育','小学教育','中学教育','高等教育','职业教育','家庭教育','教学资源','旅游','住宿','交通','景点攻略','旅行规划','美食体验','网络','网络安全','网络维护','网络基础知识','网络诊断','云与服务器','系统','操作系统','系统配置','系统维护','部署运维','故障排查','编程','前端开发','后端开发','Python','JavaScript / TypeScript','数据库','API 与集成','代码实践','软件工具','效率工具','开发工具','文档工具','AI 工具','自动化工具']);
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const contentSelect = `content_id AS "id", title, slug, content_type AS "contentType",
-  tags, summary, body, visibility, status, created_at AS "createdAt",
+  tags, parent_category AS "parentCategory", child_category AS "childCategory", summary, body, visibility, status, created_at AS "createdAt",
   updated_at AS "updatedAt", published_at AS "publishedAt"`;
 
 function normalizeContentInput(body, partial = false) {
   const input = {};
-  const fields = ['title', 'slug', 'contentType', 'tags', 'summary', 'body', 'visibility'];
+  const fields = ['title', 'slug', 'contentType', 'tags', 'parentCategory', 'childCategory', 'summary', 'body', 'visibility'];
   for (const field of fields) {
     if (Object.hasOwn(body, field)) input[field] = body[field];
     else if (!partial && ['title', 'slug', 'contentType', 'body', 'tags'].includes(field)) input[field] = '';
@@ -53,12 +53,18 @@ function normalizeContentInput(body, partial = false) {
     if (!Array.isArray(input.tags)) input.tags = [];
     input.tags = [...new Set(input.tags.map(tag => String(tag).trim()))];
   }
+  if (Object.hasOwn(input, 'parentCategory')) input.parentCategory = String(input.parentCategory ?? '').trim() || null;
+  if (Object.hasOwn(input, 'childCategory')) input.childCategory = String(input.childCategory ?? '').trim() || null;
   if (Object.hasOwn(input, 'visibility')) input.visibility = String(input.visibility ?? '');
   const errors = [];
   if (Object.hasOwn(input, 'title') && (!input.title || [...input.title].length > 200)) errors.push('标题必须为 1 至 200 个字符。');
   if (Object.hasOwn(input, 'slug') && (!slugPattern.test(input.slug) || input.slug.length > 100)) errors.push('别名只能使用小写英文字母、数字和单个连字符。');
   if (Object.hasOwn(input, 'contentType') && !contentTypes.has(input.contentType)) errors.push('内容类型不正确。');
   if (Object.hasOwn(input, 'tags') && (input.tags.length > 40 || input.tags.some(tag => !contentTags.has(tag)))) errors.push('知识广场标签不正确，请从现有标签中选择。');
+  const taxonomy = { '教育': ['学前教育','小学教育','中学教育','高等教育','职业教育','家庭教育','教学资源'], '年级': ['一年级','二年级','三年级','四年级','五年级','六年级','初一','初二','初三','高一','高二','高三','本科','硕士'], '教育人力资源': ['事业编','国企','省考','国考'], '旅游': ['住宿','交通','景点攻略','旅行规划','美食体验'], '网络': ['网络安全','网络维护','网络基础知识','网络诊断','云与服务器'], '系统': ['操作系统','系统配置','系统维护','部署运维','故障排查'], '编程': ['前端开发','后端开发','Python','JavaScript / TypeScript','数据库','API 与集成','代码实践'], '软件工具': ['效率工具','开发工具','文档工具','AI 工具','自动化工具'] };
+  if (Object.hasOwn(input, 'parentCategory') && input.parentCategory !== null && !Object.hasOwn(taxonomy, input.parentCategory)) errors.push('父类分类不正确。');
+  if (Object.hasOwn(input, 'childCategory') && input.childCategory !== null && (!input.parentCategory || !taxonomy[input.parentCategory]?.includes(input.childCategory))) errors.push('子类必须属于当前选择的父类。');
+  if (input.parentCategory && Object.hasOwn(input, 'childCategory') && !input.childCategory) errors.push('选择父类后，请选择对应的子类。');
   if (Object.hasOwn(input, 'summary') && [...input.summary].length > 500) errors.push('摘要不能超过 500 个字符。');
   if (Object.hasOwn(input, 'body') && (!input.body.trim() || [...input.body].length > 100000)) errors.push('正文不能为空且不能超过 100000 个字符。');
   if (Object.hasOwn(input, 'visibility') && !['public', 'private'].includes(input.visibility)) errors.push('可见范围不正确。');
@@ -212,10 +218,10 @@ async function handleContentRequest(req, res, url) {
     input.visibility ??= 'private';
     const result = await pool.query(
       `INSERT INTO portal.portal_content
-       (author_id, title, slug, content_type, tags, summary, body, visibility)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (author_id, title, slug, content_type, tags, parent_category, child_category, summary, body, visibility)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING ${contentSelect}`,
-      [user.user_id, input.title, input.slug, input.contentType, input.tags, input.summary, input.body, input.visibility],
+      [user.user_id, input.title, input.slug, input.contentType, input.tags, input.parentCategory, input.childCategory, input.summary, input.body, input.visibility],
     );
     return json(res, 201, { item: result.rows[0] });
   }
@@ -286,9 +292,9 @@ async function handleContentRequest(req, res, url) {
       await saveContentVersion(client, current.rows[0], user.user_id);
       const restored = await client.query(
         `UPDATE portal.portal_content SET title = $3, slug = $4, content_type = $5, tags = $6,
-          summary = $7, body = $8, visibility = $9, updated_at = now()
+          parent_category = $7, child_category = $8, summary = $9, body = $10, visibility = $11, updated_at = now()
          WHERE content_id = $1 AND author_id = $2 RETURNING ${contentSelect}`,
-        [id, user.user_id, snapshot.title, snapshot.slug, snapshot.contentType, snapshot.tags || [], snapshot.summary,
+        [id, user.user_id, snapshot.title, snapshot.slug, snapshot.contentType, snapshot.tags || [], snapshot.parentCategory || null, snapshot.childCategory || null, snapshot.summary,
           snapshot.body, current.rows[0].status === 'published' ? 'public' : snapshot.visibility]);
       let eventId = null;
       if (restored.rows[0].status === 'published') {
@@ -326,7 +332,7 @@ async function handleContentRequest(req, res, url) {
     if (errors.length) return json(res, 400, { error: errors[0], errors });
     const allowed = Object.keys(input);
     if (!allowed.length) return json(res, 400, { error: '没有可更新的字段。' });
-    const columnNames = { title: 'title', slug: 'slug', contentType: 'content_type', tags: 'tags', summary: 'summary', body: 'body', visibility: 'visibility' };
+    const columnNames = { title: 'title', slug: 'slug', contentType: 'content_type', tags: 'tags', parentCategory: 'parent_category', childCategory: 'child_category', summary: 'summary', body: 'body', visibility: 'visibility' };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -386,6 +392,7 @@ async function handleContentRequest(req, res, url) {
       const item = existing.rows[0];
       const validation = normalizeContentInput({
         title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [],
+        parentCategory: item.parentCategory || null, childCategory: item.childCategory || null,
         summary: item.summary, body: item.body, visibility: item.visibility,
       });
       if (validation.errors.length) {
@@ -440,7 +447,7 @@ async function handlePublicContentRequest(req, res, url) {
   if (url.pathname === '/public/content' && req.method === 'GET') {
     const result = await pool.query(
       `SELECT content_id AS "id", title, slug, content_type AS "contentType",
-        tags, summary, published_at AS "publishedAt"
+        tags, parent_category AS "parentCategory", child_category AS "childCategory", summary, published_at AS "publishedAt"
        FROM portal.portal_content
        WHERE status = 'published' AND visibility = 'public' AND deleted_at IS NULL
        ORDER BY published_at DESC NULLS LAST, updated_at DESC
@@ -454,7 +461,7 @@ async function handlePublicContentRequest(req, res, url) {
   const slug = (interactionMatch || articleMatch)[1];
   const article = await pool.query(
     `SELECT c.content_id AS "id", c.title, c.slug, c.content_type AS "contentType",
-      c.tags, c.summary, c.body, c.visibility, c.status, c.created_at AS "createdAt",
+      c.tags, c.parent_category AS "parentCategory", c.child_category AS "childCategory", c.summary, c.body, c.visibility, c.status, c.created_at AS "createdAt",
       c.updated_at AS "updatedAt", c.published_at AS "publishedAt",
       u.display_name AS "authorName", u.created_at AS "authorJoinedAt"
      FROM portal.portal_content c

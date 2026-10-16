@@ -9,6 +9,7 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 - 后端：Go API 使用 `database/sql` + pgx 连接 PostgreSQL；`POST /events` 持久化接收事件，后台分发器带租约和退避重试，通过 Unix Socket 通知 C 核心。
 - 服务管理：FreeBSD `rc.d`。
 - 内容：初期由项目自身管理，不接入 Notion。
+- 分类字段：文章内容独立保存父类与子类，年级与教育人力资源分类由共享 taxonomy 定义驱动。全站自定义下拉菜单统一使用 `VirtualizedSelect.vue`，设计参数通过 `frontend/src/monochrome.css` 中的 `--portal-select-*` CSS 变量集中维护。
 - 依赖原则：优先标准库和系统原生能力；没有明确需求时不增加第三方服务。
 
 ## 目录

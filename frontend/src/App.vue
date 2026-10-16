@@ -4,14 +4,8 @@ import { renderMarkdown } from './utils/markdown'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
-const knowledgeTagOptions = [
-  { value: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
-  { value: '旅游', children: ['住宿', '交通', '景点攻略', '旅行规划', '美食体验'] },
-  { value: '网络', children: ['网络安全', '网络维护', '网络基础知识', '网络诊断', '云与服务器'] },
-  { value: '系统', children: ['操作系统', '系统配置', '系统维护', '部署运维', '故障排查'] },
-  { value: '编程', children: ['前端开发', '后端开发', 'Python', 'JavaScript / TypeScript', '数据库', 'API 与集成', '代码实践'] },
-  { value: '软件工具', children: ['效率工具', '开发工具', '文档工具', 'AI 工具', '自动化工具'] },
-]
+import { portalTaxonomy, taxonomyChildOptions, taxonomyParentOptions } from './utils/taxonomy'
+const knowledgeTagOptions = portalTaxonomy.filter(category => !['年级', '教育人力资源'].includes(category.value))
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
@@ -30,6 +24,8 @@ type PortalContent = {
   slug: string
   contentType: 'article' | 'tool' | 'resource' | 'project'
   tags: string[]
+  parentCategory: string | null
+  childCategory: string | null
   summary: string
   body: string
   visibility: 'public' | 'private'
@@ -47,11 +43,13 @@ type ContentForm = {
   slug: string
   contentType: PortalContent['contentType']
   tags: string[]
+  parentCategory: string | null
+  childCategory: string | null
   summary: string
   body: string
   visibility: PortalContent['visibility']
 }
-type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'tags' | 'summary' | 'publishedAt'>
+type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'tags' | 'parentCategory' | 'childCategory' | 'summary' | 'publishedAt'>
 type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt' | 'updatedAt'> & { authorName: string; authorJoinedAt: string; likeCount: number; favoriteCount: number; viewerLiked: boolean; viewerFavorited: boolean }
 
 const query = ref('')
@@ -198,9 +196,13 @@ watch(authNotice, (message) => { if (message) portalNotify.info(message) }, { fl
 watch(contentError, (message) => { if (message) portalNotify.error(message, '内容操作失败') }, { flush: 'sync' })
 watch(contentNotice, (message) => { if (message) portalNotify.success(message) }, { flush: 'sync' })
 const emptyContentForm = (): ContentForm => ({
-  title: '', slug: '', contentType: 'article', tags: [], summary: '', body: '', visibility: 'private',
+  title: '', slug: '', contentType: 'article', tags: [], parentCategory: null, childCategory: null, summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
+const taxonomyChildOptionsForForm = computed(() => taxonomyChildOptions(contentForm.value.parentCategory || ''))
+watch(() => contentForm.value.parentCategory, (next, previous) => {
+  if (next !== previous && contentForm.value.childCategory && !taxonomyChildOptions(next || '').some(option => option.value === contentForm.value.childCategory)) contentForm.value.childCategory = null
+})
 const publicContents = ref<PublicContentCard[]>([])
 const knowledgeVisibleCount = ref(10)
 const knowledgePageSize = 10
@@ -211,6 +213,8 @@ const highlightedKnowledgeSuggestion = ref(-1)
 const knowledgeCategoryMenus = [
   { value: 'recent', label: '最近更新', children: [] },
   { value: 'education', label: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
+  { value: 'grade', label: '年级', children: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'] },
+  { value: 'education-jobs', label: '教育人力资源', children: ['事业编', '国企', '省考', '国考'] },
   { value: 'travel', label: '旅游', children: ['住宿', '交通', '景点攻略', '旅行规划', '美食体验'] },
   { value: 'network', label: '网络', children: ['网络安全', '网络维护', '网络基础知识', '网络诊断', '云与服务器'] },
   { value: 'system', label: '系统', children: ['操作系统', '系统配置', '系统维护', '部署运维', '故障排查'] },
@@ -269,7 +273,10 @@ const knowledgeFilteredItems = computed(() => {
     }
     const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(terms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
     filtered = filtered.filter(item => {
-      if (item.tags?.length) return item.tags.some(tag => tag === selected || tag === knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.label || (!knowledgeSubcategory.value && knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.children.includes(tag)))
+      const categoryLabel = knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.label || ''
+      if (item.parentCategory === categoryLabel && (!knowledgeSubcategory.value || item.childCategory === knowledgeSubcategory.value)) return true
+      if (knowledgeSubcategory.value && item.childCategory === knowledgeSubcategory.value) return true
+      if (item.tags?.length) return item.tags.some(tag => tag === selected || tag === categoryLabel || (!knowledgeSubcategory.value && knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.children.includes(tag)))
       return keywords.some(keyword => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, keyword))
     })
   }
@@ -388,7 +395,7 @@ const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
 const virtualTableOverscan = 6
 const tableDefinitions: Record<string, { title: string; columns: TableColumn[]; note: string }> = {
-  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
+  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'parentCategory', label: '父类' }, { key: 'childCategory', label: '子类' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
   'property-management': { title: '房源列表', columns: [{ key: 'property', label: '房源名称', width: 'minmax(180px, 1.6fr)' }, { key: 'address', label: '地址', width: 'minmax(180px, 2fr)' }, { key: 'roomCount', label: '房间数' }, { key: 'rent', label: '租金' }, { key: 'status', label: '房源状态' }, { key: 'updatedAt', label: '更新时间' }], note: '房源数据源尚未接入。' },
   'room-status': { title: '房态列表', columns: [{ key: 'room', label: '房间', width: 'minmax(140px, 1.3fr)' }, { key: 'property', label: '所属房源', width: 'minmax(180px, 1.7fr)' }, { key: 'status', label: '当前房态' }, { key: 'tenant', label: '租客' }, { key: 'checkIn', label: '入住日期' }, { key: 'checkOut', label: '退租日期' }], note: '房态数据源尚未接入。' },
   'student-records': { title: '学生档案', columns: [{ key: 'name', label: '学生姓名' }, { key: 'studentId', label: '学员编号' }, { key: 'course', label: '课程' }, { key: 'status', label: '学习状态' }, { key: 'updatedAt', label: '更新时间' }], note: '学生档案数据源尚未接入。' },
@@ -411,6 +418,8 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       id: item.id,
       title: item.title,
       type: item.tags?.length ? item.tags.join(' · ') : contentTypeLabels[item.contentType],
+      parentCategory: item.parentCategory || '—',
+      childCategory: item.childCategory || '—',
       status: contentStatusLabels[item.status],
       visibility: item.visibility === 'public' ? '公开' : '仅自己可见',
       updatedAt: new Date(contentViewMode.value === 'trash' && 'deletedAt' in item ? String(item.deletedAt) : item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),
@@ -602,7 +611,7 @@ async function initializeContentEditorRoute() {
     if (!response.ok || !result.item) throw new Error(result.error || '读取内容详情失败。')
     const item = result.item
     editingContentId.value = item.id
-    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [], summary: item.summary, body: item.body, visibility: item.visibility }
+    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [], parentCategory: item.parentCategory || null, childCategory: item.childCategory || null, summary: item.summary, body: item.body, visibility: item.visibility }
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '读取内容详情失败。'
   } finally { contentBusy.value = false }
@@ -713,6 +722,7 @@ async function editContent(id: string) {
     editingContentId.value = item.id
     contentForm.value = {
       title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [],
+      parentCategory: item.parentCategory || null, childCategory: item.childCategory || null,
       summary: item.summary, body: item.body, visibility: item.visibility,
     }
     contentEditorOpen.value = false
@@ -1124,6 +1134,8 @@ onBeforeUnmount(() => {
             <section class="workspace-properties">
               <label><span>内容标题</span><input class="form-control" v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
               <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><div v-for="category in knowledgeTagOptions" :key="category.value" class="workspace-tag-group"><strong>{{ category.value }}</strong><div class="workspace-tag-options"><label v-for="tag in [category.value, ...category.children]" :key="tag" class="workspace-tag-option"><input v-model="contentForm.tags" type="checkbox" :value="tag" :disabled="contentBusy" /><span>{{ tag }}</span></label></div></div></fieldset>
+              <label><span>父类</span><VirtualizedSelect v-model="contentForm.parentCategory" label="父类分类" :options="taxonomyParentOptions" placeholder="选择父类" /></label>
+              <label><span>子类</span><VirtualizedSelect v-model="contentForm.childCategory" label="子类分类" :options="taxonomyChildOptionsForForm" :disabled="!contentForm.parentCategory" placeholder="先选择父类" /></label>
               <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
               <label><span>URL 别名</span><input class="form-control" v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               <label><span>摘要</span><textarea class="form-control" v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
@@ -1469,7 +1481,7 @@ onBeforeUnmount(() => {
           <label class="share-dialog-label" for="resource-title">资源名称</label>
           <input id="resource-title" v-model="resourceTitle" class="form-control share-dialog-url" maxlength="200" required placeholder="例如：七年级英语听力 Unit 1" />
           <label class="share-dialog-label" for="resource-type">类型</label>
-          <select id="resource-type" v-model="resourceType" class="form-select" required><option v-for="type in resourceTypeOptions" :key="type" :value="type">{{ type }}</option></select>
+          <VirtualizedSelect v-model="resourceType" label="教学资源类型" :options="resourceTypeOptions.map(type => ({ label: type, value: type }))" />
           <label class="share-dialog-label" for="resource-description">资源说明</label>
           <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
           <label class="share-dialog-label" for="resource-file">上传文件（选填）</label>

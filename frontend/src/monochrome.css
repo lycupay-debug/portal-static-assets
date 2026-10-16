@@ -3,6 +3,25 @@
  * One source of truth for all portal surfaces: paper, graphite and neutral gray.
  * No colored accent palette, tinted glass, colored focus rings or colored status UI.
  */
+
+/* Global selector design tokens: change these values once to update every custom dropdown. */
+:root {
+  --portal-select-surface: rgba(255, 255, 255, .92);
+  --portal-select-surface-open: rgba(255, 255, 255, .98);
+  --portal-select-text: #292929;
+  --portal-select-muted: #777777;
+  --portal-select-border: #e1e1e1;
+  --portal-select-border-hover: #a8a8a8;
+  --portal-select-hover: #f2f2f2;
+  --portal-select-selected: #e7e7e7;
+  --portal-select-radius: 10px;
+  --portal-select-popover-radius: 13px;
+  --portal-select-shadow: 0 16px 42px rgba(0, 0, 0, .14);
+  --portal-select-blur: 18px;
+  --portal-select-trigger-height: 40px;
+  --portal-select-popover-z: 1200;
+}
+
 :root {
   color-scheme: light;
   --mono-0: #ffffff;
@@ -318,3 +337,19 @@ body { -webkit-font-smoothing: antialiased; }
     -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: #fff !important;
   }
 }
+
+
+/* Unified dropdown component styling across all portal forms. */
+.virtualized-select { position: relative; width: 100%; min-width: 0; font: inherit; }
+.virtualized-select-trigger { min-height: var(--portal-select-trigger-height) !important; border: 1px solid var(--portal-select-border) !important; border-radius: var(--portal-select-radius) !important; color: var(--portal-select-text) !important; background: var(--portal-select-surface) !important; box-shadow: none !important; }
+.virtualized-select-trigger:hover, .virtualized-select.is-open .virtualized-select-trigger { border-color: var(--portal-select-border-hover) !important; box-shadow: 0 0 0 3px rgba(0,0,0,.045) !important; }
+.virtualized-select-chevron { color: var(--portal-select-muted) !important; }
+.virtualized-select-popover { z-index: var(--portal-select-popover-z) !important; border: 1px solid var(--portal-select-border) !important; border-radius: var(--portal-select-popover-radius) !important; background: var(--portal-select-surface-open) !important; box-shadow: var(--portal-select-shadow) !important; backdrop-filter: blur(var(--portal-select-blur)) !important; -webkit-backdrop-filter: blur(var(--portal-select-blur)) !important; }
+.virtualized-select-search { border-color: var(--portal-select-border) !important; border-radius: calc(var(--portal-select-radius) - 2px) !important; color: var(--portal-select-text) !important; background: rgba(248,248,248,.86) !important; }
+.virtualized-select-viewport > button { color: var(--portal-select-text) !important; border-radius: 7px !important; }
+.virtualized-select-viewport > button:hover { background: var(--portal-select-hover) !important; }
+.virtualized-select-viewport > button.selected { background: var(--portal-select-selected) !important; color: #111 !important; }
+.virtualized-select.is-disabled { opacity: .58; }
+.knowledge-category-button, .knowledge-subcategory-button { border-color: var(--portal-select-border) !important; border-radius: var(--portal-select-radius) !important; color: var(--portal-select-text) !important; background: var(--portal-select-surface) !important; }
+.knowledge-category-button:hover, .knowledge-subcategory-button:hover { border-color: var(--portal-select-border-hover) !important; background: var(--portal-select-hover) !important; }
+.knowledge-category-button.is-active, .knowledge-subcategory-button.is-active { border-color: var(--portal-select-border-hover) !important; color: var(--portal-select-text) !important; background: var(--portal-select-selected) !important; }

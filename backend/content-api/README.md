@@ -8,6 +8,7 @@
 - `backend/auth-api/server.mjs`: HTTP 服务、会话认证、共享数据库连接和通用响应能力。
 - `backend/migrations/007_portal_content.sql`: 内容表、约束、索引和迁移登记。
 - `backend/migrations/008_portal_content_versions.sql`: 内容历史快照表、回收站索引和迁移登记。
+- `backend/migrations/013_content_taxonomy_fields.sql`: 为内容增加独立的 `parent_category` / `child_category` 字段，并通过数据库约束校验父子关系。
 - `backend/api`: Go 事件接收、分发、处理。公开内容发布时，内容更新与 `portal.content.validate` 事件在同一 PostgreSQL 事务中提交。
 
 ## Endpoints
@@ -26,7 +27,7 @@
 | GET | `/api/content` | 列出当前登录用户的内容，最多 500 条 |
 | GET | `/api/content/:id` | 读取本人内容详情 |
 | POST | `/api/content` | 创建草稿 |
-| PATCH | `/api/content/:id` | 更新标题、别名、类型、摘要、正文、可见范围；修改前在同一事务保存历史快照 |
+| PATCH | `/api/content/:id` | 更新标题、别名、类型、父类/子类、摘要、正文、可见范围；修改前在同一事务保存历史快照 |
 | DELETE | `/api/content/:id` | 软删除本人内容并移入回收站 |
 | GET | `/api/content/:id/versions` | 查看本人内容的最近 100 个历史版本 |
 | POST | `/api/content/:id/versions/:versionId/restore` | 恢复历史版本；先保存当前版本，已发布内容会写入验证事件 |
@@ -43,6 +44,8 @@
 ## Content rules
 
 - Types: `article`, `tool`, `resource`, `project`.
+- Parent/child taxonomy is stored separately from free-form tags. `年级` children: 一年级至六年级、初一至初三、高一至高三、本科、硕士；`教育人力资源` children: 事业编、国企、省考、国考. Other existing taxonomy branches remain available.
+- All custom dropdowns use `VirtualizedSelect.vue`; its global visual tokens live in `frontend/src/monochrome.css` as `--portal-select-*` variables.
 - Statuses: `draft`, `published`, `unpublished`.
 - Slug: lowercase ASCII letters/digits joined by single hyphens, max 100 characters, unique among non-deleted records.
 - Title: 1–200 characters; summary max 500; body 1–100000 characters.
@@ -53,7 +56,7 @@
 
 ## Deploy / verify
 
-1. Apply unapplied migrations in order as a database administrator. On the current deployment, migration 007 is already applied and migration 008 adds version history and recycle-bin support.
+1. Apply unapplied migrations in order as a database administrator. On the current deployment, migrations 007–013 cover content, version history, teaching resources, and parent/child taxonomy fields. Migration 013 has been applied to the current production database.
 2. Run `node --check backend/auth-api/server.mjs`, `node --check backend/content-api/handlers.mjs`, and `node --test backend/content-api/handlers.test.mjs`.
 3. In `frontend/`, run `npm test`, `npm run type-check`, and `npm run build`. Markdown security tests live in `frontend/test/markdown.test.mjs`; editor Markdown round-trip compatibility tests live in `frontend/test/document-editor.test.mjs`.
 4. Restart `personal_portal_auth_api` and atomically switch the frontend release symlink.

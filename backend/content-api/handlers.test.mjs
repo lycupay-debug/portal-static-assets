@@ -50,8 +50,8 @@ function createHarness({ initial = initialItem(), notifyEvent = async () => {} }
         return { rows: version ? [{ snapshot: clone(version.snapshot) }] : [], rowCount: version ? 1 : 0 };
       }
       if (sql.includes('UPDATE portal.portal_content SET')) {
-        const columns = { title: 'title', slug: 'slug', content_type: 'contentType', tags: 'tags', summary: 'summary', body: 'body', visibility: 'visibility' };
-        for (const match of sql.matchAll(/(title|slug|content_type|tags|summary|body|visibility) = \$(\d+)/g)) {
+        const columns = { title: 'title', slug: 'slug', content_type: 'contentType', tags: 'tags', parent_category: 'parentCategory', child_category: 'childCategory', summary: 'summary', body: 'body', visibility: 'visibility' };
+        for (const match of sql.matchAll(/(title|slug|content_type|tags|parent_category|child_category|summary|body|visibility) = \$(\d+)/g)) {
           item[columns[match[1]]] = params[Number(match[2]) - 1];
         }
         item.updatedAt = '2026-10-15T00:00:00.000Z';
@@ -247,4 +247,16 @@ test('teaching resources can be created with an external URL and no uploaded fil
   assert.equal(inserted[4], 'https://example.com/audio');
   assert.equal(inserted[5], null);
   assert.equal(inserted[6], null);
+});
+
+
+test('parent and child taxonomy fields require a valid matching pair', async () => {
+  const h = createHarness();
+  const invalid = await h.call('PATCH', `/content/${contentId}`, { parentCategory: '年级', childCategory: '国考' });
+  assert.equal(invalid.status, 400);
+  assert.match(invalid.payload.error, /子类必须属于当前选择的父类/);
+  const valid = await h.call('PATCH', `/content/${contentId}`, { parentCategory: '年级', childCategory: '初一' });
+  assert.equal(valid.status, 200);
+  assert.equal(valid.payload.item.parentCategory, '年级');
+  assert.equal(valid.payload.item.childCategory, '初一');
 });
