@@ -6,7 +6,7 @@
 
 - `GET /healthz`：检查 HTTP 进程是否响应。
 - `GET /readyz`：通过 Unix Domain Socket 请求 C 事件核心的 `STATUS`，仅在收到匹配的 `v1 <request_id> OK RUNNING` 响应时返回 200，否则返回 503。
-- 默认监听 `127.0.0.1:8081`，不对外网开放。
+- 默认监听 `127.0.0.1:8081`，不对外网开放。收到 SIGTERM 或中断信号时，HTTP 服务执行最长 5 秒的优雅关闭，并取消后台分发、订阅和处理循环；未完成事件由 PostgreSQL 租约恢复机制接管。
 - 可通过 `PERSONAL_PORTAL_HTTP_ADDR` 和 `PERSONAL_PORTAL_EVENT_SOCKET` 覆盖监听地址和 socket 路径。
 - IPC 客户端设有连接/读写超时，并验证协议版本、请求 ID、状态和响应载荷。
 - `POST /events` 将事件持久化到 `portal.event_inbox`；后台 `EventDispatcher` 使用 `FOR UPDATE SKIP LOCKED` 领取待通知事件，租约超时后可恢复，并在 IPC 失败时以 1–64 秒指数退避重试。分发状态更新以 `dispatch_attempts` 作为租约 fencing token，旧领取者不能覆盖新领取者的通知或重试结果。

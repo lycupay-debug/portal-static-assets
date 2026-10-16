@@ -11,10 +11,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -510,6 +513,34 @@ func configuredEventProcessorWorkers() int {
 	return normalizeEventProcessorWorkers(workers)
 }
 
+func serveUntilShutdown(ctx context.Context, server *http.Server) error {
+	serveResult := make(chan error, 1)
+	go func() {
+		serveResult <- server.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+	case err := <-serveResult:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		_ = server.Close()
+		return fmt.Errorf("graceful HTTP shutdown: %w", err)
+	}
+	err := <-serveResult
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
 func main() {
 	httpAddr := os.Getenv("PERSONAL_PORTAL_HTTP_ADDR")
 	if httpAddr == "" {
@@ -540,10 +571,23 @@ func main() {
 	// The C core acknowledgement wakes Go workers immediately. This buffered
 	// channel is intentionally lossy: the database is durable and periodic
 	// recovery scans reclaim work if a signal is missed or a process restarts.
+	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	eventWake := make(chan struct{}, 256)
-	go (EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 5 * time.Second, Wake: eventWake}).Run(context.Background())
-	go ipc.Subscribe(context.Background(), eventWake)
-	go (EventProcessor{DB: db, Handlers: registeredEventHandlers(), Interval: 5 * time.Second, Workers: configuredEventProcessorWorkers(), Wake: eventWake}).Run(context.Background())
+	var background sync.WaitGroup
+	background.Add(3)
+	go func() {
+		defer background.Done()
+		(EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 5 * time.Second, Wake: eventWake}).Run(rootCtx)
+	}()
+	go func() {
+		defer background.Done()
+		ipc.Subscribe(rootCtx, eventWake)
+	}()
+	go func() {
+		defer background.Done()
+		(EventProcessor{DB: db, Handlers: registeredEventHandlers(), Interval: 5 * time.Second, Workers: configuredEventProcessorWorkers(), Wake: eventWake}).Run(rootCtx)
+	}()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -590,8 +634,22 @@ func main() {
 		MaxHeaderBytes:    1 << 16,
 	}
 
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		fmt.Fprintf(os.Stderr, "backend API failed: %v\n", err)
+	serverErr := serveUntilShutdown(rootCtx, server)
+	if serverErr != nil {
+		fmt.Fprintf(os.Stderr, "backend API failed: %v\n", serverErr)
+	}
+	stop()
+	backgroundDone := make(chan struct{})
+	go func() {
+		background.Wait()
+		close(backgroundDone)
+	}()
+	select {
+	case <-backgroundDone:
+	case <-time.After(5 * time.Second):
+		fmt.Fprintln(os.Stderr, "backend API background workers did not stop within 5 seconds")
+	}
+	if serverErr != nil {
 		os.Exit(1)
 	}
 }
