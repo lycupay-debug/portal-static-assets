@@ -76,7 +76,7 @@ The C implementation and Go IPC client are implemented and deployed on FreeBSD. 
 
 ## Durable event intake (phase 1)
 
-Business event intake is exposed by the Go API. `POST /events` validates an event and commits it to `portal.event_inbox` before returning `202 Accepted`. The IPC EVENT command currently validates event ID/type metadata only. It does not carry payload, claim an inbox row, persist the event in C, or execute business work. A durable dispatcher/replay policy is still required; neither HTTP receipt nor IPC ACCEPTED implies business completion.
+Business event intake is exposed by the Go API. `POST /events` validates an event and commits it to `portal.event_inbox` before returning `202 Accepted`; an identical replay of the same event ID/type/payload is reported as a duplicate, while reuse of an event ID with different content returns conflict. The IPC EVENT command validates event ID/type metadata only. It does not carry payload, claim an inbox row, persist the event in C, or execute business work. The Go `EventDispatcher` claims notification work with PostgreSQL leases, retries failed IPC notifications, and fences stale lease updates. The `EventProcessor` independently claims supported business events, stores results with the completed state, retries failures with backoff, and marks exhausted attempts failed. Periodic database scans recover missed notifications and expired processing leases; C push notifications remain best-effort wakeups. Neither HTTP receipt nor IPC ACCEPTED implies business completion.
 
 Request JSON:
 
