@@ -2,7 +2,7 @@
 
 ## Single Go business backend
 
-The only production business HTTP API is the Go service in api/main.go and api/portal_api.go. Caddy strips the public /api prefix and proxies to 127.0.0.1:8081. The retired Node.js implementation is kept temporarily for rollback evidence only; it must remain stopped and disabled after a successful Go-only cutover.
+The only production business HTTP API is the Go service in api/main.go and api/portal_api.go. Caddy strips the public /api prefix and proxies to 127.0.0.1:8081. The retired Node.js implementation is excluded from this repository and preserved outside it at `/opt/personal-portal-legacy-node` solely for emergency rollback. It must remain stopped and disabled after a successful Go-only cutover.
 
 Go owns:
 - Registration, password hashing, login/logout, session cookie lifecycle and authentication.
@@ -62,4 +62,4 @@ For PostgreSQL integration tests, set PERSONAL_PORTAL_TEST_DATABASE_URL_FILE to 
 
 ## Deployment
 
-Use deploy/freebsd/deploy.sh. It requires a clean Git checkout, runs tests/builds, creates a full database backup, applies pending migrations, installs Go/C binaries, switches the frontend and Caddy routes, runs health checks, then stops and disables the Node.js compatibility service. deploy/freebsd/rollback.sh restores the previous binaries, Caddyfile and frontend release using the deployment timestamp.
+Use deploy/freebsd/deploy.sh. It requires a clean Git checkout, runs tests/builds, creates a full database backup, applies pending migrations, installs Go/C binaries, switches the frontend and Caddy routes, runs health checks, then stops and disables the Node.js compatibility service. The emergency rollback copy is stored outside the repository at `/opt/personal-portal-legacy-node`. deploy/freebsd/rollback.sh restores the previous binaries, Caddyfile and frontend release using the deployment timestamp.

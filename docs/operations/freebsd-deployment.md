@@ -1,6 +1,6 @@
 # FreeBSD 部署与服务管理
 
-目标系统：FreeBSD 15.1-RELEASE-p4 / amd64。生产 API 只使用 Go；Node.js API 是退役的兼容/回滚历史，不接收生产流量。
+目标系统：FreeBSD 15.1-RELEASE-p4 / amd64。生产业务 API 只使用 Go。Node.js 后端源码已从 Git 项目移除，紧急回滚副本单独保存在 `/opt/personal-portal-legacy-node`，正常生产流量不会经过 Node.js。
 
 ## 生产拓扑
 
@@ -21,7 +21,7 @@
     git status --short
     ./deploy/freebsd/deploy.sh
 
-部署过程会在 /var/backups/personal-portal/ 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停用 personal_portal_auth_api Node.js 服务；Caddy 不再将任何业务 API 转发到 8082。
+部署过程会在 /var/backups/personal-portal/ 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用 personal_portal_auth_api 服务；Caddy 不再将任何业务 API 转发到 8082。回滚脚本会临时将该服务指向 `/opt/personal-portal-legacy-node/backend/auth-api`。
 
 ## 数据库迁移规则
 
@@ -55,7 +55,7 @@
 
     ./deploy/freebsd/rollback.sh DEPLOYMENT-STAMP
 
-回滚会恢复旧 Go/C 二进制、Caddyfile 和前端 release，重启服务，并尝试重新启动 Node.js 兼容服务。回滚不会自动恢复数据库，因为这会丢失备份时间点之后的新数据；如确实需要数据库恢复，应先评估影响并单独执行。
+回滚会恢复旧 Go/C 二进制、Caddyfile 和前端 release，重启服务，并将 Node.js 回滚服务指向 `/opt/personal-portal-legacy-node` 中的归档副本。回滚不会自动恢复数据库，因为这会丢失备份时间点之后的新数据；如确实需要数据库恢复，应先评估影响并单独执行。
 
 ## 生产验证覆盖
 

@@ -18,3 +18,13 @@ export const taxonomyParentOptions = portalTaxonomy.map(({ value }) => ({ label:
 export const taxonomyChildren = (parent: string) => portalTaxonomy.find(category => category.value === parent)?.children ?? []
 export const taxonomyChildOptions = (parent: string) => taxonomyChildren(parent).map(value => ({ label: value, value }))
 export const taxonomyParentForChild = (child: ChildCategory) => portalTaxonomy.find(category => category.children.includes(child))?.value ?? ''
+
+/** Validate the selected pair against the generated API taxonomy types. */
+export function normalizeTaxonomyPair(parent: string | null, child: string | null): { parentCategory: ParentCategory | null; childCategory: ChildCategory | null } | null {
+  if (!parent && !child) return { parentCategory: null, childCategory: null }
+  const category = portalTaxonomy.find(item => item.value === parent)
+  if (!category || !child) return null
+  const matchingChild = category.children.find(item => item === child)
+  if (!matchingChild) return null
+  return { parentCategory: category.value, childCategory: matchingChild }
+}

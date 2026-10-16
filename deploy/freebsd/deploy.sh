@@ -11,6 +11,15 @@ bin_dir="/usr/local/libexec/personal-portal"
 www_base="/usr/local/www/personal-portal"
 caddy_file="/usr/local/etc/caddy/Caddyfile"
 backup_dir="/var/backups/personal-portal"
+legacy_node_dir="${PERSONAL_PORTAL_LEGACY_NODE_DIR:-/opt/personal-portal-legacy-node}"
+go_bin="${PERSONAL_PORTAL_GO_BIN:-}"
+if [ -z "$go_bin" ]; then
+  go_bin=$(command -v go || command -v go127 || true)
+fi
+if [ -z "$go_bin" ] || [ ! -x "$go_bin" ]; then
+  echo "Go toolchain not found; set PERSONAL_PORTAL_GO_BIN to the Go compiler path." >&2
+  exit 1
+fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 work="/var/tmp/personal-portal-deploy-$stamp"
 deployment_changed=0
@@ -30,6 +39,11 @@ trap rollback_on_failure EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+if [ ! -s "$legacy_node_dir/backend/auth-api/server.mjs" ] || [ ! -s "$legacy_node_dir/backend/content-api/handlers.mjs" ]; then
+  echo "Legacy Node rollback archive is missing: $legacy_node_dir" >&2
+  exit 1
+fi
+
 if [ -n "$(git -C "$repo" status --porcelain)" ]; then
   echo "Repository must be clean and committed before deployment." >&2
   exit 1
@@ -44,9 +58,9 @@ npm test
 npm run build
 
 cd "$repo/backend"
-go test -race ./...
-go vet ./...
-go build -trimpath -ldflags="-s -w" -o "$work/api" ./api
+"$go_bin" test -race ./...
+"$go_bin" vet ./...
+"$go_bin" build -trimpath -ldflags="-s -w" -o "$work/api" ./api
 
 cd "$repo/event-core"
 make clean all test

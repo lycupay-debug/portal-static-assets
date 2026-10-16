@@ -37,4 +37,8 @@ if [ "$node_enabled" != "NO" ]; then
   echo "FAIL: retired Node.js API must be disabled in rc.conf" >&2
   exit 1
 fi
+if ps axww -o command | grep -E '[n]ode .*personal-portal(-legacy-node)?/backend/auth-api/server\.mjs' >/dev/null; then
+  echo "FAIL: retired Node.js API process is still running" >&2
+  exit 1
+fi
 echo "PASS: Go-only API, PostgreSQL, C event core, metrics, public portal, auth boundary, and internal-route isolation"

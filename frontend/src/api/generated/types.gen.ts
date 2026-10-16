@@ -123,7 +123,7 @@ export type ResourceWrite = {
     title: string;
     description: string;
     type: string;
-    url?: string;
+    url?: string | null;
     filename?: string;
     data?: string;
 };

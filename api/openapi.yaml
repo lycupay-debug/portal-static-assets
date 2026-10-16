@@ -722,7 +722,7 @@ components:
         title: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string, maxLength: 2000 }
         type: { type: string, maxLength: 50 }
-        url: { type: string, maxLength: 2048, format: uri }
+        url: { type: [string, 'null'], maxLength: 2048, format: uri }
         filename: { type: string, maxLength: 255 }
         data: { type: string, contentEncoding: base64 }
     EventInput:

@@ -22,7 +22,7 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 
 ## 本地构建前端
 
-前端构建需要 Node.js 24 系列及 npm；生产业务 API 不依赖 Node.js。后端需要 Go 1.24+ 与 PostgreSQL。
+前端构建需要 Node.js 24 系列及 npm；生产业务 API 仅使用 Go 1.24+ 与 PostgreSQL。FreeBSD 当前通过 `go127` 提供 Go 工具链，部署脚本会自动检测 `go` 或 `go127`。
 
 ```sh
 cd frontend

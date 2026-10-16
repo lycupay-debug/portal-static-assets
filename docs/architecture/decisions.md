@@ -15,26 +15,26 @@
 - 避免非必要的 UI 框架、状态管理库和开发插件。
 
 ## ADR-0003：C 事件驱动核心
-- 状态：技术方向已决定，接口待设计
+- 状态：已实现并通过 IPC v2 自动化测试
 - 事件驱动核心必须由 C 语言开发。
 - 优先使用 FreeBSD `kqueue` / `kevent` 和标准 C 库。
 - 事件通知与业务任务可靠性分离：内核通知本身不提供业务任务持久化、幂等、重试或恢复保证。
-- 在确定消息协议、资源生命周期、背压与故障恢复规则前，不实现复杂的任务调度层。
+- IPC v2 已定义协议版本、请求 ID、超时、确认语义、有界 FIFO、重复/错误 ACK 行为和重连策略；数据库驱动的 Go 周期扫描负责丢失通知后的恢复。
 
 ## ADR-0004：后端语言
-- 状态：待目标主机验证
-- Go 标准库作为首个候选，优先考虑较少的生产运行时依赖。
-- 目标主机当前未安装 Go 工具链；安装前先确认 FreeBSD Ports 包、版本和维护策略。
-- 后端需通过明确的本机 IPC 协议与 C 事件服务解耦，优先评估 Unix Domain Socket。
+- 状态：已决定并已在 FreeBSD 生产目标验证
+- Go 是唯一业务后端，使用 `net/http`、`database/sql`、pgx 和 Go bcrypt。认证、会话、内容、教学资源、错误格式、事务和事件生命周期均由 Go 负责。
+- Node.js 仅用于 Vue/Vite 前端开发与构建，不再承担生产业务 API；历史后端代码从仓库移除，紧急回滚副本存放在 `/opt/personal-portal-legacy-node`。
+- Go 与 C 通过版本化 Unix Domain Socket IPC v2 解耦；业务 payload 不进入 C 核心。
 
 ## ADR-0005：内容与存储
-- 状态：初期方案
+- 状态：已实现 PostgreSQL 持久化
 - 暂不接入 Notion。
-- 初期以版本管理的 Markdown/JSON 内容为主；只有出现事务、并发写入或查询需求时再评估数据库。
-- 公开内容和私人数据必须在目录、构建产物、索引和权限层面隔离。
+- 业务内容、历史版本、教学资源、互动与事件状态保存在 PostgreSQL；内容正文采用 Markdown 持久化。
+- 公开内容和私人数据必须在查询、API 权限和数据字段层面隔离。
 
 ## ADR-0006：PostgreSQL 持久化基础
-- 状态：已在 FreeBSD 主机完成基础接入与连通性验证；业务表待需求确定。
+- 状态：已在 FreeBSD 主机完成业务表、版本化迁移和集成测试。
 - 复用主机已有 PostgreSQL 17，不新建数据库服务。
 - 门户使用独立数据库 `personal_portal` 与登录角色 `personal_portal_app`；不得访问 `n8n_db` 或 `host_mcp_oauth`。
 - Go API 使用 `database/sql` 与 pgx stdlib 驱动；连接 URL 从主机受限权限文件读取，不提交到 Git。

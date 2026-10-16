@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { portalTaxonomy, taxonomyChildren, taxonomyParentForChild } from '../src/utils/taxonomy.ts';
+import { normalizeTaxonomyPair, portalTaxonomy, taxonomyChildren, taxonomyParentForChild } from '../src/utils/taxonomy.ts';
 
 test('grade taxonomy contains all requested primary, middle, high school and university levels', () => {
   assert.deepEqual(taxonomyChildren('年级'), ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士']);
@@ -16,4 +16,11 @@ test('education human-resource taxonomy contains all requested career tracks', (
 test('each taxonomy child belongs to exactly one parent', () => {
   const children = portalTaxonomy.flatMap(category => category.children);
   assert.equal(new Set(children).size, children.length);
+});
+
+test('taxonomy payloads accept only valid parent-child pairs and support clearing both fields', () => {
+  assert.deepEqual(normalizeTaxonomyPair('年级', '初一'), { parentCategory: '年级', childCategory: '初一' });
+  assert.deepEqual(normalizeTaxonomyPair(null, null), { parentCategory: null, childCategory: null });
+  assert.equal(normalizeTaxonomyPair('年级', '国考'), null);
+  assert.equal(normalizeTaxonomyPair('教育人力资源', null), null);
 });

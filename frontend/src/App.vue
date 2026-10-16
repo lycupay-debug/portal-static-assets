@@ -4,8 +4,8 @@ import { renderMarkdown } from './utils/markdown'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
-import { portalTaxonomy, taxonomyChildOptions, taxonomyParentOptions } from './utils/taxonomy'
-import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
+import { normalizeTaxonomyPair, portalTaxonomy, taxonomyChildOptions, taxonomyParentOptions } from './utils/taxonomy'
+import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const knowledgeTagOptions = portalTaxonomy.filter(category => !['年级', '教育人力资源'].includes(category.value))
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
@@ -531,7 +531,7 @@ function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploa
 function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
 function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
 function openResourceEditById(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item) openResourceEdit(item) }
-function requestWithUploadProgress(url: string, method: string, body: unknown): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
+function requestWithUploadProgress(url: string, method: string, body: ResourceWrite): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest(); xhr.open(method, url); xhr.withCredentials = true; xhr.setRequestHeader('Content-Type', 'application/json'); xhr.setRequestHeader('Accept', 'application/json')
     xhr.upload.onprogress = (event) => { if (event.lengthComputable) resourceUploadProgress.value = Math.min(99, Math.round(event.loaded / event.total * 100)) }
@@ -550,7 +550,7 @@ async function createTeachingResource() {
     const file = resourceFile.value
     let data = ''
     if (file) data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
-    const payload = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, url: resourceUrl.value.trim() || null, ...(file ? { filename: file.name, mimeType: file.type || 'application/octet-stream', data } : {}) }
+    const payload: ResourceWrite = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, url: resourceUrl.value.trim() || null, ...(file ? { filename: file.name, data } : {}) }
     const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
     const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
     if (!result.item) throw new Error('服务器未返回已保存的资源。')
@@ -727,11 +727,17 @@ async function saveContent() {
   contentNotice.value = ''
   try {
     const editing = editingContentId.value
+    const taxonomy = normalizeTaxonomyPair(contentForm.value.parentCategory, contentForm.value.childCategory)
+    if (!taxonomy) throw new Error('父类和子类必须同时填写，且子类必须属于所选父类。')
+    const payload: ContentWrite | ContentPatch = {
+      title: contentForm.value.title.trim(), slug: contentForm.value.slug.trim(), contentType: contentForm.value.contentType,
+      tags: [...contentForm.value.tags], ...taxonomy, summary: contentForm.value.summary, body: contentForm.value.body, visibility: contentForm.value.visibility,
+    }
     const response = await fetch(editing ? `/api/content/${encodeURIComponent(editing)}` : '/api/content', {
       method: editing ? 'PATCH' : 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(contentForm.value),
+      body: JSON.stringify(payload),
     })
     const result = await response.json() as { item?: PortalContent; error?: string }
     if (!response.ok || !result.item) throw new Error(result.error || '保存内容失败。')
@@ -1012,7 +1018,7 @@ async function submitAuth() {
   authNotice.value = ''
   try {
     const endpoint = isRegister.value ? '/api/auth/register' : '/api/auth/login'
-    const payload = isRegister.value
+    const payload: RegisterRequest | LoginRequest = isRegister.value
       ? { displayName: authForm.value.displayName.trim(), email: authForm.value.email.trim(), password: authForm.value.password }
       : { email: authForm.value.email.trim(), password: authForm.value.password }
     const response = await fetch(endpoint, {
