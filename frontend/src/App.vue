@@ -424,13 +424,19 @@ function openTableCell(label: string, value: string) {
 const tableColumnTemplate = computed(() => {
   const columns = activeTableDefinition.value?.columns || []
   if (!columns.length) return '100%'
-  const records = filteredTableRecords.value
+  // Virtualization limits rendered rows, but column sizing must also avoid scanning
+  // the entire dataset. A bounded sample keeps widths useful without doing O(rows × columns)
+  // string processing every time the table data or search results change.
+  const records = filteredTableRecords.value.slice(0, 40)
   const available = Math.max(320, virtualTableViewportWidth.value || window.innerWidth * 0.75)
   const actionIndex = columns.findIndex((column) => column.key === 'actions')
   const widths = columns.map((column) => {
     if (column.key === 'actions') return 330
-    const values = [column.label, ...records.map((record) => tableCellPreview(tableCellValue(record, column.key)))]
-    const maxChars = Math.max(1, ...values.map((value) => Array.from(value).length))
+    let maxChars = Math.max(1, Array.from(column.label).length)
+    for (const record of records) {
+      const preview = tableCellPreview(tableCellValue(record, column.key))
+      maxChars = Math.max(maxChars, Array.from(preview).length)
+    }
     return Math.max(72, maxChars * 14 + 32)
   })
   const naturalTotal = widths.reduce((sum, width) => sum + width, 0)
