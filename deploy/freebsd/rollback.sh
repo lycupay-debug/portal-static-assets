@@ -62,9 +62,20 @@ else
   sysrc personal_portal_auth_api_dir="$legacy_node_dir/backend/auth-api" >/dev/null
   sysrc personal_portal_auth_api_enable=YES >/dev/null
   service personal_portal_auth_api start || true
-  curl -fsS http://127.0.0.1:8081/healthz >/dev/null
-  curl -fsS http://127.0.0.1:8081/readyz >/dev/null
-  curl -fsS https://www.lycupaynotion.top/ >/dev/null
+  wait_for_url() {
+    url="$1"
+    attempt=0
+    while [ "$attempt" -lt 30 ]; do
+      if curl -fsS --max-time 3 "$url" >/dev/null 2>&1; then return 0; fi
+      attempt=$((attempt + 1))
+      sleep 1
+    done
+    echo "Rollback readiness timed out: $url" >&2
+    return 1
+  }
+  wait_for_url http://127.0.0.1:8081/healthz
+  wait_for_url http://127.0.0.1:8081/readyz
+  wait_for_url https://www.lycupaynotion.top/
 fi
 
 echo "Rollback completed using deployment stamp $stamp."

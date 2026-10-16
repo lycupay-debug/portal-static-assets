@@ -95,11 +95,29 @@ install -o root -g wheel -m 0555 "$repo/event-core/event-core" "$bin_dir/event-c
 service personal_portal_event_core start
 service personal_portal_api start
 
+# Service supervisors return before the child process has necessarily bound
+# its socket. Wait for actual readiness instead of racing the first request.
+wait_for_url() {
+  url="$1"
+  pattern="$2"
+  attempt=0
+  while [ "$attempt" -lt 30 ]; do
+    if body=$(curl -fsS --max-time 3 "$url" 2>/dev/null) && printf '%s' "$body" | grep -q "$pattern"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  echo "Timed out waiting for readiness: $url" >&2
+  curl -sS --max-time 3 "$url" >&2 || true
+  return 1
+}
+
 # Check the new Go+C+PostgreSQL stack before moving public traffic.
-curl -fsS http://127.0.0.1:8081/healthz | grep -q '"status":"ok'
-curl -fsS http://127.0.0.1:8081/dbz | grep -q '"status":"ok'
-curl -fsS http://127.0.0.1:8081/readyz | grep -q '"status":"ready'
-curl -fsS http://127.0.0.1:8081/metrics | grep -q 'personal_portal_events'
+wait_for_url http://127.0.0.1:8081/healthz '"status":"ok'
+wait_for_url http://127.0.0.1:8081/dbz '"status":"ok'
+wait_for_url http://127.0.0.1:8081/readyz '"status":"ready'
+wait_for_url http://127.0.0.1:8081/metrics 'personal_portal_events'
 
 install -o root -g wheel -m 0644 "$repo/deploy/freebsd/Caddyfile" "$caddy_file"
 caddy validate --config "$caddy_file"

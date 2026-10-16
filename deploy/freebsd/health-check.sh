@@ -8,12 +8,16 @@ trap 'rm -f "$tmp"' EXIT HUP INT TERM
 expect_http() {
   url="$1"
   expected="$2"
-  actual=$(curl --resolve www.lycupaynotion.top:443:127.0.0.1 -sS -o "$tmp" -w '%{http_code}' "$url")
-  if [ "$actual" != "$expected" ]; then
-    echo "FAIL: $url returned HTTP $actual; expected $expected" >&2
-    cat "$tmp" >&2
-    exit 1
-  fi
+  attempt=0
+  while [ "$attempt" -lt 10 ]; do
+    actual=$(curl --resolve www.lycupaynotion.top:443:127.0.0.1 --max-time 5 -sS -o "$tmp" -w '%{http_code}' "$url" 2>/dev/null || true)
+    if [ "$actual" = "$expected" ]; then return 0; fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  echo "FAIL: $url returned HTTP $actual; expected $expected" >&2
+  cat "$tmp" >&2
+  exit 1
 }
 
 curl -fsS "$api/healthz" | grep -q '"status":"ok'
