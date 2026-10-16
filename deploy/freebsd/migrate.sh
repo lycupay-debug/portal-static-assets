@@ -69,7 +69,14 @@ for migration in "$migration_dir"/[0-9][0-9][0-9]_*.sql; do
     fi
   fi
   echo "APPLY migration $version: $(basename "$migration")"
-  "$psql_bin" -v ON_ERROR_STOP=1 -d "$db_name" -f "$migration"
+  # Historical migrations 001-005 predate explicit BEGIN/COMMIT. Run those
+  # files in a psql-managed transaction so a statement failure cannot leave
+  # half of a schema version applied. Newer migrations own their transaction.
+  if grep -Eq '^[[:space:]]*BEGIN[[:space:]]*;' "$migration"; then
+    "$psql_bin" -v ON_ERROR_STOP=1 -d "$db_name" -f "$migration"
+  else
+    "$psql_bin" --single-transaction -v ON_ERROR_STOP=1 -d "$db_name" -f "$migration"
+  fi
 done
 
 "$psql_bin" -v ON_ERROR_STOP=1 -d "$db_name" -c 'SELECT version,name,applied_at FROM portal.schema_migrations ORDER BY version;'
