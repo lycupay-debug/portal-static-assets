@@ -1,21 +1,15 @@
-name: Frontend CI
+name: Personal Portal CI
 
 on:
   push:
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-ci.yml'
   pull_request:
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  frontend-contract:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,7 +25,77 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install locked dependencies
         run: npm ci
-      - name: Type-check
+      - name: Lint OpenAPI contract
+        run: npm run api:lint
+      - name: Verify generated TypeScript types are current
+        run: npm run api:check
+      - name: Type-check Vue and TypeScript
         run: npm run type-check
-      - name: Build static site
+      - name: Frontend tests
+        run: npm test
+      - name: Build production frontend
         run: npm run build
+
+  backend-and-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate FreeBSD deployment shell scripts and rehearse rollback in a sandbox
+        run: |
+          sh -n deploy/freebsd/deploy.sh deploy/freebsd/migrate.sh deploy/freebsd/rollback.sh deploy/freebsd/health-check.sh
+          sh deploy/freebsd/test-rollback.sh
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Create isolated migration test database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE personal_portal_app LOGIN PASSWORD 'ci-only-password';"
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE portal_test OWNER personal_portal_app;"
+      - name: Apply every SQL migration in order as the application database owner
+        env:
+          PGPASSWORD: ci-only-password
+        run: |
+          for migration in backend/migrations/*.sql; do
+            echo "Applying $migration"
+            psql -h localhost -U personal_portal_app -d portal_test -v ON_ERROR_STOP=1 -f "$migration"
+          done
+          psql -h localhost -U personal_portal_app -d portal_test -v ON_ERROR_STOP=1 -c "SELECT version, name FROM portal.schema_migrations ORDER BY version;"
+      - name: Configure PostgreSQL integration tests
+        run: echo 'postgres://personal_portal_app:ci-only-password@localhost:5432/portal_test?sslmode=disable' > "$RUNNER_TEMP/database-url"
+      - name: Run Go unit and PostgreSQL integration tests
+        working-directory: backend
+        env:
+          PERSONAL_PORTAL_TEST_DATABASE_URL_FILE: ${{ runner.temp }}/database-url
+        run: go test -race ./...
+      - name: Run Go static analysis
+        working-directory: backend
+        run: go vet ./...
+      - name: Build Go API
+        working-directory: backend
+        run: go build -o "$RUNNER_TEMP/personal-portal-api" ./api
+
+  event-core:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Compile C event core with warnings as errors and run IPC tests
+        run: make -C event-core clean test
