@@ -34,4 +34,4 @@ npm run build
 
 ## 当前状态
 
-当前已部署 FreeBSD 原生 C `kqueue` 事件核心、Go API、PostgreSQL 事件收件箱、通知分发器和 Go 业务处理器。C 核心负责本地 IPC 与事件元数据通知；业务 payload 的持久化、租约、重试和处理结果由 PostgreSQL 与 Go `EventProcessor` 负责。已注册 `portal.content.validate` handler。2026-10-15 已完成端到端验证：`POST /events` 返回 202，事件进入 `dispatch_state=notified`，处理状态变为 `completed`，并持久化 `processing_result={\"valid\":true,\"errors\":null}`；相同事件重放返回 200 且 `duplicate=true`。`notified` 仅表示 C IPC 接受了事件 ID/type 元数据，不表示 C 处理了业务 payload。当前事件核心、Go API 和 PostgreSQL 服务正在运行。
+当前已部署 FreeBSD 原生 C `kqueue` 事件核心、Go API、PostgreSQL 事件收件箱、通知分发器和 Go 业务处理器。C 核心负责本地 IPC 与事件元数据通知；业务 payload 的持久化、租约、重试和处理结果由 PostgreSQL 与 Go `EventProcessor` 负责。已注册 `portal.content.validate` handler。2026-10-16 生产烟雾测试验证带有批准标签的事件最终达到 `status=completed`、`dispatch_state=notified`、`attempts=1`、`processing_result.valid=true`，并在验证后删除临时测试事件。自动化测试覆盖并发重复接收、JSONB 幂等比较、C 核心重启后的订阅恢复、Worker 进程崩溃恢复、最大重试次数、分发租约 fencing、优雅关闭和内容标签目录一致性。`notified` 仅表示 C IPC 接受了事件 ID/type 元数据，不表示 C 处理了业务 payload。当前事件核心、Go API 和 PostgreSQL 服务正在运行。
