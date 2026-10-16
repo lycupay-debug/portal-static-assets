@@ -366,14 +366,24 @@ func (d EventDispatcher) claim(ctx context.Context) ([]pendingNotification, erro
 	return events, rows.Err()
 }
 
-func (d EventDispatcher) markNotified(ctx context.Context, eventID string) error {
-	_, err := d.DB.ExecContext(ctx, `
+func (d EventDispatcher) markNotified(ctx context.Context, event pendingNotification) error {
+	result, err := d.DB.ExecContext(ctx, `
 		UPDATE portal.event_inbox
 		SET dispatch_state = 'notified', dispatch_lease_until = NULL,
 		    dispatch_notified_at = now(), dispatch_error = NULL
-		WHERE event_id = $1::uuid AND dispatch_state = 'leased'
-	`, eventID)
-	return err
+		WHERE event_id = $1::uuid AND dispatch_state = 'leased' AND dispatch_attempts = $2
+	`, event.EventID, event.Attempts)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return fmt.Errorf("event %s dispatch lease was lost before notification update", event.EventID)
+	}
+	return nil
 }
 
 func (d EventDispatcher) markRetry(ctx context.Context, event pendingNotification, cause error) error {
@@ -389,14 +399,24 @@ func (d EventDispatcher) markRetry(ctx context.Context, event pendingNotificatio
 	if len(message) > 1000 {
 		message = message[:1000]
 	}
-	_, err := d.DB.ExecContext(ctx, `
+	result, err := d.DB.ExecContext(ctx, `
 		UPDATE portal.event_inbox
 		SET dispatch_state = 'pending', dispatch_lease_until = NULL,
 		    next_dispatch_at = now() + ($2 * interval '1 second'),
 		    dispatch_error = $3
-		WHERE event_id = $1::uuid AND dispatch_state = 'leased'
-	`, event.EventID, delay.Seconds(), message)
-	return err
+		WHERE event_id = $1::uuid AND dispatch_state = 'leased' AND dispatch_attempts = $4
+	`, event.EventID, delay.Seconds(), message, event.Attempts)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return fmt.Errorf("event %s dispatch lease was lost before retry update", event.EventID)
+	}
+	return nil
 }
 
 func (d EventDispatcher) Run(ctx context.Context) {
@@ -433,7 +453,7 @@ func (d EventDispatcher) Run(ctx context.Context) {
 					continue
 				}
 				markCtx, markCancel := context.WithTimeout(context.Background(), 2*time.Second)
-				markErr := d.markNotified(markCtx, event.EventID)
+				markErr := d.markNotified(markCtx, event)
 				markCancel()
 				if markErr != nil {
 					fmt.Printf("event_dispatch_state_update_failed event_id=%s error=%v\n", event.EventID, markErr)

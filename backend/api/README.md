@@ -9,7 +9,7 @@
 - 默认监听 `127.0.0.1:8081`，不对外网开放。
 - 可通过 `PERSONAL_PORTAL_HTTP_ADDR` 和 `PERSONAL_PORTAL_EVENT_SOCKET` 覆盖监听地址和 socket 路径。
 - IPC 客户端设有连接/读写超时，并验证协议版本、请求 ID、状态和响应载荷。
-- `POST /events` 将事件持久化到 `portal.event_inbox`；后台 `EventDispatcher` 使用 `FOR UPDATE SKIP LOCKED` 领取待通知事件，租约超时后可恢复，并在 IPC 失败时以 1–64 秒指数退避重试。
+- `POST /events` 将事件持久化到 `portal.event_inbox`；后台 `EventDispatcher` 使用 `FOR UPDATE SKIP LOCKED` 领取待通知事件，租约超时后可恢复，并在 IPC 失败时以 1–64 秒指数退避重试。分发状态更新以 `dispatch_attempts` 作为租约 fencing token，旧领取者不能覆盖新领取者的通知或重试结果。
 - IPC `EVENT` 仅传送 event ID/type 元数据。数据库 `dispatch_state=notified` 不代表业务完成，也不应修改事件的业务 `status`。
 - `api/event_processor.go` 提供独立业务处理执行层：默认启动 4 个业务 Worker（`PERSONAL_PORTAL_EVENT_WORKERS` 可设为 1–8，超出上限会限制为 8）；各 Worker 使用独立 ID 并通过 `FOR UPDATE SKIP LOCKED`、处理租约竞争领取事件。成功后才写 `completed`；失败时指数退避重试，达到 10 次后写 `failed`；过期的 `processing` 租约可被重新领取。
 - 处理器必须遵守幂等约定、响应 context 超时；由于外部副作用与数据库完成状态无法原子提交，执行语义是至少一次，处理器不得假设只执行一次。
