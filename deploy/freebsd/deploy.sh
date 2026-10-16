@@ -23,8 +23,8 @@ fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 work="/var/tmp/personal-portal-deploy-$stamp"
 deployment_changed=0
+. "$repo/deploy/freebsd/deploy-policy.sh"
 release_mode="${PERSONAL_PORTAL_RELEASE_MODE:-development}"
-auto_rollback="${PERSONAL_PORTAL_AUTO_ROLLBACK:-0}"
 mkdir -p "$work" "$backup_dir"
 chmod 0700 "$work" "$backup_dir"
 
@@ -32,7 +32,7 @@ rollback_on_failure() {
   rc=$?
   if [ "$rc" -ne 0 ]; then
     if [ "$deployment_changed" -eq 1 ]; then
-      if [ "$release_mode" = "stable" ] && [ "$auto_rollback" = "1" ]; then
+      if personal_portal_auto_rollback_enabled; then
         echo "Deployment failed; stable mode explicitly enables automatic rollback (stamp $stamp)." >&2
         "$repo/deploy/freebsd/rollback.sh" "$stamp" || echo "Automatic rollback failed; manual recovery may be required: $repo/deploy/freebsd/rollback.sh $stamp" >&2
       else

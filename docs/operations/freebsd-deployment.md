@@ -23,7 +23,7 @@
 
 部署过程会在 /var/backups/personal-portal/ 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用 personal_portal_auth_api 服务；Caddy 不再将任何业务 API 转发到 8082。回滚脚本会临时将该服务指向 `/opt/personal-portal-legacy-node/backend/auth-api`。
 
-**开发期保护规则：默认禁止自动回退。** `PERSONAL_PORTAL_RELEASE_MODE` 默认是 `development`；即使切换服务后健康检查失败，脚本也只输出诊断目录与手动回滚命令，不擅自切换回旧版本，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。只有进入稳定期后，由操作者显式设置 `PERSONAL_PORTAL_RELEASE_MODE=stable PERSONAL_PORTAL_AUTO_ROLLBACK=1`，才允许部署失败时自动回退。数据库备份与迁移前置检查仍然执行；自动回退不等于数据库反向迁移。
+**开发期保护规则：默认禁止自动回退。** `PERSONAL_PORTAL_RELEASE_MODE` 默认是 `development`；即使切换服务后健康检查失败，脚本也只输出诊断目录与手动回滚命令，不擅自切换回旧版本，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。只有进入稳定期后，由操作者显式设置 `PERSONAL_PORTAL_RELEASE_MODE=stable PERSONAL_PORTAL_AUTO_ROLLBACK=1`，才允许部署失败时自动回退；该条件已有独立 Shell 测试并纳入 GitHub CI。数据库备份与迁移前置检查仍然执行；自动回退不等于数据库反向迁移。
 
 ## 数据库迁移规则
 
