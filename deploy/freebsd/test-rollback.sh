@@ -3,6 +3,7 @@ set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 sh "$repo/deploy/freebsd/test-deploy-policy.sh"
+sh "$repo/deploy/freebsd/test-migration-transaction.sh"
 tmp=$(mktemp -d /tmp/personal-portal-rollback-test.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
