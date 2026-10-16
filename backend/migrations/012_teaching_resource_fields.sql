@@ -1,0 +1,12 @@
+BEGIN;
+ALTER TABLE portal.teaching_resources ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT '其他' CHECK (char_length(resource_type) BETWEEN 1 AND 50);
+ALTER TABLE portal.teaching_resources ADD COLUMN IF NOT EXISTS resource_url TEXT CHECK (resource_url IS NULL OR (resource_url ~* '^https?://' AND char_length(resource_url) <= 2048));
+ALTER TABLE portal.teaching_resources ALTER COLUMN original_filename DROP NOT NULL;
+ALTER TABLE portal.teaching_resources ALTER COLUMN stored_filename DROP NOT NULL;
+ALTER TABLE portal.teaching_resources ALTER COLUMN mime_type DROP NOT NULL;
+ALTER TABLE portal.teaching_resources ALTER COLUMN file_size DROP NOT NULL;
+ALTER TABLE portal.teaching_resources DROP CONSTRAINT IF EXISTS teaching_resources_file_size_check;
+ALTER TABLE portal.teaching_resources ADD CONSTRAINT teaching_resources_file_size_check CHECK (file_size IS NULL OR file_size > 0);
+ALTER TABLE portal.teaching_resources ADD CONSTRAINT teaching_resources_file_or_url_check CHECK (stored_filename IS NOT NULL OR resource_url IS NOT NULL);
+INSERT INTO portal.schema_migrations(version,name) VALUES (12,'teaching_resource_fields') ON CONFLICT (version) DO NOTHING;
+COMMIT;

@@ -41,7 +41,7 @@ type PortalContent = {
   favoriteCount?: number
 }
 type ContentVersion = { versionId: string; versionNumber: number; title: string; slug: string; status: PortalContent['status']; createdAt: string }
-type TeachingResource = { id: string; title: string; description: string; filename: string; mimeType: string; fileSize: number; createdAt: string; updatedAt?: string; deletedAt?: string }
+type TeachingResource = { id: string; title: string; description: string; type: string; url: string | null; filename: string | null; mimeType: string | null; fileSize: number | null; createdAt: string; updatedAt?: string; deletedAt?: string }
 type ContentForm = {
   title: string
   slug: string
@@ -186,6 +186,13 @@ const resourceError = ref('')
 const resourceTitle = ref('')
 const resourceDescription = ref('')
 const resourceFile = ref<File | null>(null)
+const resourceType = ref('听力材料')
+const resourceUrl = ref('')
+const resourceUploadProgress = ref(0)
+const resourceUploadDone = ref(false)
+const resourceUploadResult = ref('')
+const resourceDialogLocked = computed(() => resourceBusy.value || (resourceUploadDone.value && resourceDialogOpen.value))
+const resourceTypeOptions = ['听力材料', '课件', '教学视频', '电子书', '练习题', '教案', '其他']
 watch(authError, (message) => { if (message) portalNotify.error(message, '登录或注册失败') }, { flush: 'sync' })
 watch(authNotice, (message) => { if (message) portalNotify.info(message) }, { flush: 'sync' })
 watch(contentError, (message) => { if (message) portalNotify.error(message, '内容操作失败') }, { flush: 'sync' })
@@ -386,7 +393,7 @@ const tableDefinitions: Record<string, { title: string; columns: TableColumn[]; 
   'room-status': { title: '房态列表', columns: [{ key: 'room', label: '房间', width: 'minmax(140px, 1.3fr)' }, { key: 'property', label: '所属房源', width: 'minmax(180px, 1.7fr)' }, { key: 'status', label: '当前房态' }, { key: 'tenant', label: '租客' }, { key: 'checkIn', label: '入住日期' }, { key: 'checkOut', label: '退租日期' }], note: '房态数据源尚未接入。' },
   'student-records': { title: '学生档案', columns: [{ key: 'name', label: '学生姓名' }, { key: 'studentId', label: '学员编号' }, { key: 'course', label: '课程' }, { key: 'status', label: '学习状态' }, { key: 'updatedAt', label: '更新时间' }], note: '学生档案数据源尚未接入。' },
   'course-calendar': { title: '课程安排', columns: [{ key: 'course', label: '课程名称', width: 'minmax(180px, 1.6fr)' }, { key: 'class', label: '班级' }, { key: 'teacher', label: '教师' }, { key: 'startAt', label: '开始时间' }, { key: 'endAt', label: '结束时间' }, { key: 'status', label: '状态' }], note: '课程日历数据源尚未接入。' },
-  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '资源类型' }, { key: 'course', label: '关联课程' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源数据源尚未接入。' },
+  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'description', label: '资源说明', width: 'minmax(220px, 2fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源数据源尚未接入。' },
   'network-tools': { title: '网络工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'description', label: '功能说明', width: 'minmax(220px, 2fr)' }, { key: 'url', label: '入口地址' }, { key: 'status', label: '状态' }], note: '网络工具目录尚未接入。' },
   'document-converters': { title: '文档转换工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'sourceFormat', label: '源格式' }, { key: 'targetFormat', label: '目标格式' }, { key: 'status', label: '状态' }, { key: 'actions', label: '操作' }], note: '文档转换工具目录尚未接入。' },
   'add-tool': { title: '工具清单', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'category', label: '分类' }, { key: 'url', label: '入口地址', width: 'minmax(220px, 2fr)' }, { key: 'status', label: '状态' }, { key: 'createdAt', label: '添加时间' }], note: '当前还没有接入工具管理数据源。' },
@@ -412,7 +419,7 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
     }))
   : activeAccountSection.value === 'teaching-resources'
-    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.filename.split('.').pop()?.toUpperCase() || '文件', course: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
+    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.type || '其他', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
     : [])
 // Build each record's normalized search text once per data change, rather than
 // converting every cell to lowercase on every keystroke. Action/status helper fields
@@ -527,35 +534,40 @@ async function loadTeachingResources() {
   } catch (error) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') }
   finally { resourceBusy.value = false }
 }
-function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceFile.value = null; resourceError.value = ''; resourceDialogOpen.value = true }
-function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceFile.value = null; resourceError.value = ''; resourceDialogOpen.value = true }
+function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
+function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
+function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
 function openResourceEditById(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item) openResourceEdit(item) }
+function requestWithUploadProgress(url: string, method: string, body: unknown): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest(); xhr.open(method, url); xhr.withCredentials = true; xhr.setRequestHeader('Content-Type', 'application/json'); xhr.setRequestHeader('Accept', 'application/json')
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable) resourceUploadProgress.value = Math.min(99, Math.round(event.loaded / event.total * 100)) }
+    xhr.onerror = () => reject(new Error('网络连接失败，资源未能保存。'))
+    xhr.onload = () => { let result: { item?: TeachingResource; error?: string } = {}; try { result = JSON.parse(xhr.responseText) } catch {} if (xhr.status < 200 || xhr.status >= 300) { reject(new Error(result.error || '保存资源失败。')); return } resourceUploadProgress.value = 100; resolve({ response: xhr.status, result }) }
+    xhr.send(JSON.stringify(body))
+  })
+}
 async function createTeachingResource() {
   if (!resourceTitle.value.trim()) { resourceError.value = '请填写资源名称。'; return }
-  if (!editingResourceId.value && !resourceFile.value) { resourceError.value = '请选择要上传的文件。'; return }
+  if (!resourceFile.value && !resourceUrl.value.trim() && !editingResourceId.value) { resourceError.value = '请上传文件或粘贴资源 URL 链接。'; return }
+  if (resourceUrl.value.trim() && !/^https?:\/\//i.test(resourceUrl.value.trim())) { resourceError.value = '资源 URL 必须以 http:// 或 https:// 开头。'; return }
   if (resourceFile.value && resourceFile.value.size > 25 * 1024 * 1024) { resourceError.value = '单个文件大小不能超过 25 MB。'; return }
-  resourceBusy.value = true; resourceError.value = ''
+  resourceBusy.value = true; resourceError.value = ''; resetResourceUpload()
   try {
-    let response: Response
-    if (editingResourceId.value) {
-      response = await fetch(`/api/resources/${encodeURIComponent(editingResourceId.value)}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ title: resourceTitle.value.trim(), description: resourceDescription.value.trim() }) })
-    } else {
-      const file = resourceFile.value!
-      const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
-      response = await fetch('/api/resources', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), filename: file.name, mimeType: file.type || 'application/octet-stream', data }) })
-    }
-    const result = await response.json() as { item?: TeachingResource; error?: string }
-    if (!response.ok) throw new Error(result.error || (editingResourceId.value ? '保存资源修改失败。' : '创建资源失败。'))
-    if (result.item) {
-      if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
-      else teachingResources.value = [result.item, ...teachingResources.value]
-    }
-    const wasEditing = Boolean(editingResourceId.value)
-    resourceDialogOpen.value = false; editingResourceId.value = null
-    portalNotify.success(wasEditing ? '资源信息已更新。' : '资源已保存到数据库。')
-  } catch (error) { resourceError.value = error instanceof Error ? error.message : (editingResourceId.value ? '保存资源修改失败。' : '创建资源失败。') }
+    const file = resourceFile.value
+    let data = ''
+    if (file) data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
+    const payload = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, url: resourceUrl.value.trim() || null, ...(file ? { filename: file.name, mimeType: file.type || 'application/octet-stream', data } : {}) }
+    const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
+    const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
+    if (!result.item) throw new Error('服务器未返回已保存的资源。')
+    if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
+    else teachingResources.value = [result.item, ...teachingResources.value]
+    resourceUploadDone.value = true; resourceUploadResult.value = '资源已保存。请点击下方“完成”关闭窗口。'
+  } catch (error) { resourceError.value = error instanceof Error ? error.message : '保存资源失败。'; resourceUploadProgress.value = 0 }
   finally { resourceBusy.value = false }
 }
+function finishResourceUpload() { if (!resourceUploadDone.value) return; resourceDialogOpen.value = false; editingResourceId.value = null; resetResourceUpload(); portalNotify.success('教学资源已保存。') }
 async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 'permanent') {
   const message = action === 'permanent' ? '永久删除后将同时删除服务器文件，无法恢复。确定继续？' : action === 'trash' ? '将该资源移入回收站？' : ''
   if (message && !window.confirm(message)) return
@@ -570,7 +582,7 @@ async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 
   finally { resourceBusy.value = false }
 }
 function switchResourceView() { resourceViewMode.value = resourceViewMode.value === 'active' ? 'trash' : 'active'; tableQuery.value = ''; void loadTeachingResources() }
-function downloadTeachingResource(id: string) { window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
+function downloadTeachingResource(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item?.url) window.open(item.url, '_blank', 'noopener,noreferrer'); else window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
 function formatFileSize(size: number) { return size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB` }
 
 async function initializeContentEditorRoute() {
@@ -1417,7 +1429,7 @@ onBeforeUnmount(() => {
                         </template>
                         <template v-else>
                           <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="openResourceEditById(String(record.id))">编辑</button>
-                          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="downloadTeachingResource(String(record.id))">下载</button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="downloadTeachingResource(String(record.id))">{{ teachingResources.find((item) => item.id === String(record.id))?.url ? '打开链接' : '下载' }}</button>
                           <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'trash')">删除</button>
                         </template>
                       </template>
@@ -1447,26 +1459,38 @@ onBeforeUnmount(() => {
 
     <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="btn btn-dark button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
 
-    <div v-if="resourceDialogOpen" class="share-dialog-backdrop" @click.self="resourceDialogOpen = false" @keydown.esc="resourceDialogOpen = false">
+    <div v-if="resourceDialogOpen" class="share-dialog-backdrop resource-upload-backdrop" @click.self="!resourceDialogLocked && (resourceDialogOpen = false)" @keydown.esc="!resourceDialogLocked && (resourceDialogOpen = false)">
       <section class="share-dialog resource-create-dialog" role="dialog" aria-modal="true" aria-labelledby="resource-create-title">
-        <button type="button" class="share-dialog-close" aria-label="关闭" @click="resourceDialogOpen = false">×</button>
+        <button v-if="!resourceDialogLocked && !resourceUploadDone" type="button" class="share-dialog-close" aria-label="关闭" @click="resourceDialogOpen = false">×</button>
         <span class="share-dialog-eyebrow">TEACHING LIBRARY</span>
         <h2 id="resource-create-title">{{ editingResourceId ? '编辑教学资源' : '创建教学资源' }}</h2>
-        <p>{{ editingResourceId ? '修改资源名称或说明。原文件保持不变，不创建版本历史。' : '上传课件、听力音频或其他教学文件。文件最大 25 MB，保存后可下载或移入回收站。' }}</p>
-        <form class="resource-create-form" @submit.prevent="createTeachingResource">
+        <p>{{ editingResourceId ? '可更新资源名称、类型、说明、分享链接；选择新文件才会替换原文件。' : '文件上传与 URL 分享二选一，也可以同时填写。' }}</p>
+        <form v-if="!resourceUploadDone" class="resource-create-form" @submit.prevent="createTeachingResource">
           <label class="share-dialog-label" for="resource-title">资源名称</label>
           <input id="resource-title" v-model="resourceTitle" class="form-control share-dialog-url" maxlength="200" required placeholder="例如：七年级英语听力 Unit 1" />
+          <label class="share-dialog-label" for="resource-type">类型</label>
+          <select id="resource-type" v-model="resourceType" class="form-select" required><option v-for="type in resourceTypeOptions" :key="type" :value="type">{{ type }}</option></select>
           <label class="share-dialog-label" for="resource-description">资源说明</label>
-          <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="关联课程、章节或使用说明（选填）"></textarea>
-          <template v-if="!editingResourceId">
-            <label class="share-dialog-label" for="resource-file">上传文件</label>
-            <input id="resource-file" class="form-control resource-file-input" type="file" accept=".ppt,.pptx,.mp3,.pdf,.doc,.docx,.txt" required @change="resourceFile = ($event.target as HTMLInputElement).files?.[0] || null" />
-            <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。</p>
-            <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}</p>
-          </template>
+          <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
+          <label class="share-dialog-label" for="resource-file">上传文件（选填）</label>
+          <input id="resource-file" class="form-control resource-file-input" type="file" accept=".ppt,.pptx,.mp3,.pdf,.doc,.docx,.txt" @change="resourceFile = ($event.target as HTMLInputElement).files?.[0] || null" />
+          <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。不上传文件时可直接使用 URL。</p>
+          <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}{{ editingResourceId ? ' · 上传后替换原文件' : '' }}</p>
+          <label class="share-dialog-label" for="resource-url">URL 链接（选填）</label>
+          <input id="resource-url" v-model="resourceUrl" type="url" class="form-control share-dialog-url" placeholder="粘贴可分享的 https:// 链接" />
+          <div v-if="resourceBusy" class="resource-upload-live-progress">
+            <div class="resource-upload-progress-track" role="progressbar" :aria-valuenow="resourceUploadProgress" aria-valuemin="0" aria-valuemax="100"><div class="resource-upload-progress-bar" :style="{ width: resourceUploadProgress + '%' }"></div></div>
+            <div class="resource-upload-progress-label"><span>{{ resourceUploadProgress >= 100 ? '正在等待服务器确认保存' : '正在上传并保存，请勿关闭窗口' }}</span><strong>{{ resourceUploadProgress }}%</strong></div>
+          </div>
           <p v-if="resourceError" class="resource-error">{{ resourceError }}</p>
-          <div class="resource-form-actions"><button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="btn content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? (editingResourceId ? '正在保存…' : '正在上传…') : (editingResourceId ? '保存修改' : '保存资源') }}</button></div>
+          <div class="resource-form-actions"><button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="btn content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? '正在保存…' : (editingResourceId ? '保存并处理' : '保存资源') }}</button></div>
         </form>
+        <div v-else class="resource-upload-completion">
+          <p>{{ resourceUploadResult }}</p>
+          <div class="resource-upload-progress-track" role="progressbar" :aria-valuenow="resourceUploadProgress" aria-valuemin="0" aria-valuemax="100"><div class="resource-upload-progress-bar" :style="{ width: resourceUploadProgress + '%' }"></div></div>
+          <div class="resource-upload-progress-label"><span>{{ resourceUploadProgress >= 100 ? '处理完成' : '正在处理' }}</span><strong>{{ resourceUploadProgress }}%</strong></div>
+          <button type="button" class="btn content-primary-button" :disabled="resourceUploadProgress < 100 || !resourceUploadDone" @click="finishResourceUpload">完成</button>
+        </div>
       </section>
     </div>
 
@@ -2083,6 +2107,15 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
   .content-markdown-preview { min-height: 220px; }
 }
 
+.resource-create-dialog { max-height: min(86vh, 900px); overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.resource-create-dialog::-webkit-scrollbar { display: none; }
+.resource-create-form .form-select { border-radius: 12px; border-color: #dedede; padding: 12px 14px; color: #191919; background-color: rgba(255,255,255,.72); }
+.resource-upload-completion { display: grid; gap: 18px; margin-top: 26px; }
+.resource-upload-live-progress { display: grid; gap: 10px; margin-top: 16px; }
+.resource-upload-progress-track { height: 10px; border-radius: 999px; background: #e5e5e5; overflow: hidden; }
+.resource-upload-progress-bar { height: 100%; border-radius: inherit; background: #222; transition: width .18s ease; }
+.resource-upload-progress-label { display: flex; justify-content: space-between; color: #555; font-size: .9rem; }
+.resource-upload-completion .content-primary-button { justify-self: end; min-width: 110px; }
 </style>
 
 <style src="./theme.css"></style>

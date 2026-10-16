@@ -188,8 +188,9 @@ test('teaching resource metadata can be edited without creating content versions
   const handlers = createContentHandlers({
     pool: { async query(sql, params) {
       calls.push({ sql, params });
+      if (sql.includes('SELECT stored_filename FROM portal.teaching_resources')) return { rows: [{ stored_filename: 'existing.pdf' }], rowCount: 1 };
       if (sql.includes('UPDATE portal.teaching_resources SET title=$1')) return {
-        rows: [{ id: resourceId, title: params[0], description: params[1], filename: 'lesson.pdf', mimeType: 'application/pdf', fileSize: 1234, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-10-16T00:00:00Z' }], rowCount: 1,
+        rows: [{ id: resourceId, title: params[0], description: params[1], type: params[2], url: params[3], filename: 'lesson.pdf', mimeType: 'application/pdf', fileSize: 1234, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-10-16T00:00:00Z' }], rowCount: 1,
       };
       throw new Error(`Unexpected query: ${sql}`);
     } },
@@ -198,15 +199,17 @@ test('teaching resource metadata can be edited without creating content versions
     readBody: async req => req.body || {},
   });
   const response = await handlers.handleContentRequest(
-    { method: 'PATCH', body: { title: '  Updated resource  ', description: 'New description' } }, {},
+    { method: 'PATCH', body: { title: '  Updated resource  ', description: 'New description', type: '课件', url: 'https://example.com/lesson' } }, {},
     new URL(`http://local/resources/${resourceId}`),
   );
   assert.equal(response.status, 200);
   assert.equal(response.payload.item.title, 'Updated resource');
   assert.equal(response.payload.item.description, 'New description');
-  assert.match(calls[0].sql, /owner_id=\$4 AND deleted_at IS NULL/);
-  assert.deepEqual(calls[0].params, ['Updated resource', 'New description', resourceId, authorId]);
-  assert.equal(calls.length, 1, 'metadata editing must not create version history or touch the stored file');
+  assert.equal(response.payload.item.type, '课件');
+  assert.equal(response.payload.item.url, 'https://example.com/lesson');
+  assert.match(calls[1].sql, /owner_id=\$10 AND deleted_at IS NULL/);
+  assert.deepEqual(calls[1].params, ['Updated resource', 'New description', '课件', 'https://example.com/lesson', null, 'existing.pdf', null, null, resourceId, authorId]);
+  assert.equal(calls.length, 2, 'metadata editing must not create version history or touch the stored file');
 });
 
 test('teaching resource edit validates title and description lengths', async () => {
@@ -221,4 +224,27 @@ test('teaching resource edit validates title and description lengths', async () 
   assert.equal(noTitle.status, 400);
   const tooLong = await handlers.handleContentRequest({ method: 'PATCH', body: { title: 'valid', description: 'x'.repeat(2001) } }, {}, path);
   assert.equal(tooLong.status, 400);
+});
+
+
+test('teaching resources can be created with an external URL and no uploaded file', async () => {
+  const resourceId = '55555555-5555-4555-8555-555555555555';
+  let inserted;
+  const handlers = createContentHandlers({
+    pool: { async query(sql, params) {
+      assert.match(sql, /INSERT INTO portal\.teaching_resources/);
+      inserted = params;
+      return { rows: [{ id: resourceId, title: params[1], description: params[2], type: params[3], url: params[4], filename: null, mimeType: null, fileSize: null, createdAt: '2026-10-16T00:00:00Z' }], rowCount: 1 };
+    } },
+    getSessionUser: async () => ({ user_id: authorId }),
+    json: (_res, status, payload) => ({ status, payload }),
+    readBody: async req => req.body || {},
+  });
+  const response = await handlers.handleContentRequest({ method: 'POST', body: { title: '试听链接', description: '课程外链', type: '听力材料', url: 'https://example.com/audio' } }, {}, new URL('http://local/resources'));
+  assert.equal(response.status, 201);
+  assert.equal(response.payload.item.url, 'https://example.com/audio');
+  assert.equal(response.payload.item.filename, null);
+  assert.equal(inserted[4], 'https://example.com/audio');
+  assert.equal(inserted[5], null);
+  assert.equal(inserted[6], null);
 });
