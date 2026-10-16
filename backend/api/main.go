@@ -64,20 +64,14 @@ func (s PostgresEventStore) ReceiveEvent(ctx context.Context, event EventInput) 
 	}
 
 	var existingType string
-	var existingPayload []byte
+	var payloadMatches bool
 	err = s.DB.QueryRowContext(ctx, `
-		SELECT event_type, payload::text
-		FROM portal.event_inbox WHERE event_id = $1::uuid`, event.EventID).Scan(&existingType, &existingPayload)
+		SELECT event_type, payload = $2::jsonb
+		FROM portal.event_inbox WHERE event_id = $1::uuid`, event.EventID, string(event.Payload)).Scan(&existingType, &payloadMatches)
 	if err != nil {
 		return false, err
 	}
-	var incoming, existing any
-	if json.Unmarshal(event.Payload, &incoming) != nil || json.Unmarshal(existingPayload, &existing) != nil {
-		return false, errEventConflict
-	}
-	incomingJSON, _ := json.Marshal(incoming)
-	existingJSON, _ := json.Marshal(existing)
-	if existingType != event.EventType || string(incomingJSON) != string(existingJSON) {
+	if existingType != event.EventType || !payloadMatches {
 		return false, errEventConflict
 	}
 	return true, nil
