@@ -47,6 +47,7 @@ type EventProcessor struct {
 	Interval time.Duration
 	Workers  int
 	WorkerID string
+	Wake     <-chan struct{}
 }
 
 type pendingEvent struct {
@@ -254,7 +255,11 @@ func (p EventProcessor) runWorker(ctx context.Context, eventTypes []string, inte
 		select {
 		case <-ctx.Done():
 			return
+		case <-p.Wake:
+			// The C event core accepted a durable event notification. Re-scan
+			// PostgreSQL immediately; the database remains the source of truth.
 		case <-ticker.C:
+			// Recovery scan: covers missed wakeups and process restarts.
 		}
 	}
 }

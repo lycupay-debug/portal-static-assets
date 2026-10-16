@@ -235,6 +235,7 @@ type EventDispatcher struct {
 	IPC      IPCClient
 	Batch    int
 	Interval time.Duration
+	Wake     chan<- struct{}
 }
 
 func (d EventDispatcher) claim(ctx context.Context) ([]pendingNotification, error) {
@@ -338,8 +339,20 @@ func (d EventDispatcher) Run(ctx context.Context) {
 					continue
 				}
 				markCtx, markCancel := context.WithTimeout(context.Background(), 2*time.Second)
-				_ = d.markNotified(markCtx, event.EventID)
+				markErr := d.markNotified(markCtx, event.EventID)
 				markCancel()
+				if markErr != nil {
+					fmt.Printf("event dispatcher notification state update failed for %s: %v\n", event.EventID, markErr)
+				}
+				// A successful C-core acknowledgement is the fast-path wakeup.
+				// Wakeups are hints only; PostgreSQL leases and recovery scans
+				// guarantee that a dropped signal cannot lose a persisted event.
+				if d.Wake != nil {
+					select {
+					case d.Wake <- struct{}{}:
+					default:
+					}
+				}
 			}
 		}
 		select {
@@ -408,8 +421,12 @@ func main() {
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	ipc := IPCClient{SocketPath: socketPath, Timeout: 750 * time.Millisecond}
-	go (EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 500 * time.Millisecond}).Run(context.Background())
-	go (EventProcessor{DB: db, Handlers: registeredEventHandlers(), Interval: 500 * time.Millisecond, Workers: configuredEventProcessorWorkers()}).Run(context.Background())
+	// The C core acknowledgement wakes Go workers immediately. This buffered
+	// channel is intentionally lossy: the database is durable and periodic
+	// recovery scans reclaim work if a signal is missed or a process restarts.
+	eventWake := make(chan struct{}, 256)
+	go (EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 500 * time.Millisecond, Wake: eventWake}).Run(context.Background())
+	go (EventProcessor{DB: db, Handlers: registeredEventHandlers(), Interval: 5 * time.Second, Workers: configuredEventProcessorWorkers(), Wake: eventWake}).Run(context.Background())
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
