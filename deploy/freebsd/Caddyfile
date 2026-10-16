@@ -26,6 +26,12 @@ www.lycupaynotion.top {
 
 	handle {
 		route {
+			header {
+				X-Content-Type-Options "nosniff"
+				X-Frame-Options "DENY"
+				Referrer-Policy "strict-origin-when-cross-origin"
+				Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			}
 			root * /usr/local/www/personal-portal/current
 			encode zstd gzip
 			try_files {path} /index.html
