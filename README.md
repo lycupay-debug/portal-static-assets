@@ -35,7 +35,7 @@ npm run type-check
 npm run build
 ```
 
-生产构建产物位于 `frontend/dist/`，不应将其作为源代码提交。
+`npm run build` 还会执行 `frontend/scripts/check-bundle-budget.mjs`：校验首屏 JS/CSS 与编辑器/Markdown 异步 chunk 的 gzip 预算，并防止编辑器依赖意外进入首页 HTML 的 preload 列表。生产构建产物位于 `frontend/dist/`，不应将其作为源代码提交。
 
 ## 当前状态
 
@@ -172,7 +172,7 @@ PostgreSQL（portal schema）
 统一入口为 `.github/workflows/frontend-ci.yml`，push、pull request 和手动触发均执行检查。每次提交至少覆盖：
 
 1. **OpenAPI/TypeScript：** OpenAPI lint、生成文件同步检查、Vue/TypeScript 类型检查。
-2. **前端：** 自动化测试与生产构建；安全的 Markdown/URL 处理、编辑器块往返持久化、分类数据约束等逻辑须有测试。
+2. **前端：** 自动化测试、生产构建与 bundle 预算；首屏不得提前加载编辑器或文章 Markdown 渲染器。安全的 Markdown/URL 处理、编辑器块往返持久化、分类数据约束等逻辑须有测试。
 3. **Go：** `go test -race ./...`、PostgreSQL 集成测试、`go vet ./...`、编译。
 4. **SQL：** 空数据库全量迁移按序执行，并使用应用数据库角色测试权限与约束。
 5. **C：** 编译启用 `-Wall -Wextra -Wpedantic -Werror`；测试协议版本、畸形/超长请求、ACK 匹配、重复/错误 ACK、FIFO、有界队列、并发连接、空闲/ACK 超时和 SIGTERM。
