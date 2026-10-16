@@ -134,6 +134,37 @@ for index in range(34):
         raise SystemExit(f"FAIL: queue overflow publish response was {response!r}")
 subscriber.close()
 
+# A client that never completes its request must not occupy a slot forever.
+idle = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+idle.settimeout(8)
+idle.connect(path)
+if idle.recv(1) != b"":
+    raise SystemExit("FAIL: idle client received unexpected data")
+idle.close()
+
+# A subscriber that never ACKs a push must be disconnected after the bounded ACK timeout.
+slow = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+slow.settimeout(8)
+slow.connect(path)
+slow.sendall(b"v2 slow1 SUBSCRIBE\n")
+slow_response = bytearray()
+while not slow_response.endswith(b"\n"):
+    slow_response.extend(slow.recv(256))
+if slow_response.decode("ascii") != "v2 slow1 OK SUBSCRIBED\n":
+    raise SystemExit(f"FAIL: slow subscriber handshake was {slow_response!r}")
+slow_event_id = "018f2f5e-7a2b-7c4d-8e9f-2123456789ab"
+slow_publish = request(f"v2 slowpub PUBLISH {slow_event_id} portal.content.validate\n".encode("ascii"))
+if slow_publish != "v2 slowpub OK PUBLISHED\n":
+    raise SystemExit(f"FAIL: slow publish response was {slow_publish!r}")
+slow_push = bytearray()
+while not slow_push.endswith(b"\n"):
+    slow_push.extend(slow.recv(256))
+if f"{slow_event_id} portal.content.validate".encode("ascii") not in slow_push:
+    raise SystemExit(f"FAIL: slow subscriber push was {slow_push!r}")
+if slow.recv(1) != b"":
+    raise SystemExit("FAIL: unacknowledged subscriber was not closed")
+slow.close()
+
 errors = []
 def parallel_check(index):
     try:
@@ -160,4 +191,6 @@ wait "$PID"
 PID=""
 grep -q "event-core stopped" "$LOG"
 grep -q "event_core_push_queue_overflow" "$LOG"
-echo "PASS: SIGTERM shutdown and bounded-queue overflow observability"
+grep -q "event_core_ack_timeout" "$LOG"
+grep -q "event_core_client_timeout" "$LOG"
+echo "PASS: SIGTERM shutdown, bounded queue, idle-client expiry, and ACK timeout observability"

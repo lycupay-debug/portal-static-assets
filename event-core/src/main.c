@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "event_protocol.h"
@@ -21,6 +22,8 @@
 #define OUTPUT_CAP 256
 #define EVENT_BATCH 32
 #define EVENT_QUEUE_CAP 32
+#define CLIENT_REQUEST_TIMEOUT_SECONDS 5
+#define CLIENT_ACK_TIMEOUT_SECONDS 5
 
 struct queued_event {
     char event_id[37];
@@ -43,6 +46,8 @@ struct client {
     struct queued_event queue[EVENT_QUEUE_CAP];
     size_t queue_head;
     size_t queue_count;
+    time_t last_activity;
+    time_t ack_started_at;
 };
 
 static struct client clients[MAX_CLIENTS];
@@ -183,6 +188,7 @@ queue_event_push(struct client *client, const char *event_id,
     client->output_sent = 0;
     client->output_is_push = 1;
     client->awaiting_ack = 1;
+    client->ack_started_at = time(NULL);
     memcpy(client->pending_event_id, event_id, strlen(event_id) + 1);
     memcpy(client->pending_event_type, event_type, strlen(event_type) + 1);
     printf("event_core_push_queued event_id=%s event_type=%s queue_depth=%zu\n",
@@ -277,6 +283,7 @@ handle_request(struct client *client, char *line)
             return queue_response(client, request_id, "ERROR", "BAD_ACK");
         }
         client->awaiting_ack = 0;
+        client->ack_started_at = 0;
         client->pending_event_id[0] = '\0';
         client->pending_event_type[0] = '\0';
         printf("event_core_push_acknowledged event_id=%s event_type=%s\n", event_id, event_type);
@@ -324,6 +331,7 @@ accept_clients(void)
 
         memset(client, 0, sizeof(*client));
         client->fd = fd;
+        client->last_activity = time(NULL);
         if (change_event((uintptr_t)fd, EVFILT_READ,
             EV_ADD | EV_ENABLE, client) == -1) {
             perror("kevent add client");
@@ -360,6 +368,7 @@ read_client(struct client *client)
             return;
         }
 
+        client->last_activity = time(NULL);
         client->input_len += (size_t)count;
         client->input[client->input_len] = '\0';
 
@@ -403,6 +412,7 @@ write_client(struct client *client)
             close_client(client);
             return;
         }
+        client->last_activity = time(NULL);
         client->output_sent += (size_t)count;
     }
     if (client->subscribed) {
@@ -428,6 +438,31 @@ write_client(struct client *client)
         return;
     }
     close_client(client);
+}
+
+static void
+expire_clients(void)
+{
+    time_t now = time(NULL);
+    for (size_t i = 0; i < MAX_CLIENTS; i++) {
+        struct client *client = &clients[i];
+        if (client->fd < 0)
+            continue;
+        if (client->awaiting_ack && client->ack_started_at > 0 &&
+            now - client->ack_started_at >= CLIENT_ACK_TIMEOUT_SECONDS) {
+            printf("event_core_ack_timeout fd=%d event_id=%s event_type=%s timeout_seconds=%d\n",
+                client->fd, client->pending_event_id, client->pending_event_type,
+                CLIENT_ACK_TIMEOUT_SECONDS);
+            close_client(client);
+            continue;
+        }
+        if (!client->subscribed && client->last_activity > 0 &&
+            now - client->last_activity >= CLIENT_REQUEST_TIMEOUT_SECONDS) {
+            printf("event_core_client_timeout fd=%d timeout_seconds=%d\n",
+                client->fd, CLIENT_REQUEST_TIMEOUT_SECONDS);
+            close_client(client);
+        }
+    }
 }
 
 static int
@@ -528,7 +563,8 @@ main(int argc, char **argv)
 
     while (!stopping) {
         struct kevent events[EVENT_BATCH];
-        int count = kevent(kq, NULL, 0, events, EVENT_BATCH, NULL);
+        struct timespec wait_timeout = { .tv_sec = 1, .tv_nsec = 0 };
+        int count = kevent(kq, NULL, 0, events, EVENT_BATCH, &wait_timeout);
 
         if (count == -1) {
             if (errno == EINTR)
@@ -563,6 +599,7 @@ main(int argc, char **argv)
             else if (event->filter == EVFILT_WRITE)
                 write_client(client);
         }
+        expire_clients();
     }
 
     cleanup();
