@@ -16,12 +16,21 @@ const contentValidationEventType = "portal.content.validate"
 var contentSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type contentValidationInput struct {
-	Title       string `json:"title"`
-	Slug        string `json:"slug"`
-	ContentType string `json:"content_type"`
-	Visibility  string `json:"visibility"`
-	Summary     string `json:"summary"`
-	Body        string `json:"body"`
+	Title       string   `json:"title"`
+	Slug        string   `json:"slug"`
+	ContentType string   `json:"content_type"`
+	Tags        []string `json:"tags"`
+	Visibility  string   `json:"visibility"`
+	Summary     string   `json:"summary"`
+	Body        string   `json:"body"`
+}
+
+var approvedContentTags = map[string]struct{}{
+	"教育": {}, "学前教育": {}, "小学教育": {}, "中学教育": {}, "高等教育": {}, "职业教育": {}, "家庭教育": {}, "教学资源": {},
+	"旅游": {}, "住宿": {}, "交通": {}, "景点攻略": {}, "旅行规划": {}, "美食体验": {}, "网络": {}, "网络安全": {}, "网络维护": {},
+	"网络基础知识": {}, "网络诊断": {}, "云与服务器": {}, "系统": {}, "操作系统": {}, "系统配置": {}, "系统维护": {}, "部署运维": {},
+	"故障排查": {}, "编程": {}, "前端开发": {}, "后端开发": {}, "Python": {}, "JavaScript / TypeScript": {}, "数据库": {},
+	"API 与集成": {}, "代码实践": {}, "软件工具": {}, "效率工具": {}, "开发工具": {}, "文档工具": {}, "AI 工具": {}, "自动化工具": {},
 }
 
 type contentValidationResult struct {
@@ -76,6 +85,22 @@ func validateContent(input contentValidationInput) contentValidationResult {
 	case "article", "tool", "resource", "project":
 	default:
 		problems = append(problems, "content_type must be article, tool, resource, or project")
+	}
+	if len(input.Tags) > 40 {
+		problems = append(problems, "tags must contain at most 40 approved tags")
+	} else {
+		seenTags := make(map[string]struct{}, len(input.Tags))
+		for _, tag := range input.Tags {
+			if _, ok := approvedContentTags[tag]; !ok {
+				problems = append(problems, "tags must contain only approved Knowledge Plaza tags")
+				break
+			}
+			if _, duplicate := seenTags[tag]; duplicate {
+				problems = append(problems, "tags must not contain duplicates")
+				break
+			}
+			seenTags[tag] = struct{}{}
+		}
 	}
 	switch input.Visibility {
 	case "public", "private":

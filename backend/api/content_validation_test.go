@@ -52,6 +52,38 @@ func TestValidateContentEventInvalidDraftIsSuccessfulExecution(t *testing.T) {
 	}
 }
 
+func TestValidateContentEventAcceptsPublishedContentPayloadWithTags(t *testing.T) {
+	resultJSON, err := validateContentEvent(context.Background(), EventInput{
+		Payload: json.RawMessage(`{"title":"Published article","slug":"published-article","content_type":"article","tags":["编程","Python"],"visibility":"public","summary":"Summary","body":"Body"}`),
+	})
+	if err != nil {
+		t.Fatalf("published content payload should produce a validation result: %v", err)
+	}
+	var result contentValidationResult
+	if err := json.Unmarshal(resultJSON, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || len(result.Errors) != 0 {
+		t.Fatalf("published content payload with approved tags must be valid, got %#v", result)
+	}
+}
+
+func TestValidateContentEventRejectsUnapprovedTags(t *testing.T) {
+	resultJSON, err := validateContentEvent(context.Background(), EventInput{
+		Payload: json.RawMessage(`{"title":"Published article","slug":"published-article","content_type":"article","tags":["not-a-real-tag"],"visibility":"public","body":"Body"}`),
+	})
+	if err != nil {
+		t.Fatalf("invalid tags should return a validation result, not a retryable error: %v", err)
+	}
+	var result contentValidationResult
+	if err := json.Unmarshal(resultJSON, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Valid || !strings.Contains(strings.Join(result.Errors, "\\n"), "approved Knowledge Plaza tags") {
+		t.Fatalf("unapproved tag should be rejected, got %#v", result)
+	}
+}
+
 func TestValidateContentEventRejectsUnknownFields(t *testing.T) {
 	resultJSON, err := validateContentEvent(context.Background(), EventInput{
 		Payload: json.RawMessage(`{"title":"Title","slug":"title","content_type":"article","visibility":"public","body":"Body","is_admin":true}`),

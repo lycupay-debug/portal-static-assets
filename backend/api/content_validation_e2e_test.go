@@ -85,6 +85,7 @@ func TestContentValidationHTTPToPostgresIntegration(t *testing.T) {
 			"title":"HTTP integration draft",
 			"slug":"http-integration-draft",
 			"content_type":"article",
+			"tags":["编程","Python"],
 			"visibility":"private",
 			"summary":"A test summary",
 			"body":"A test body"

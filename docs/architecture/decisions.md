@@ -54,7 +54,7 @@
 ## 当前事件处理契约：`portal.content.validate`
 
 - 事件负责编校验内容草稿，不负责发布、写入 Markdown/JSON 文件或建立内容索引。
-- 输入字段：`title`、`slug`、`content_type`、`visibility`、`summary`、`body`。内容类型限定为 `article`、`tool`、`resource`、`project`；可见性限定为 `public`、`private`。
+- 输入字段：`title`、`slug`、`content_type`、`tags`、`visibility`、`summary`、`body`。内容类型限定为 `article`、`tool`、`resource`、`project`；标签须来自门户允许的知识广场标签且不超过 40 个；可见性限定为 `public`、`private`。
 - 校验结果保存在 `portal.event_inbox.processing_result`，与 `status='completed'` 在同一条 SQL 更新中写入。`completed` 表示校验处理已执行完，不代表内容通过校验；以结果中的 `valid` 字段为准。
 - 可预期的输入错误（必填字段、格式、长度、未知字段或字段类型不符）返回 `valid=false` 和错误列表，不进入重试。仅处理器实际错误进入事件重试路径。
 - 私人/公开可见性仅作字段合法性校验；此事件不会发布内容、生成公开产物或改变任何公开索引。

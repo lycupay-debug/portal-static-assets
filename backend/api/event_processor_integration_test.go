@@ -68,7 +68,7 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 	} {
 		payload := `{"value":7}`
 		if event.id == validContentID {
-			payload = `{"title":"Valid draft","slug":"valid-draft","content_type":"article","visibility":"public","summary":"Summary","body":"Body"}`
+			payload = `{"title":"Valid draft","slug":"valid-draft","content_type":"article","tags":["编程","Python"],"visibility":"public","summary":"Summary","body":"Body"}`
 		} else if event.id == invalidContentID {
 			payload = `{"title":"","slug":"Bad Slug","content_type":"article","visibility":"private","body":"Body"}`
 		}
