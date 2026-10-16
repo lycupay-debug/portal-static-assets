@@ -61,6 +61,8 @@ if [ -n "$(git -C "$repo" status --porcelain)" ]; then
   exit 1
 fi
 
+sh "$repo/deploy/freebsd/test-caddy-security-headers.sh"
+
 cd "$repo/frontend"
 npm ci
 npm run api:lint

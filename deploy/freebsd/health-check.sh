@@ -36,6 +36,24 @@ expect_http "https://www.lycupaynotion.top/api/dbz" 404
 expect_http "https://www.lycupaynotion.top/api/readyz" 404
 expect_http "https://www.lycupaynotion.top/api/metrics" 404
 
+# Validate the public static-site security headers against the local Caddy origin.
+header_code=$(curl --resolve www.lycupaynotion.top:443:127.0.0.1 --max-time 5 -sS -I -o "$tmp" -w '%{http_code}' https://www.lycupaynotion.top/)
+if [ "$header_code" != "200" ]; then
+  echo "FAIL: security-header probe returned HTTP $header_code" >&2
+  exit 1
+fi
+for header in \
+  'X-Content-Type-Options: nosniff' \
+  'X-Frame-Options: DENY' \
+  'Referrer-Policy: strict-origin-when-cross-origin' \
+  'Permissions-Policy: camera=(), microphone=(), geolocation=()'; do
+  if ! grep -iqF "$header" "$tmp"; then
+    echo "FAIL: missing public security header: $header" >&2
+    cat "$tmp" >&2
+    exit 1
+  fi
+done
+
 node_enabled=$(sysrc -n personal_portal_auth_api_enable 2>/dev/null || echo NO)
 if [ "$node_enabled" != "NO" ]; then
   echo "FAIL: retired Node.js API must be disabled in rc.conf" >&2
