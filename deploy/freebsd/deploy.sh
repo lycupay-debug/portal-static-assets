@@ -23,16 +23,28 @@ fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 work="/var/tmp/personal-portal-deploy-$stamp"
 deployment_changed=0
+release_mode="${PERSONAL_PORTAL_RELEASE_MODE:-development}"
+auto_rollback="${PERSONAL_PORTAL_AUTO_ROLLBACK:-0}"
 mkdir -p "$work" "$backup_dir"
 chmod 0700 "$work" "$backup_dir"
 
 rollback_on_failure() {
   rc=$?
-  if [ "$rc" -ne 0 ] && [ "$deployment_changed" -eq 1 ]; then
-    echo "Deployment failed; attempting rollback with stamp $stamp." >&2
-    "$repo/deploy/freebsd/rollback.sh" "$stamp" || echo "Automatic rollback failed; use deploy/freebsd/rollback.sh $stamp" >&2
+  if [ "$rc" -ne 0 ]; then
+    if [ "$deployment_changed" -eq 1 ]; then
+      if [ "$release_mode" = "stable" ] && [ "$auto_rollback" = "1" ]; then
+        echo "Deployment failed; stable mode explicitly enables automatic rollback (stamp $stamp)." >&2
+        "$repo/deploy/freebsd/rollback.sh" "$stamp" || echo "Automatic rollback failed; manual recovery may be required: $repo/deploy/freebsd/rollback.sh $stamp" >&2
+      else
+        echo "Automatic rollback suppressed (release mode: $release_mode). Development deployments never auto-rollback." >&2
+        echo "Inspect service state and deployment artifacts before deciding whether to roll back." >&2
+        echo "Manual rollback command: $repo/deploy/freebsd/rollback.sh $stamp" >&2
+      fi
+    fi
+    echo "Deployment diagnostics preserved at: $work" >&2
+  else
+    rm -rf "$work"
   fi
-  rm -rf "$work"
   exit "$rc"
 }
 trap rollback_on_failure EXIT
@@ -132,4 +144,4 @@ deployment_changed=0
 echo "Deployment completed. Stamp: $stamp"
 echo "Database backup: $backup_dir/pre-go-cutover-$stamp.dump"
 echo "Previous frontend release: $(cat "$backup_dir/frontend-current-$stamp")"
-echo "Rollback command: $repo/deploy/freebsd/rollback.sh $stamp"
+echo "Rollback command (manual; not run automatically during development): $repo/deploy/freebsd/rollback.sh $stamp"
