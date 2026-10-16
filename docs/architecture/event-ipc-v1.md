@@ -10,7 +10,7 @@ Version 1 is the first local connectivity contract between the C event core and 
 - Default socket path: `/var/run/personal-portal/event.sock`.
 - Development/test runs may pass an alternate socket path as the C program's only argument.
 - The socket is created with mode `0600`; only the service account and explicitly authorized local processes should be able to connect.
-- The protocol uses ASCII text, LF (`\n`) as the line terminator, and one request per connection. The server sends one response and then closes the connection.
+- The protocol uses ASCII text and LF (`\n`) line framing. Ordinary commands use one request per connection. `SUBSCRIBE` keeps a connection open after its acknowledgement; subscribed clients receive asynchronous `EVENT` lines. `PUBLISH` broadcasts event metadata to currently connected subscribers and then acknowledges the publisher.
 - No network TCP listener is involved in this IPC channel.
 
 ## Request format
@@ -23,7 +23,7 @@ Fields are separated by one or more ASCII whitespace characters when parsed by t
 
 - `v1`: protocol version. Unsupported versions are rejected.
 - `request_id`: 1–31 ASCII characters from `[A-Za-z0-9_-]`. The server echoes valid IDs in responses.
-- `command`: `PING`, `STATUS`, or `EVENT`. EVENT adds two arguments: a UUID event ID and a lowercase event type (up to 100 characters).
+- `command`: `PING`, `STATUS`, `EVENT`, `SUBSCRIBE`, or `PUBLISH`. `EVENT` and `PUBLISH` add two arguments: a UUID event ID and a lowercase event type (up to 100 characters). `SUBSCRIBE` has no arguments.
 - Maximum request content before LF: 254 bytes (the LF itself is not counted). Larger/incomplete requests are rejected.
 
 ## Response format
@@ -39,6 +39,8 @@ Status is `OK` or `ERROR`. Payload values for the current commands and errors ar
 | `PING` | `v1 <request_id> OK PONG\n` |
 | `STATUS` | `v1 <request_id> OK RUNNING\n` |
 | `EVENT <event_id> <event_type>` | `v1 <request_id> OK ACCEPTED\n` when metadata validates |
+| `SUBSCRIBE` | `v1 <request_id> OK SUBSCRIBED\n`; connection remains open |
+| `PUBLISH <event_id> <event_type>` | `v1 <request_id> OK PUBLISHED\n`; broadcasts to available subscribers |
 | unknown command | `v1 <request_id> ERROR UNKNOWN_COMMAND\n` |
 | invalid version/shape/ID or embedded NUL | `v1 0 ERROR BAD_REQUEST\n` |
 | oversized request | `v1 0 ERROR REQUEST_TOO_LARGE\n` |
@@ -49,16 +51,16 @@ Status is `OK` or `ERROR`. Payload values for the current commands and errors ar
 2. Write one complete ASCII request including LF.
 3. Read until LF or EOF; enforce a short client-side deadline.
 4. Validate the protocol version, echoed request ID, status, and payload.
-5. Close the connection and do not reuse it for a second request.
-6. Treat EOF before a complete response, malformed fields, or an unknown response token as a protocol error. Do not retry non-idempotent future commands automatically unless their retry semantics are explicitly defined.
+5. For ordinary commands, close the connection and do not reuse it for a second request. A `SUBSCRIBE` connection remains open and receives `v1 push<N> EVENT <event_id> <event_type>\n` lines until disconnect.
+6. Treat EOF before a complete response, malformed fields, or an unknown response token as a protocol error. Reconnect subscribers after disconnect and rely on PostgreSQL recovery scans for missed notifications. Do not retry non-idempotent future commands automatically unless their retry semantics are explicitly defined.
 
 ## Error and resource behavior
 
-- The C server currently limits concurrent clients to 64; new connections are closed when capacity is exhausted.
+- The C server currently limits concurrent clients (including subscribers) to 64; new connections are closed when capacity is exhausted.
 - Socket read/write are non-blocking and driven by `kqueue`.
 - Current protocol errors are response tokens, not durable task failures.
 - The server has no authentication beyond local socket filesystem permissions.
-- There is no persistence, replay, delivery guarantee, idempotency key, task queue, or business-event schema in v1.
+- There is no persistence or replay in the C core. `PUBLISH` is best-effort: disconnected subscribers miss notifications, and a subscriber with a pending write is skipped rather than blocking the event loop. PostgreSQL remains the durable source of truth; clients must retain recovery scans and make processing idempotent.
 
 ## Compatibility policy
 
@@ -97,3 +99,12 @@ Request JSON:
 - The registered production handler `portal.content.validate` validates a portal content payload and stores its result in `processing_result`. On 2026-10-15, a live end-to-end event completed successfully (`status=completed`, `dispatch_state=notified`, `attempts=1`, result `valid=true`). Replaying the same event ID/type/payload returned HTTP 200 with `duplicate: true`. Unknown event types are left untouched; this single successful test verifies the implemented path but is not a general load or failure-recovery certification.
 - Processing is at-least-once: if a handler performs an external side effect and the process exits before `completed` is persisted, the handler may run again after lease expiry. Business handlers must be idempotent and honor their context deadline.
 - The endpoint is loopback-bound along with the existing API. It is not an authenticated public ingress endpoint.
+
+
+## Push notifications (phase 2, initial C implementation)
+
+- `SUBSCRIBE` creates a persistent local stream and returns `SUBSCRIBED`.
+- `PUBLISH <event_id> <event_type>` validates metadata and broadcasts `v1 push<N> EVENT <event_id> <event_type>` to connected subscribers.
+- Broadcast is best-effort and never blocks the event loop on a slow subscriber. A subscriber with an outstanding write is skipped; reconnect/recovery must be handled by clients.
+- The Go API maintains a reconnecting subscriber and turns push messages into buffered worker wakeups. The database dispatcher remains enabled at a 5-second interval as a durable recovery/dispatch fallback.
+- The Node.js content API now sends `PUBLISH` after the content/event transaction commits (publish and published-version restore). Notification failure is logged but cannot roll back an already committed business transaction. Other event producers must use the same post-commit pattern when integrated.

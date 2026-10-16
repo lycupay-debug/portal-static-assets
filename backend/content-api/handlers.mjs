@@ -1,6 +1,34 @@
 import crypto from 'node:crypto';
+import net from 'node:net';
 
-export function createContentHandlers({ pool, getSessionUser, json, readBody }) {
+export function publishEventNotification(eventId, eventType, socketPath = process.env.PERSONAL_PORTAL_EVENT_SOCKET || '/var/run/personal-portal/event.sock') {
+  return new Promise((resolve, reject) => {
+    const requestId = `pub${process.pid}`;
+    const socket = net.createConnection(socketPath);
+    let response = '';
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      if (error) reject(error); else resolve();
+    };
+    socket.setTimeout(500, () => finish(new Error('event core publish timed out')));
+    socket.once('connect', () => socket.write(`v1 ${requestId} PUBLISH ${eventId} ${eventType}\n`));
+    socket.on('data', (chunk) => {
+      response += chunk.toString('ascii');
+      if (response.length > 255) return finish(new Error('event core response too large'));
+      if (!response.includes('\n')) return;
+      if (response !== `v1 ${requestId} OK PUBLISHED\n`) return finish(new Error(`unexpected event core response: ${response.trim()}`));
+      finish();
+    });
+    socket.once('error', (error) => finish(error));
+    socket.once('close', () => { if (!settled) finish(new Error('event core closed before acknowledgement')); });
+  });
+}
+
+
+export function createContentHandlers({ pool, getSessionUser, json, readBody, notifyEvent = publishEventNotification }) {
 const contentTypes = new Set(['article', 'tool', 'resource', 'project']);
 const contentStatuses = new Set(['draft', 'published', 'unpublished']);
 const contentTags = new Set(['教育','学前教育','小学教育','中学教育','高等教育','职业教育','家庭教育','教学资源','旅游','住宿','交通','景点攻略','旅行规划','美食体验','网络','网络安全','网络维护','网络基础知识','网络诊断','云与服务器','系统','操作系统','系统配置','系统维护','部署运维','故障排查','编程','前端开发','后端开发','Python','JavaScript / TypeScript','数据库','API 与集成','代码实践','软件工具','效率工具','开发工具','文档工具','AI 工具','自动化工具']);
@@ -247,6 +275,7 @@ async function handleContentRequest(req, res, url) {
             visibility: item.visibility, summary: item.summary, body: item.body })]);
       }
       await client.query('COMMIT');
+      if (eventId) void notifyEvent(eventId, 'portal.content.validate').catch((error) => console.error('event core notification failed:', error.message));
       return json(res, 200, { item: restored.rows[0], eventId });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
@@ -360,6 +389,7 @@ async function handleContentRequest(req, res, url) {
         [eventId, payload],
       );
       await client.query('COMMIT');
+      void notifyEvent(eventId, 'portal.content.validate').catch((error) => console.error('event core notification failed:', error.message));
       return json(res, 200, { item: updated.rows[0], eventId });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});

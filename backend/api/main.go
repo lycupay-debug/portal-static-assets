@@ -186,6 +186,97 @@ func (c IPCClient) Status(ctx context.Context) error {
 	return nil
 }
 
+// Subscribe keeps a stream open and converts best-effort C-core push messages
+// into worker wakeups. PostgreSQL remains authoritative; callers must retain
+// the processor recovery scan because notifications can be missed on reconnect.
+func (c IPCClient) Subscribe(ctx context.Context, wake chan<- struct{}) {
+	backoff := time.Second
+	for ctx.Err() == nil {
+		if err := c.subscribeOnce(ctx, wake); err != nil && ctx.Err() == nil {
+			fmt.Printf("event core subscriber disconnected: %v\n", err)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if backoff < 10*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+func (c IPCClient) subscribeOnce(ctx context.Context, wake chan<- struct{}) error {
+	timeout := c.Timeout
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "unix", c.SocketPath)
+	if err != nil {
+		return fmt.Errorf("connect event core subscriber: %w", err)
+	}
+	defer conn.Close()
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+	id := fmt.Sprintf("sub%d", requestSequence.Add(1))
+	if _, err := fmt.Fprintf(conn, "%s %s SUBSCRIBE\n", protocolVersion, id); err != nil {
+		return fmt.Errorf("send subscription request: %w", err)
+	}
+	reader := bufio.NewReader(conn)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("read subscription acknowledgement: %w", err)
+	}
+	fields := strings.Fields(strings.TrimSuffix(line, "\n"))
+	if len(fields) != 4 || fields[0] != protocolVersion || fields[1] != id || fields[2] != "OK" || fields[3] != "SUBSCRIBED" {
+		return fmt.Errorf("unexpected subscription response %q", strings.TrimSpace(line))
+	}
+	// A persistent subscription cannot use the short request deadline.
+	_ = conn.SetDeadline(time.Time{})
+	for {
+		line, err = reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("read event push: %w", err)
+		}
+		if len(line) > 255 {
+			return errors.New("event push exceeds protocol limit")
+		}
+		fields = strings.Fields(strings.TrimSuffix(line, "\n"))
+		if len(fields) != 5 || fields[0] != protocolVersion || !validIPCRequestID(fields[1]) ||
+			fields[2] != "EVENT" || !eventIDPattern.MatchString(fields[3]) || !eventTypePattern.MatchString(fields[4]) {
+			return fmt.Errorf("invalid event push %q", strings.TrimSpace(line))
+		}
+		if wake != nil {
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+}
+
+func validIPCRequestID(value string) bool {
+	if len(value) == 0 || len(value) > 31 {
+		return false
+	}
+	for _, ch := range value {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 func (c IPCClient) NotifyEvent(ctx context.Context, eventID, eventType string) error {
 	timeout := c.Timeout
 	if timeout <= 0 {
@@ -425,7 +516,8 @@ func main() {
 	// channel is intentionally lossy: the database is durable and periodic
 	// recovery scans reclaim work if a signal is missed or a process restarts.
 	eventWake := make(chan struct{}, 256)
-	go (EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 500 * time.Millisecond, Wake: eventWake}).Run(context.Background())
+	go (EventDispatcher{DB: db, IPC: ipc, Batch: 16, Interval: 5 * time.Second, Wake: eventWake}).Run(context.Background())
+	go ipc.Subscribe(context.Background(), eventWake)
 	go (EventProcessor{DB: db, Handlers: registeredEventHandlers(), Interval: 5 * time.Second, Workers: configuredEventProcessorWorkers(), Wake: eventWake}).Run(context.Background())
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

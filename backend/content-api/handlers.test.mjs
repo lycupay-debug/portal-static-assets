@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
+import { publishEventNotification } from './handlers.mjs';
 import { createContentHandlers } from './handlers.mjs';
 
 const authorId = '11111111-1111-4111-8111-111111111111';
@@ -108,4 +110,28 @@ test('saving an unchanged tag array does not create a duplicate history entry', 
   assert.equal(result.status, 200);
   assert.equal(result.payload.versionCreated, false);
   assert.equal(h.versions.length, 0);
+});
+
+
+test('event notification publisher sends PUBLISH and validates the acknowledgement', async () => {
+  const socketPath = `/tmp/portal-publish-test-${process.pid}-${Date.now()}.sock`;
+  const server = net.createServer((socket) => {
+    let request = '';
+    socket.on('data', (chunk) => {
+      request += chunk.toString('ascii');
+      if (!request.includes('\n')) return;
+      const fields = request.trim().split(/\s+/);
+      assert.equal(fields[0], 'v1');
+      assert.equal(fields[2], 'PUBLISH');
+      assert.equal(fields[3], '018f2f5e-7a2b-7c4d-8e9f-0123456789ab');
+      assert.equal(fields[4], 'portal.content.validate');
+      socket.end(`v1 ${fields[1]} OK PUBLISHED\n`);
+    });
+  });
+  await new Promise((resolve, reject) => server.listen(socketPath, resolve).once('error', reject));
+  try {
+    await publishEventNotification('018f2f5e-7a2b-7c4d-8e9f-0123456789ab', 'portal.content.validate', socketPath);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

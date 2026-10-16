@@ -74,6 +74,29 @@ oversized = request(b"x" * 300)
 if oversized != "v1 0 ERROR REQUEST_TOO_LARGE\n":
     raise SystemExit(f"FAIL: oversized request response was {oversized!r}")
 
+subscriber = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+subscriber.settimeout(3)
+subscriber.connect(path)
+subscriber.sendall(b"v1 sub1 SUBSCRIBE\n")
+ack = bytearray()
+while not ack.endswith(b"\n"):
+    ack.extend(subscriber.recv(256))
+if ack.decode("ascii") != "v1 sub1 OK SUBSCRIBED\n":
+    raise SystemExit(f"FAIL: subscribe acknowledgement was {ack!r}")
+
+published_id = "018f2f5e-7a2b-7c4d-8e9f-0123456789ab"
+publish_response = request(
+    f"v1 pub1 PUBLISH {published_id} portal.content.validate\n".encode("ascii"))
+if publish_response != "v1 pub1 OK PUBLISHED\n":
+    raise SystemExit(f"FAIL: publish response was {publish_response!r}")
+notification = bytearray()
+while not notification.endswith(b"\n"):
+    notification.extend(subscriber.recv(256))
+expected_notification = f"v1 push1 EVENT {published_id} portal.content.validate\n"
+if notification.decode("ascii") != expected_notification:
+    raise SystemExit(f"FAIL: subscriber notification was {notification!r}")
+subscriber.close()
+
 errors = []
 def parallel_check(index):
     try:
@@ -92,7 +115,7 @@ for thread in threads:
 if errors:
     raise SystemExit(f"FAIL: concurrent requests: {errors!r}")
 
-print("PASS: PING, STATUS, EVENT validation, unknown command, protocol validation, request limit, 24 concurrent clients")
+print("PASS: PING, STATUS, EVENT validation, SUBSCRIBE/PUBLISH push, unknown command, protocol validation, request limit, 24 concurrent clients")
 PY
 
 kill -TERM "$PID"

@@ -28,12 +28,14 @@ struct client {
     char output[OUTPUT_CAP];
     size_t output_len;
     size_t output_sent;
+    int subscribed;
 };
 
 static struct client clients[MAX_CLIENTS];
 static int kq = -1;
 static int listener = -1;
 static int stopping;
+static unsigned long notification_sequence;
 static const char *socket_path = DEFAULT_SOCKET_PATH;
 
 static int
@@ -153,6 +155,29 @@ valid_event_type(const char *value)
     return 1;
 }
 
+static void
+broadcast_event(const char *event_id, const char *event_type)
+{
+    for (size_t i = 0; i < MAX_CLIENTS; i++) {
+        struct client *client = &clients[i];
+        if (client->fd < 0 || !client->subscribed ||
+            client->output_sent < client->output_len)
+            continue;
+        int length = snprintf(client->output, sizeof(client->output),
+            "v1 push%lu EVENT %s %s\n", ++notification_sequence,
+            event_id, event_type);
+        if (length < 0 || (size_t)length >= sizeof(client->output)) {
+            close_client(client);
+            continue;
+        }
+        client->output_len = (size_t)length;
+        client->output_sent = 0;
+        if (change_event((uintptr_t)client->fd, EVFILT_WRITE,
+            EV_ADD | EV_ENABLE, client) == -1)
+            close_client(client);
+    }
+}
+
 static int
 handle_request(struct client *client, char *line)
 {
@@ -174,6 +199,21 @@ handle_request(struct client *client, char *line)
         if (strcmp(command, "PING") == 0)
             return queue_response(client, request_id, "OK", "PONG");
         return queue_response(client, request_id, "OK", "RUNNING");
+    }
+
+    if (strcmp(command, "SUBSCRIBE") == 0) {
+        if (fields != 3)
+            return queue_response(client, "0", "ERROR", "BAD_REQUEST");
+        client->subscribed = 1;
+        return queue_response(client, request_id, "OK", "SUBSCRIBED");
+    }
+
+    if (strcmp(command, "PUBLISH") == 0) {
+        if (fields != 5 || !valid_event_id(event_id) ||
+            !valid_event_type(event_type))
+            return queue_response(client, "0", "ERROR", "BAD_REQUEST");
+        broadcast_event(event_id, event_type);
+        return queue_response(client, request_id, "OK", "PUBLISHED");
     }
 
     if (strcmp(command, "EVENT") == 0) {
@@ -292,6 +332,14 @@ write_client(struct client *client)
             return;
         }
         client->output_sent += (size_t)count;
+    }
+    if (client->subscribed) {
+        client->output_len = 0;
+        client->output_sent = 0;
+        if (change_event((uintptr_t)client->fd, EVFILT_WRITE,
+            EV_DELETE, client) == -1 && errno != ENOENT)
+            close_client(client);
+        return;
     }
     close_client(client);
 }
