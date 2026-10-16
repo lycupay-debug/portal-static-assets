@@ -139,7 +139,12 @@ service caddy reload
 ln -s "$release" "$www_base/current.next"
 mv -h -f "$www_base/current.next" "$www_base/current"
 
-service personal_portal_auth_api stop
+legacy_auth_enabled=$(sysrc -n personal_portal_auth_api_enable 2>/dev/null || echo NO)
+if [ "$legacy_auth_enabled" = "YES" ]; then
+  service personal_portal_auth_api stop
+else
+  echo "Legacy Node auth API is already disabled; skipping stop."
+fi
 sysrc personal_portal_auth_api_enable=NO
 "$repo/deploy/freebsd/health-check.sh"
 deployment_changed=0
