@@ -1085,7 +1085,7 @@ onBeforeUnmount(() => {
       <header class="content-workspace-topbar">
         <a class="workspace-brand" href="/content-management" @click.prevent="returnToContentList"><span class="workspace-brand-mark">R.</span><span><strong>内容工作台</strong><small></small></span></a>
         <div class="workspace-document-name"><span class="workspace-status-dot"></span><span>{{ contentForm.title.trim() || '未命名内容' }}</span><em>草稿</em></div>
-        <button type="button" class="content-secondary-button workspace-return" :disabled="contentBusy" @click="cancelContentEditor">← 返回列表</button>
+        <button type="button" class="btn content-secondary-button workspace-return" :disabled="contentBusy" @click="cancelContentEditor">← 返回列表</button>
       </header>
       <ContentDocumentEditor v-model="contentForm.body" workspace :disabled="contentBusy">
         <template #workspace-actions>
@@ -1101,7 +1101,7 @@ onBeforeUnmount(() => {
             </section>
           </details>
           <div class="workspace-create-actions">
-            <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="cancelContentEditor">取消</button>
+            <button type="button" class="btn content-secondary-button" :disabled="contentBusy" @click="cancelContentEditor">取消</button>
             <button type="button" class="workspace-save-draft" :disabled="contentBusy" @click="saveContent()">{{ contentBusy ? '正在保存…' : '保存草稿' }}</button>
           </div>
         </template>
@@ -1223,11 +1223,11 @@ onBeforeUnmount(() => {
         <h1>{{ isRegister ? '创建你的账户' : '欢迎回来' }}</h1>
         <p class="auth-intro">{{ isRegister ? '注册后即可进入个人中心。你的账户信息将安全保存。' : '登录后进入个人中心，管理你的账户信息。' }}</p>
         <form class="auth-form" @submit.prevent="submitAuth">
-          <label v-if="isRegister" class="field-label">昵称 <input v-model="authForm.displayName" name="displayName" type="text" autocomplete="nickname" maxlength="60" placeholder="怎么称呼你" /></label>
-          <label class="field-label">邮箱地址 <input v-model="authForm.email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com" /></label>
-          <label class="field-label">密码 <input v-model="authForm.password" name="password" type="password" :autocomplete="isRegister ? 'new-password' : 'current-password'" :minlength="isRegister ? 10 : 1" maxlength="72" required :placeholder="isRegister ? '至少 10 个字符' : '输入你的密码'" /></label>
+          <label v-if="isRegister" class="field-label">昵称 <input class="form-control" v-model="authForm.displayName" name="displayName" type="text" autocomplete="nickname" maxlength="60" placeholder="怎么称呼你" /></label>
+          <label class="field-label">邮箱地址 <input class="form-control" v-model="authForm.email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com" /></label>
+          <label class="field-label">密码 <input class="form-control" v-model="authForm.password" name="password" type="password" :autocomplete="isRegister ? 'new-password' : 'current-password'" :minlength="isRegister ? 10 : 1" maxlength="72" required :placeholder="isRegister ? '至少 10 个字符' : '输入你的密码'" /></label>
           <p v-if="isRegister" class="field-help">密码长度为 10–72 个字符。请勿重复使用其他网站的密码。</p>
-          <button class="button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
+          <button class="btn button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
         </form>
         <p class="auth-switch">{{ isRegister ? '已经有账户？' : '还没有账户？' }} <a :href="isRegister ? '/login' : '/register'" @click.prevent="navigate(isRegister ? '/login' : '/register')">{{ isRegister ? '立即登录' : '创建账户' }}</a></p>
         <a class="back-home" href="/" @click.prevent="navigate('/')">← 返回首页</a>
@@ -1321,7 +1321,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="account-field"><span>账户昵称</span><strong>{{ user.displayName || '未设置' }}</strong></div>
             <div class="account-field"><span>注册时间</span><strong>{{ new Date(user.createdAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) }}</strong></div>
-            <button class="button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出登录' }}</button>
+            <button class="btn button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出登录' }}</button>
           </div>
         </template>
 
@@ -1348,7 +1348,7 @@ onBeforeUnmount(() => {
             <div class="security-info-row"><span class="security-info-icon">✓</span><div><strong>账户已验证登录</strong><p>当前浏览器持有安全会话。</p></div></div>
             <div class="account-field"><span>登录邮箱</span><strong>{{ user.email }}</strong></div>
             <div class="account-field"><span>会话有效期</span><strong>系统自动管理</strong></div>
-            <button class="button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出当前登录' }}</button>
+            <button class="btn button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出当前登录' }}</button>
           </div>
         </template>
 
@@ -1358,12 +1358,12 @@ onBeforeUnmount(() => {
           <section v-if="activeAccountSection === 'content-management' && versionsContentId" class="content-editor-panel content-versions-panel">
             <div class="content-editor-heading">
               <div><h2>版本历史</h2><p>“{{ versionsContentTitle }}” · 每次有效编辑前自动保存快照，最多显示最近 100 个版本；恢复只替换内容字段，保留当前发布状态。</p></div>
-              <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="versionsContentId = null">返回内容列表</button>
+              <button type="button" class="btn content-secondary-button" :disabled="contentBusy" @click="versionsContentId = null">返回内容列表</button>
             </div>
             <div v-if="contentVersions.length" class="content-version-list">
               <div v-for="version in contentVersions" :key="version.versionId" class="content-version-row">
                 <div><strong>版本 {{ version.versionNumber }} · {{ version.title }}</strong><p>{{ new Date(version.createdAt).toLocaleString('zh-CN') }} · {{ version.slug }} · {{ contentStatusLabels[version.status] || version.status }}</p></div>
-                <button type="button" class="content-secondary-button" :disabled="contentBusy" @click="restoreContentVersion(version)">恢复此版本</button>
+                <button type="button" class="btn content-secondary-button" :disabled="contentBusy" @click="restoreContentVersion(version)">恢复此版本</button>
               </div>
             </div>
             <div v-else class="virtual-table-empty"><strong>暂无历史版本</strong><p>保存第一次有效修改后，这里会出现可恢复的历史版本。</p></div>
@@ -1374,12 +1374,12 @@ onBeforeUnmount(() => {
               <div class="content-toolbar-actions">
                 <input v-model="tableQuery" name="tableSearch" class="virtual-table-search" type="search" placeholder="搜索表格内容…" aria-label="搜索表格内容" @input="tableScrollTop = 0" />
                 <template v-if="activeAccountSection === 'content-management'">
-                  <button type="button" class="content-secondary-button" @click="switchContentView(contentViewMode === 'active' ? 'trash' : 'active')">{{ contentViewMode === 'active' ? '回收站' : '返回内容列表' }}</button>
-                  <button v-if="contentViewMode === 'active'" type="button" class="content-primary-button" @click="openNewContent">新建内容</button>
+                  <button type="button" class="btn content-secondary-button" @click="switchContentView(contentViewMode === 'active' ? 'trash' : 'active')">{{ contentViewMode === 'active' ? '回收站' : '返回内容列表' }}</button>
+                  <button v-if="contentViewMode === 'active'" type="button" class="btn content-primary-button" @click="openNewContent">新建内容</button>
                 </template>
                 <template v-else-if="activeAccountSection === 'teaching-resources'">
-                  <button type="button" class="content-secondary-button" :disabled="resourceBusy" @click="switchResourceView">{{ resourceViewMode === 'active' ? '回收站' : '返回资源列表' }}</button>
-                  <button v-if="resourceViewMode === 'active'" type="button" class="content-primary-button" @click="openResourceDialog">创建资源</button>
+                  <button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="switchResourceView">{{ resourceViewMode === 'active' ? '回收站' : '返回资源列表' }}</button>
+                  <button v-if="resourceViewMode === 'active'" type="button" class="btn content-primary-button" @click="openResourceDialog">创建资源</button>
                 </template>
               </div>
             </div>
@@ -1444,7 +1444,7 @@ onBeforeUnmount(() => {
           <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。</p>
           <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}</p>
           <p v-if="resourceError" class="resource-error">{{ resourceError }}</p>
-          <div class="resource-form-actions"><button type="button" class="content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? '正在上传…' : '保存资源' }}</button></div>
+          <div class="resource-form-actions"><button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="btn content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? '正在上传…' : '保存资源' }}</button></div>
         </form>
       </section>
     </div>
@@ -1453,7 +1453,7 @@ onBeforeUnmount(() => {
       <section class="table-cell-detail" role="dialog" aria-modal="true" :aria-label="selectedTableCell.label">
         <div class="table-cell-detail-heading"><h2>{{ selectedTableCell.label }}</h2><button type="button" aria-label="关闭" @click="selectedTableCell = null">×</button></div>
         <p>{{ selectedTableCell.value }}</p>
-        <button type="button" class="content-primary-button" @click="selectedTableCell = null">关闭</button>
+        <button type="button" class="btn content-primary-button" @click="selectedTableCell = null">关闭</button>
       </section>
     </div>
 
