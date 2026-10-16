@@ -355,14 +355,18 @@ function loadMoreKnowledge() {
     knowledgeVisibleCount.value = Math.min(knowledgeVisibleCount.value + knowledgePageSize, knowledgeFilteredItems.value.length)
   }
 }
-function onKnowledgeListScroll(event: Event) {
-  const element = event.target as HTMLElement
-  if (element.scrollTop + element.clientHeight >= element.scrollHeight - 80) loadMoreKnowledge()
+function isKnowledgeListNearViewportEnd() {
+  if (route.value !== '/knowledge') return false
+  const list = document.querySelector<HTMLElement>('.knowledge-infinite-list')
+  if (!list) return false
+  return list.getBoundingClientRect().bottom <= window.innerHeight + 400
+}
+function onKnowledgePageScroll() {
+  if (knowledgeVisibleCount.value < knowledgeFilteredItems.value.length && isKnowledgeListNearViewportEnd()) loadMoreKnowledge()
 }
 function ensureKnowledgeListFilled() {
-  if (route.value !== '/knowledge' || knowledgeVisibleCount.value >= knowledgeFilteredItems.value.length) return
-  const list = document.querySelector<HTMLElement>('.knowledge-infinite-list')
-  if (list && list.clientHeight > 0 && list.scrollHeight <= list.clientHeight + 1) loadMoreKnowledge()
+  // Keep the first screen populated without creating a nested scroll container.
+  if (knowledgeVisibleCount.value < knowledgeFilteredItems.value.length && isKnowledgeListNearViewportEnd()) loadMoreKnowledge()
 }
 onUpdated(ensureKnowledgeListFilled)
 const publicArticle = ref<PublicContent | null>(null)
@@ -855,7 +859,7 @@ async function restoreScrollPosition() {
     write('.account-content', state.accountContent); write('.account-sidebar', state.accountSidebar); write('.virtual-table-scroll', state.table)
   } catch { /* Ignore malformed state. */ }
 }
-function onScrollCapture() { saveScrollPosition() }
+function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 async function loadPublicContents() {
   publicContentLoading.value = true
   publicContentError.value = ''
@@ -1189,7 +1193,7 @@ onBeforeUnmount(() => {
         <div class="directory-section-heading knowledge-results-heading"><div><p class="eyebrow">KNOWLEDGE LIBRARY</p><h2>文章列表</h2></div><span>{{ knowledgeFilteredItems.length }} 篇文章</span></div>
         <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
         <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
-        <div v-else-if="knowledgeFilteredItems.length" class="knowledge-infinite-list" @scroll.passive="onKnowledgeListScroll">
+        <div v-else-if="knowledgeFilteredItems.length" class="knowledge-infinite-list">
           <a v-for="(item, index) in visibleDirectoryContentItems" :key="item.id" class="knowledge-list-item" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
             <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.summary">{{ item.summary }}</span></span>

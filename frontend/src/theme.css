@@ -773,9 +773,8 @@ body { overflow-x: clip; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
   gap: 14px;
-  max-height: 560px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  /* Let the document own vertical scrolling; infinite loading listens to page scroll. */
+  min-height: 0;
   padding: 2px 2px 12px;
 }
 .knowledge-list-item {
