@@ -29,7 +29,7 @@ onBeforeUnmount(() => { document.removeEventListener('mousedown', onOutside); do
       <span>{{ selected?.label || placeholder }}</span><span class="virtualized-select-chevron">⌄</span>
     </button>
     <div v-if="open" class="virtualized-select-popover" role="listbox" :aria-label="label">
-      <input v-model="query" name="optionSearch" class="virtualized-select-search" type="search" placeholder="搜索选项…" :aria-label="'搜索' + label" @keydown.stop />
+      <input v-model="query" name="optionSearch" class="form-control virtualized-select-search" type="search" placeholder="搜索选项…" :aria-label="'搜索' + label" @keydown.stop />
       <div class="virtualized-select-viewport" :style="{ height: viewportHeight + 'px' }" @scroll="scrollTop = ($event.target as HTMLElement).scrollTop">
         <div :style="{ height: startIndex * rowHeight + 'px' }"></div>
         <button v-for="option in visibleOptions" :key="option.value" type="button" role="option" :aria-selected="option.value === modelValue" :class="{ selected: option.value === modelValue }" :style="{ height: rowHeight + 'px' }" @click="choose(option.value)"><span>{{ option.label }}</span><span v-if="option.value === modelValue">✓</span></button>
