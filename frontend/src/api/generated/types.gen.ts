@@ -111,6 +111,7 @@ export type TeachingResource = {
     description: string;
     type: string;
     grade?: '一年级' | '二年级' | '三年级' | '四年级' | '五年级' | '六年级' | '初一' | '初二' | '初三' | '高一' | '高二' | '高三' | '本科' | '硕士' | null;
+    isPublic?: boolean;
     url?: string | null;
     filename?: string | null;
     mimeType?: string | null;
@@ -120,11 +121,28 @@ export type TeachingResource = {
     deletedAt?: string | null;
 };
 
+export type PublicTeachingResource = {
+    id: string;
+    title: string;
+    description: string;
+    type: string;
+    grade?: string | null;
+    url?: string | null;
+    downloadUrl?: string | null;
+    filename?: string | null;
+    mimeType?: string | null;
+    fileSize?: number | null;
+    isPublic: boolean;
+    createdAt: string;
+    updatedAt?: string | null;
+};
+
 export type ResourceWrite = {
     title: string;
     description: string;
     type: string;
     grade?: '一年级' | '二年级' | '三年级' | '四年级' | '五年级' | '六年级' | '初一' | '初二' | '初三' | '高一' | '高二' | '高三' | '本科' | '硕士' | null;
+    isPublic?: boolean;
     url?: string | null;
     filename?: string;
     data?: string;
@@ -911,6 +929,58 @@ export type ToggleContentInteractionResponses = {
 };
 
 export type ToggleContentInteractionResponse = ToggleContentInteractionResponses[keyof ToggleContentInteractionResponses];
+
+export type ListPublicTeachingResourcesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/public/resources';
+};
+
+export type ListPublicTeachingResourcesErrors = {
+    /**
+     * Structured API error
+     */
+    404: Error;
+};
+
+export type ListPublicTeachingResourcesError = ListPublicTeachingResourcesErrors[keyof ListPublicTeachingResourcesErrors];
+
+export type ListPublicTeachingResourcesResponses = {
+    /**
+     * Public teaching resource list
+     */
+    200: {
+        items: Array<PublicTeachingResource>;
+    };
+};
+
+export type ListPublicTeachingResourcesResponse = ListPublicTeachingResourcesResponses[keyof ListPublicTeachingResourcesResponses];
+
+export type DownloadPublicTeachingResourceData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/public/resources/{id}/download';
+};
+
+export type DownloadPublicTeachingResourceErrors = {
+    /**
+     * Structured API error
+     */
+    404: Error;
+};
+
+export type DownloadPublicTeachingResourceError = DownloadPublicTeachingResourceErrors[keyof DownloadPublicTeachingResourceErrors];
+
+export type DownloadPublicTeachingResourceResponses = {
+    /**
+     * Public resource file
+     */
+    200: unknown;
+};
 
 export type ListTeachingResourcesData = {
     body?: never;

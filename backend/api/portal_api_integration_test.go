@@ -120,12 +120,20 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	}
 	_ = json.Unmarshal(resource.Body.Bytes(), &resourceEnvelope)
 	resourceID, _ := resourceEnvelope.Item["id"].(string)
-	if resourceID == "" || resourceEnvelope.Item["url"] != "https://example.com/material" || resourceEnvelope.Item["type"] != "电子书" {
-		t.Fatalf("resource response contract mismatch: %#v", resourceEnvelope.Item)
+	if resourceID == "" || resourceEnvelope.Item["url"] != "https://example.com/material" || resourceEnvelope.Item["type"] != "电子书" || resourceEnvelope.Item["isPublic"] != false {
+		t.Fatalf("new resources should be private by default; response: %#v", resourceEnvelope.Item)
 	}
-	updated := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited"}, sessionCookie, http.StatusOK)
-	if !bytes.Contains(updated.Body.Bytes(), []byte("URL-only resource edited")) {
-		t.Fatalf("resource edit failed: %s", updated.Body.String())
+	privateList := requestJSON(t, api, http.MethodGet, "/public/resources", nil, nil, http.StatusOK)
+	if bytes.Contains(privateList.Body.Bytes(), []byte(resourceID)) {
+		t.Fatalf("private resource leaked into public listing: %s", privateList.Body.String())
+	}
+	updated := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusOK)
+	if !bytes.Contains(updated.Body.Bytes(), []byte("URL-only resource edited")) || !bytes.Contains(updated.Body.Bytes(), []byte(`"isPublic":true`)) {
+		t.Fatalf("resource edit/publication failed: %s", updated.Body.String())
+	}
+	publicList := requestJSON(t, api, http.MethodGet, "/public/resources", nil, nil, http.StatusOK)
+	if !bytes.Contains(publicList.Body.Bytes(), []byte(resourceID)) || !bytes.Contains(publicList.Body.Bytes(), []byte("https://example.com/edited")) {
+		t.Fatalf("published resource missing from public listing: %s", publicList.Body.String())
 	}
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/resources/"+resourceID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)

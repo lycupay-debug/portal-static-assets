@@ -21,6 +21,7 @@ type PortalUser = APIUser
 type PortalContent = APIContent
 type ContentVersion = APIContentVersion
 type TeachingResource = APITeachingResource
+type PublicTeachingResource = Pick<TeachingResource, 'id' | 'title' | 'description' | 'type' | 'grade' | 'url' | 'filename' | 'fileSize' | 'createdAt' | 'updatedAt'> & { downloadUrl?: string | null }
 type ContentForm = {
   title: string
   slug: string
@@ -169,6 +170,7 @@ const resourceDescription = ref('')
 const resourceFile = ref<File | null>(null)
 const resourceType = ref('听力材料')
 const resourceGrade = ref('')
+const resourceIsPublic = ref(false)
 const resourceUrl = ref('')
 const resourceUploadProgress = ref(0)
 const resourceUploadDone = ref(false)
@@ -189,6 +191,21 @@ watch(() => contentForm.value.parentCategory, (next, previous) => {
   if (next !== previous && contentForm.value.childCategory && !taxonomyChildOptions(next || '').some(option => option.value === contentForm.value.childCategory)) contentForm.value.childCategory = null
 })
 const publicContents = ref<PublicContentCard[]>([])
+const publicTeachingResources = ref<PublicTeachingResource[]>([])
+const educationResourceLoading = ref(false)
+const educationResourceError = ref('')
+const educationResourceCategory = ref('全部资源')
+const educationResourceGrade = ref('全部年级')
+const educationResourceSearch = ref('')
+const educationResourceTypes = ['全部资源', ...resourceTypeOptions]
+const educationResourceGrades = ['全部年级', ...taxonomyChildOptions('年级').map(option => option.value)]
+const filteredEducationResources = computed(() => publicTeachingResources.value.filter(item => {
+  if (educationResourceCategory.value !== '全部资源' && item.type !== educationResourceCategory.value) return false
+  if (educationResourceGrade.value !== '全部年级' && item.grade !== educationResourceGrade.value) return false
+  const term = educationResourceSearch.value.trim()
+  return !term || knowledgeFuzzyMatch(`${item.title} ${item.description || ''} ${item.type} ${item.grade || ''} ${item.filename || ''}`, term)
+}).sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()))
+const visibleEducationResources = computed(() => filteredEducationResources.value.slice(0, knowledgeVisibleCount.value))
 const knowledgeVisibleCount = ref(10)
 const knowledgePageSize = 10
 const knowledgeCategory = ref('recent')
@@ -353,20 +370,22 @@ function scrollKnowledgeCategories(direction: number) {
 function loadMoreKnowledge() {
   if (route.value === '/knowledge' && knowledgeVisibleCount.value < knowledgeFilteredItems.value.length) {
     knowledgeVisibleCount.value = Math.min(knowledgeVisibleCount.value + knowledgePageSize, knowledgeFilteredItems.value.length)
+  } else if (route.value === '/education-resources' && knowledgeVisibleCount.value < filteredEducationResources.value.length) {
+    knowledgeVisibleCount.value = Math.min(knowledgeVisibleCount.value + knowledgePageSize, filteredEducationResources.value.length)
   }
 }
 function isKnowledgeListNearViewportEnd() {
-  if (route.value !== '/knowledge') return false
+  if (route.value !== '/knowledge' && route.value !== '/education-resources') return false
   const list = document.querySelector<HTMLElement>('.knowledge-infinite-list')
   if (!list) return false
   return list.getBoundingClientRect().bottom <= window.innerHeight + 400
 }
 function onKnowledgePageScroll() {
-  if (knowledgeVisibleCount.value < knowledgeFilteredItems.value.length && isKnowledgeListNearViewportEnd()) loadMoreKnowledge()
+  if (((route.value === '/knowledge' && knowledgeVisibleCount.value < knowledgeFilteredItems.value.length) || (route.value === '/education-resources' && knowledgeVisibleCount.value < filteredEducationResources.value.length)) && isKnowledgeListNearViewportEnd()) loadMoreKnowledge()
 }
 function ensureKnowledgeListFilled() {
   // Keep the first screen populated without creating a nested scroll container.
-  if (knowledgeVisibleCount.value < knowledgeFilteredItems.value.length && isKnowledgeListNearViewportEnd()) loadMoreKnowledge()
+  if (((route.value === '/knowledge' && knowledgeVisibleCount.value < knowledgeFilteredItems.value.length) || (route.value === '/education-resources' && knowledgeVisibleCount.value < filteredEducationResources.value.length)) && isKnowledgeListNearViewportEnd()) loadMoreKnowledge()
 }
 onUpdated(ensureKnowledgeListFilled)
 const publicArticle = ref<PublicContent | null>(null)
@@ -387,7 +406,7 @@ const tableDefinitions: Record<string, { title: string; columns: TableColumn[]; 
   'room-status': { title: '房态列表', columns: [{ key: 'room', label: '房间', width: 'minmax(140px, 1.3fr)' }, { key: 'property', label: '所属房源', width: 'minmax(180px, 1.7fr)' }, { key: 'status', label: '当前房态' }, { key: 'tenant', label: '租客' }, { key: 'checkIn', label: '入住日期' }, { key: 'checkOut', label: '退租日期' }], note: '房态数据源尚未接入。' },
   'student-records': { title: '学生档案', columns: [{ key: 'name', label: '学生姓名' }, { key: 'studentId', label: '学员编号' }, { key: 'course', label: '课程' }, { key: 'status', label: '学习状态' }, { key: 'updatedAt', label: '更新时间' }], note: '学生档案数据源尚未接入。' },
   'course-calendar': { title: '课程安排', columns: [{ key: 'course', label: '课程名称', width: 'minmax(180px, 1.6fr)' }, { key: 'class', label: '班级' }, { key: 'teacher', label: '教师' }, { key: 'startAt', label: '开始时间' }, { key: 'endAt', label: '结束时间' }, { key: 'status', label: '状态' }], note: '课程日历数据源尚未接入。' },
-  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'grade', label: '年级' }, { key: 'description', label: '资源说明', width: 'minmax(220px, 2fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源已接入数据库。' },
+  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'grade', label: '年级' }, { key: 'visibility', label: '公开状态' }, { key: 'description', label: '资源说明', width: 'minmax(220px, 2fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源已接入数据库。' },
   'network-tools': { title: '网络工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'description', label: '功能说明', width: 'minmax(220px, 2fr)' }, { key: 'url', label: '入口地址' }, { key: 'status', label: '状态' }], note: '网络工具目录尚未接入。' },
   'document-converters': { title: '文档转换工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'sourceFormat', label: '源格式' }, { key: 'targetFormat', label: '目标格式' }, { key: 'status', label: '状态' }, { key: 'actions', label: '操作' }], note: '文档转换工具目录尚未接入。' },
   'add-tool': { title: '工具清单', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'category', label: '分类' }, { key: 'url', label: '入口地址', width: 'minmax(220px, 2fr)' }, { key: 'status', label: '状态' }, { key: 'createdAt', label: '添加时间' }], note: '当前还没有接入工具管理数据源。' },
@@ -415,7 +434,7 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
     }))
   : activeAccountSection.value === 'teaching-resources'
-    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.type || '其他', grade: item.grade || '不限定年级', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
+    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.type || '其他', grade: item.grade || '不限定年级', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
     : [])
 // Build each record's normalized search text once per data change, rather than
 // converting every cell to lowercase on every keystroke. Action/status helper fields
@@ -531,8 +550,8 @@ async function loadTeachingResources() {
   finally { resourceBusy.value = false }
 }
 function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
-function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
-function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
+function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
+function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceIsPublic.value = item.isPublic === true; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
 function openResourceEditById(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item) openResourceEdit(item) }
 function requestWithUploadProgress(url: string, method: string, body: ResourceWrite): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
   return new Promise((resolve, reject) => {
@@ -553,7 +572,7 @@ async function createTeachingResource() {
     const file = resourceFile.value
     let data = ''
     if (file) data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
-    const payload: ResourceWrite = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, grade: (resourceGrade.value || null) as ResourceWrite['grade'], url: resourceUrl.value.trim() || null, ...(file ? { filename: file.name, data } : {}) }
+    const payload: ResourceWrite = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, grade: (resourceGrade.value || null) as ResourceWrite['grade'], isPublic: resourceIsPublic.value, url: resourceUrl.value.trim() || null, ...(file ? { filename: file.name, data } : {}) }
     const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
     const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
     if (!result.item) throw new Error('服务器未返回已保存的资源。')
@@ -905,6 +924,19 @@ async function loadPublicContents() {
     publicContentLoading.value = false
   }
 }
+async function loadPublicTeachingResources() {
+  educationResourceLoading.value = true
+  educationResourceError.value = ''
+  try {
+    const response = await fetch('/api/public/resources', { headers: { Accept: 'application/json' } })
+    const result = await response.json() as { items?: PublicTeachingResource[]; error?: string }
+    if (!response.ok) throw new Error(result.error || '读取公开教育资源失败。')
+    publicTeachingResources.value = result.items || []
+    knowledgeVisibleCount.value = knowledgePageSize
+  } catch (error) {
+    educationResourceError.value = error instanceof Error ? error.message : '读取公开教育资源失败。'
+  } finally { educationResourceLoading.value = false }
+}
 async function loadPublicArticle(slug: string) {
   const requestId = ++publicArticleRequestSequence
   publicContentLoading.value = true
@@ -990,7 +1022,8 @@ async function navigate(target: string) {
       return
     }
   }
-  if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
+  if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
+  if (route.value === '/education-resources') void loadPublicTeachingResources()
   if (route.value === '/content-management') await loadContentList()
   if (route.value === '/education/teaching-resources') await loadTeachingResources()
   if (isContentEditorPage.value) void initializeContentEditorRoute()
@@ -1061,7 +1094,8 @@ function onPopState() {
   setRouteFromLocation()
   closeMenu()
   authError.value = ''
-  if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
+  if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
+  if (route.value === '/education-resources') void loadPublicTeachingResources()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (route.value === '/content-management') void loadContentList()
   if (route.value === '/education/teaching-resources') void loadTeachingResources()
@@ -1075,7 +1109,8 @@ onMounted(() => {
   window.addEventListener('popstate', onPopState)
   document.addEventListener('scroll', onScrollCapture, true)
   window.addEventListener('beforeunload', saveScrollPosition)
-  if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
+  if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
+  if (route.value === '/education-resources') void loadPublicTeachingResources()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   void loadSession().then((valid) => {
     if (isProtectedPage.value && !valid) {
@@ -1181,15 +1216,15 @@ onBeforeUnmount(() => {
       <section id="about" class="about-section"><div class="about-mark">R.</div><div class="about-copy"><p class="eyebrow">ONE PLATFORM, MULTIPLE INDUSTRIES</p><h2>从信息发现，<br />到业务真正落地。</h2><p>这里汇集跨领域的资源信息、实用工具与专业服务，并逐步构建面向商家和不同行业的专属管理工作空间。用户获取信息，商家经营业务，各类服务在统一的平台体系中连接起来。</p></div><div class="about-meta"><span>DESIGNED FOR MANY</span><span>Resources meet business.</span></div></section>
     </main>
 
-    <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge' }">
-      <section v-if="route !== '/knowledge'" class="directory-hero">
+    <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge', 'education-resource-directory-page': route === '/education-resources' }">
+      <section v-if="route !== '/knowledge' && route !== '/education-resources'" class="directory-hero">
         <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
         <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
         <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
         <h2>{{ currentDirectoryPage.subtitle }}</h2>
         <p class="directory-description">{{ currentDirectoryPage.description }}</p>
       </section>
-      <section v-if="route !== '/knowledge'" class="directory-section">
+      <section v-if="route !== '/knowledge' && route !== '/education-resources'" class="directory-section">
         <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span></div>
         <div class="directory-tile-grid row g-3">
           <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile col-12 md:col-6 xl:col-3">
@@ -1244,7 +1279,34 @@ onBeforeUnmount(() => {
         <p v-else-if="knowledgeCategory !== 'recent'" class="directory-empty">当前分类暂时没有匹配的文章。现有文章尚未单独标注分类，筛选暂按标题和摘要中的主题词匹配。</p>
         <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
       </section>
-      <section v-if="route === '/education-resources' || route === '/software-tools'" class="directory-published-section">
+      <section v-if="route === '/education-resources'" class="directory-published-section knowledge-filter-section education-resource-filter-section">
+        <div class="education-resource-heading"><p class="eyebrow">LEARNING LIBRARY</p><h1>教育资源<span>.</span></h1><p>按资源类型与适用年级筛选，快速找到需要的学习资料。</p></div>
+        <div class="knowledge-toolbar" aria-label="教育资源筛选与搜索"><div class="knowledge-toolbar-controls">
+          <nav class="knowledge-category-nav" aria-label="资源类型">
+            <button v-for="category in educationResourceTypes" :key="category" type="button" class="knowledge-category-button" :class="{ 'is-active': educationResourceCategory === category }" :aria-pressed="educationResourceCategory === category" @click="educationResourceCategory = category; knowledgeVisibleCount = knowledgePageSize">{{ category }}</button>
+          </nav>
+          <nav class="knowledge-subcategory-nav" aria-label="适用年级">
+            <button v-for="grade in educationResourceGrades" :key="grade" type="button" class="knowledge-subcategory-button" :class="{ 'is-active': educationResourceGrade === grade }" :aria-pressed="educationResourceGrade === grade" @click="educationResourceGrade = grade; knowledgeVisibleCount = knowledgePageSize">{{ grade }}</button>
+          </nav>
+          <div class="knowledge-search-wrap"><label class="knowledge-search-form knowledge-autocomplete"><span class="knowledge-search-icon" aria-hidden="true">⌕</span><input class="form-control" v-model="educationResourceSearch" type="search" placeholder="搜索资源名称、说明或文件名…" aria-label="模糊搜索教育资源" autocomplete="off" @input="knowledgeVisibleCount = knowledgePageSize" /><button v-if="educationResourceSearch" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="educationResourceSearch = ''; knowledgeVisibleCount = knowledgePageSize">×</button></label></div>
+        </div></div>
+      </section>
+      <section v-if="route === '/education-resources'" class="directory-published-section knowledge-results-section education-resource-results-section">
+        <div class="directory-section-heading knowledge-results-heading"><div><p class="eyebrow">PUBLIC LEARNING MATERIALS</p><h2>资源列表</h2></div><span>{{ filteredEducationResources.length }} 份资源</span></div>
+        <p v-if="educationResourceLoading && !publicTeachingResources.length" class="directory-empty">正在读取公开教育资源…</p>
+        <p v-else-if="educationResourceError" class="directory-empty">{{ educationResourceError }}</p>
+        <div v-else-if="filteredEducationResources.length" class="knowledge-infinite-list">
+          <a v-for="(item, index) in visibleEducationResources" :key="item.id" class="knowledge-list-item education-resource-list-item" :href="item.url || item.downloadUrl || '#resource'" :target="item.url ? '_blank' : undefined" :rel="item.url ? 'noopener noreferrer' : undefined" :aria-label="`${item.title}，${item.url ? '打开外部链接' : '下载资源'}`">
+            <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.description">{{ item.description }}</span><span class="education-resource-meta"><b>{{ item.type }}</b><b>{{ item.grade || '不限定年级' }}</b><span>{{ item.filename || (item.url ? '在线资源' : '学习资料') }}</span></span></span>
+            <time>{{ new Date(item.updatedAt || item.createdAt).toLocaleDateString('zh-CN') }}</time><span class="knowledge-list-arrow" aria-hidden="true">↗</span>
+          </a>
+          <p class="knowledge-list-status">{{ visibleEducationResources.length < filteredEducationResources.length ? '向下滚动加载更多' : `已显示全部 ${filteredEducationResources.length} 份资源` }}</p>
+        </div>
+        <p v-else-if="educationResourceSearch.trim() || educationResourceCategory !== '全部资源' || educationResourceGrade !== '全部年级'" class="directory-empty">没有找到符合条件的公开资源。请调整筛选条件或搜索关键词。</p>
+        <p v-else class="directory-empty">目前还没有公开的教育资源。登录后在“教学资源”中创建资源，并勾选“公开展示”，资源就会显示在这里。</p>
+      </section>
+      <section v-if="route === '/software-tools'" class="directory-published-section">
         <div class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
         <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
         <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
@@ -1484,6 +1546,7 @@ onBeforeUnmount(() => {
           <VirtualizedSelect v-model="resourceType" label="教学资源类型" :options="resourceTypeOptions.map(type => ({ label: type, value: type }))" />
           <label class="share-dialog-label" for="resource-grade">年级</label>
           <VirtualizedSelect v-model="resourceGrade" label="年级" :options="resourceGradeOptions.map(grade => ({ label: grade, value: grade === '不限定年级' ? '' : grade }))" placeholder="选择适用年级" />
+          <label class="resource-public-toggle"><input v-model="resourceIsPublic" type="checkbox" /><span><strong>公开展示在教育资源页</strong><small>勾选后任何访客都可以看到资源信息，并访问其链接或下载文件。</small></span></label>
           <label class="share-dialog-label" for="resource-description">资源说明</label>
           <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
           <label class="share-dialog-label" for="resource-file">上传文件（选填）</label>

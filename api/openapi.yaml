@@ -390,6 +390,36 @@ paths:
                   likeCount: { type: integer }
                   favoriteCount: { type: integer }
         '401': { $ref: '#/components/responses/ErrorResponse' }
+  /public/resources:
+    get:
+      tags: [Public content]
+      security: []
+      summary: List explicitly published teaching resources
+      operationId: listPublicTeachingResources
+      responses:
+        '200':
+          description: Public teaching resource list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PublicTeachingResource' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /public/resources/{id}/download:
+    get:
+      tags: [Public content]
+      security: []
+      summary: Download a file attached to a published teaching resource
+      operationId: downloadPublicTeachingResource
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Public resource file }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
   /resources:
     get:
       tags: [Teaching resources]
@@ -709,6 +739,7 @@ components:
         description: { type: string, maxLength: 2000 }
         type: { type: string, maxLength: 50 }
         grade: { type: [string, 'null'], enum: [一年级, 二年级, 三年级, 四年级, 五年级, 六年级, 初一, 初二, 初三, 高一, 高二, 高三, 本科, 硕士, null] }
+        isPublic: { type: boolean, default: false }
         url: { type: [string, 'null'], format: uri }
         filename: { type: [string, 'null'] }
         mimeType: { type: [string, 'null'] }
@@ -716,6 +747,23 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: [string, 'null'], format: date-time }
         deletedAt: { type: [string, 'null'], format: date-time }
+    PublicTeachingResource:
+      type: object
+      required: [id, title, description, type, isPublic, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        type: { type: string }
+        grade: { type: [string, 'null'] }
+        url: { type: [string, 'null'], format: uri }
+        downloadUrl: { type: [string, 'null'], format: uri-reference }
+        filename: { type: [string, 'null'] }
+        mimeType: { type: [string, 'null'] }
+        fileSize: { type: [integer, 'null'] }
+        isPublic: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
     ResourceWrite:
       type: object
       required: [title, description, type]
@@ -724,6 +772,7 @@ components:
         description: { type: string, maxLength: 2000 }
         type: { type: string, maxLength: 50 }
         grade: { type: [string, 'null'], enum: [一年级, 二年级, 三年级, 四年级, 五年级, 六年级, 初一, 初二, 初三, 高一, 高二, 高三, 本科, 硕士, null] }
+        isPublic: { type: boolean, default: false }
         url: { type: [string, 'null'], maxLength: 2048, format: uri }
         filename: { type: string, maxLength: 255 }
         data: { type: string, contentEncoding: base64 }
