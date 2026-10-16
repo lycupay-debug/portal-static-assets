@@ -1,0 +1,258 @@
+/*
+ * Monochrome design system v2
+ * One source of truth for all portal surfaces: paper, graphite and neutral gray.
+ * No colored accent palette, tinted glass, colored focus rings or colored status UI.
+ */
+:root {
+  color-scheme: light;
+  --mono-0: #ffffff;
+  --mono-25: #fafafa;
+  --mono-50: #f6f6f6;
+  --mono-100: #eeeeee;
+  --mono-150: #e5e5e5;
+  --mono-200: #d8d8d8;
+  --mono-300: #b8b8b8;
+  --mono-400: #929292;
+  --mono-500: #707070;
+  --mono-600: #555555;
+  --mono-700: #3d3d3d;
+  --mono-800: #292929;
+  --mono-900: #191919;
+  --mono-950: #101010;
+  --ink: var(--mono-900);
+  --muted: var(--mono-600);
+  --subtle: var(--mono-500);
+  --accent: var(--mono-900);
+  --accent-hover: var(--mono-700);
+  --line: rgba(0, 0, 0, .09);
+  --paper: var(--mono-50);
+  --surface: rgba(255, 255, 255, .86);
+  --surface-glass: rgba(255, 255, 255, .68);
+  --glass-border: rgba(0, 0, 0, .07);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, .035);
+  --glass-shadow-hover: 0 10px 30px rgba(0, 0, 0, .055);
+  --glass-motion: 180ms ease;
+  --bs-primary: #191919;
+  --bs-primary-rgb: 25, 25, 25;
+  --bs-link-color: #292929;
+  --bs-link-hover-color: #101010;
+  --bs-body-color: #191919;
+  --bs-body-bg: #f6f6f6;
+  --bs-secondary-color: #666666;
+  --bs-secondary-bg: #eeeeee;
+  --bs-tertiary-bg: #f5f5f5;
+  --bs-border-color: #dedede;
+  --bs-focus-ring-color: rgba(0, 0, 0, .08);
+  color: var(--mono-900);
+  background: var(--mono-50);
+}
+
+html, body, #app, .site-shell { color: var(--mono-900) !important; background: var(--mono-50) !important; }
+body { -webkit-font-smoothing: antialiased; }
+#app { isolation: isolate; }
+::selection { color: var(--mono-950) !important; background: #dcdcdc !important; }
+:focus-visible { outline-color: #777 !important; }
+
+/* Navigation and landing page */
+.site-header, .content-workspace-topbar {
+  color: var(--mono-900) !important;
+  background: rgba(250, 250, 250, .84) !important;
+  border-color: rgba(0, 0, 0, .08) !important;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, .025) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  backdrop-filter: blur(18px) !important;
+}
+.brand-mark, .workspace-brand-mark, .about-mark, .status-dot, .hero-bottom i, .note-line,
+.public-author-avatar, .account-summary-card .account-avatar {
+  color: var(--mono-0) !important; background: var(--mono-900) !important; box-shadow: none !important;
+}
+.brand-copy strong, .hero h1, .hero h1 span, .section-heading h2, .published-content-heading h2,
+.about-copy h2, .section-card h3, .published-content-card h3, .directory-hero h1,
+.directory-hero h2, .directory-section-heading h2, .directory-tile h3, .auth-panel h1,
+.public-article h1, .account-content h1, .content-editor-heading h2,
+.content-editor-document h1, .content-editor-document h2, .content-editor-document h3,
+.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, .markdown-rendered h4,
+.workspace-brand, .workspace-document-name, .share-dialog h2 { color: var(--mono-900) !important; }
+.brand-copy small, .main-nav, .hero-note, .hero-bottom, .eyebrow, .hero-description,
+.section-intro, .card-description, .card-topline, .card-kicker, .card-bottom,
+.about-copy > p:last-child, .about-meta, .site-footer, .footer-brand, .published-content-card p,
+.published-content-type, .published-content-heading > span, .directory-description,
+.directory-back-link, .directory-section-heading > span, .directory-tile > p,
+.directory-empty, .directory-coming-soon > p:last-child, .public-article-summary,
+.public-article-route-header, .public-article-route-date, .public-author-heading span,
+.public-author-meta, .public-author-card p, .auth-intro, .field-help, .back-home,
+.account-summary-email, .account-field span, .virtual-table-count, .virtual-table-footnote,
+.content-editor-heading p, .content-editor-hint, .notion-save-hint, .workspace-brand small,
+.workspace-document-name, .workspace-document-name em, .share-dialog > p,
+.share-dialog-eyebrow, .share-dialog-label { color: var(--mono-600) !important; }
+.hero, .explore-section, .published-content-section, .public-content-page,
+.content-paper-stage, .content-a4-paper { background: transparent !important; }
+.about-section { background: #eeeeee !important; border-color: #dedede !important; }
+.art-card, .card-front, .card-back { color: var(--mono-900) !important; background: rgba(255,255,255,.76) !important; border-color: rgba(0,0,0,.08) !important; box-shadow: 0 14px 32px rgba(0,0,0,.045) !important; }
+.art-symbol, .art-symbol span, .art-card-label, .art-index, .art-spark, .art-lines i { color: var(--mono-900) !important; background-color: #d8d8d8 !important; }
+.art-orbit, .orbit-two { border-color: #d9d9d9 !important; }
+.search-box, .knowledge-autocomplete, .knowledge-autocomplete-popper {
+  color: var(--mono-900) !important; background: rgba(255,255,255,.82) !important;
+  border-color: rgba(0,0,0,.10) !important; box-shadow: 0 2px 10px rgba(0,0,0,.02) !important;
+  -webkit-backdrop-filter: blur(18px) !important; backdrop-filter: blur(18px) !important;
+}
+.search-box input, .knowledge-autocomplete input { color: var(--mono-900) !important; }
+.search-box input::placeholder, .knowledge-autocomplete input::placeholder { color: var(--mono-400) !important; }
+.search-box kbd, .tag-list span { color: var(--mono-600) !important; background: #f1f1f1 !important; border-color: #e2e2e2 !important; }
+.section-card, .published-content-card, .directory-tile, .directory-coming-soon,
+.knowledge-list-item, .public-author-card, .public-article-actions, .account-summary-card,
+.workspace-placeholder, .security-info-row, .glass-panel, .auth-panel, .content-editor-panel,
+.content-editor-shell, .content-editor-canvas, .content-markdown-preview, .resource-create-dialog {
+  color: var(--mono-900) !important;
+  background: rgba(255,255,255,.76) !important;
+  border-color: rgba(0,0,0,.075) !important;
+  box-shadow: 0 5px 22px rgba(0,0,0,.025) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  backdrop-filter: blur(18px) !important;
+}
+.section-card:hover, .published-content-card:hover, .directory-tile:hover,
+.knowledge-list-item:hover, .public-author-card:hover { background: rgba(255,255,255,.96) !important; border-color: rgba(0,0,0,.13) !important; box-shadow: 0 8px 26px rgba(0,0,0,.045) !important; }
+.section-card, .published-content-card, .directory-tile, .knowledge-list-item,
+.main-nav a, .button-primary, .btn, .account-sidebar-item { transform: none !important; }
+.main-nav a:hover { color: var(--mono-950) !important; background: rgba(0,0,0,.035) !important; }
+.text-link, .published-content-link, .auth-switch a, .markdown-rendered a,
+.content-editor-document a, .content-editor-document a:hover, .public-article-action,
+.public-article-action.active, .public-action-symbol { color: var(--mono-800) !important; }
+
+/* Single neutral button language. */
+.button-primary, .content-primary-button, .hero .button-primary, .btn-dark,
+.workspace-save-draft, .share-dialog-copy, .auth-submit {
+  color: var(--mono-0) !important; background: var(--mono-900) !important;
+  border-color: var(--mono-900) !important; box-shadow: none !important;
+}
+.button-primary:hover, .content-primary-button:hover, .btn-dark:hover,
+.workspace-save-draft:hover, .share-dialog-copy:hover, .auth-submit:hover {
+  color: var(--mono-0) !important; background: var(--mono-700) !important; border-color: var(--mono-700) !important;
+}
+.btn-outline-secondary, .content-secondary-button, .content-row-actions button,
+.share-dialog-cancel, .empty-search button, .directory-carousel-controls button,
+.content-editor-image-menu > button, .content-editor-image-url button {
+  color: var(--mono-800) !important; background: rgba(255,255,255,.72) !important;
+  border-color: rgba(0,0,0,.14) !important; box-shadow: none !important;
+}
+.btn-outline-secondary:hover, .content-secondary-button:hover, .content-row-actions button:hover,
+.share-dialog-cancel:hover, .empty-search button:hover, .directory-carousel-controls button:hover,
+.content-editor-image-menu > button:hover, .content-editor-image-url button:hover {
+  color: var(--mono-950) !important; background: #eeeeee !important; border-color: rgba(0,0,0,.22) !important;
+}
+.btn-outline-danger, .content-row-actions .content-danger-action { color: var(--mono-700) !important; border-color: rgba(0,0,0,.14) !important; background: rgba(255,255,255,.72) !important; }
+.btn-outline-danger:hover, .content-row-actions .content-danger-action:hover { color: var(--mono-950) !important; background: #e8e8e8 !important; }
+
+/* Forms, selects, menus and focus states */
+.form-control, .field-label input, .content-editor-form input, .content-editor-form select,
+.content-editor-form textarea, .notion-document-properties input, .notion-document-properties select,
+.notion-summary-property textarea, .virtual-table-search, .share-dialog-url,
+.content-editor-slash-search, .virtualized-select-search, .virtualized-select-trigger,
+.resource-file-input, .workspace-properties input, .workspace-properties select,
+.workspace-properties textarea {
+  color: var(--mono-900) !important; background: rgba(255,255,255,.84) !important;
+  border-color: rgba(0,0,0,.13) !important; box-shadow: none !important;
+}
+.form-control::placeholder, input::placeholder, textarea::placeholder { color: var(--mono-400) !important; opacity: 1; }
+.form-control:focus, .field-label input:focus, .content-editor-form input:focus,
+.content-editor-form select:focus, .content-editor-form textarea:focus,
+.notion-document-properties input:focus, .notion-document-properties select:focus,
+.virtual-table-search:focus, .share-dialog-url:focus, .virtualized-select-search:focus,
+.workspace-properties input:focus, .workspace-properties select:focus, .workspace-properties textarea:focus {
+  color: var(--mono-900) !important; border-color: #888 !important;
+  background: #fff !important; box-shadow: 0 0 0 3px rgba(0,0,0,.045) !important; outline: none !important;
+}
+.content-editor-slash-menu, .content-editor-block-menu, .content-editor-context-menu,
+.content-editor-image-menu, .virtualized-select-popover, .share-dialog, .table-cell-detail,
+.knowledge-autocomplete-popper {
+  color: var(--mono-900) !important; background: rgba(250,250,250,.96) !important;
+  border-color: rgba(0,0,0,.10) !important; box-shadow: 0 12px 32px rgba(0,0,0,.09) !important;
+  -webkit-backdrop-filter: blur(22px) !important; backdrop-filter: blur(22px) !important;
+}
+.content-editor-slash-menu button, .content-editor-block-menu button,
+.content-editor-context-menu button, .content-editor-menu-icon, .content-editor-hint>span:first-child,
+.content-outline-list button, .content-toolbar-list button, .context-menu-actions button,
+.context-menu-close, .context-menu-tool-list > button, .virtualized-select-viewport > button,
+.knowledge-autocomplete-option, .knowledge-search-clear { color: var(--mono-800) !important; }
+.content-editor-slash-menu button:hover, .content-editor-slash-menu button.selected,
+.content-editor-block-menu button:hover, .content-editor-context-menu button:hover,
+.content-outline-list button:hover, .content-toolbar-list button:hover,
+.context-menu-actions button:hover, .context-menu-close:hover, .context-menu-tool-list > button:hover,
+.virtualized-select-viewport > button:hover, .virtualized-select-viewport > button.selected,
+.knowledge-autocomplete-option:hover, .knowledge-autocomplete-option.highlighted { color: var(--mono-950) !important; background: #ededed !important; }
+
+/* Account centre and full-width virtual tables */
+.account-layout, .account-content, .account-content.account-content-table-mode { background: transparent !important; }
+.account-sidebar, .content-outline-sidebar, .content-tools-sidebar, .workspace-sidebar-settings,
+.workspace-tools-panel { color: var(--mono-800) !important; background: rgba(242,242,242,.70) !important; border-color: rgba(0,0,0,.075) !important; }
+.account-sidebar-item, .account-sidebar-home, .sidebar-group-icon, .account-search-empty,
+.workspace-placeholder, .workspace-placeholder-icon { color: var(--mono-700) !important; }
+.account-sidebar-item:hover, .account-sidebar-item.is-active { color: var(--mono-950) !important; background: #e8e8e8 !important; box-shadow: inset 2px 0 #555 !important; }
+.sidebar-group-icon, .workspace-side-icon, .toolbar-item-icon, .context-tool-icon,
+.virtual-table-empty-icon, .workspace-placeholder-icon { background: #ededed !important; border-color: #dedede !important; }
+.account-status, .account-status i, .security-info-icon, .security-info-row strong,
+.security-info-row p, .sidebar-item-dot, .account-sidebar-item.is-active .sidebar-item-dot { color: var(--mono-600) !important; background: #d0d0d0 !important; box-shadow: none !important; }
+.security-info-row { background: rgba(245,245,245,.78) !important; }
+.virtual-table-toolbar, .virtual-table-footnote, .account-field, .account-sidebar-home,
+.notion-document-properties, .notion-document-divider, .notion-document-actions,
+.content-editor-hint, .content-editor-footer, .content-editor-heading { border-color: rgba(0,0,0,.08) !important; }
+.virtual-table-heading h2, .virtual-table-empty strong { color: var(--mono-900) !important; }
+.virtual-table-header { color: var(--mono-600) !important; background: #ededed !important; border-color: #dedede !important; }
+.virtual-table-row { color: var(--mono-800) !important; background: transparent !important; border-color: rgba(0,0,0,.065) !important; }
+.virtual-table-row:hover { background: rgba(0,0,0,.025) !important; }
+.virtual-table-empty p, .virtual-table-footnote { color: var(--mono-500) !important; }
+
+/* Reading and editing: monochrome document palette, including inline color controls. */
+.content-workspace-page { color: var(--mono-900) !important; background: #f1f1f1 !important; }
+.content-workspace-grid { background: #f5f5f5 !important; }
+.workspace-document-name em, .workspace-tag-option, .workspace-tool-group > summary,
+.workspace-fold > summary, .workspace-settings-fold > summary, .workspace-outline-fold > summary,
+.workspace-tools-heading, .workspace-tool-group, .workspace-properties, .workspace-create-actions,
+.workspace-privacy-note { color: var(--mono-700) !important; background: #f7f7f7 !important; border-color: #e1e1e1 !important; box-shadow: none !important; }
+.workspace-tag-option:has(input:checked) { background: #e7e7e7 !important; border-color: #999 !important; }
+.content-editor-document, .content-a4-paper .content-editor-document, .markdown-rendered,
+.public-article-body { color: var(--mono-800) !important; }
+.content-editor-document h1, .content-editor-document h2, .content-editor-document h3,
+.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, .markdown-rendered h4 { color: var(--mono-900) !important; }
+.content-editor-document blockquote, .markdown-rendered blockquote,
+.content-a4-paper .content-editor-document blockquote { color: var(--mono-700) !important; background: #f3f3f3 !important; border-color: #d7d7d7 !important; border-left-color: #8a8a8a !important; box-shadow: none !important; }
+.content-editor-document code, .markdown-rendered code { color: var(--mono-800) !important; background: #ededed !important; }
+.content-editor-document pre, .markdown-rendered pre { color: #f5f5f5 !important; background: #242424 !important; }
+.content-editor-document pre code, .markdown-rendered pre code { color: inherit !important; background: transparent !important; }
+.content-editor-document mark, .markdown-rendered mark { color: inherit !important; background: #dedede !important; }
+.content-editor-document th, .markdown-rendered th { color: var(--mono-800) !important; background: #ededed !important; }
+.content-editor-document th, .content-editor-document td, .markdown-rendered th, .markdown-rendered td { border-color: #dedede !important; }
+.content-editor-document p.is-editor-empty:first-child:before { color: #a0a0a0 !important; }
+.content-editor-bubble-menu { background: #242424 !important; border-color: #333 !important; box-shadow: 0 8px 22px rgba(0,0,0,.12) !important; }
+.content-editor-bubble-menu button { color: #f5f5f5 !important; }
+.content-editor-bubble-menu button:hover, .content-editor-bubble-menu button.active { background: #4a4a4a !important; }
+.content-editor-drag-handle { color: #888 !important; }
+.content-editor-drag-handle:hover { color: #222 !important; background: #ededed !important; }
+.content-editor-image-zoom { background: rgba(0,0,0,.84) !important; }
+
+/* Status messages keep meaning through copy and placement, not hue. */
+.form-error, .form-notice, .content-feedback-error, .content-feedback-success,
+.content-workspace-notice, .resource-error, .resource-file-hint, .resource-selected-file,
+.public-article-login-hint, .workspace-status-dot, .portal-notification-icon,
+.portal-notification.is-success .portal-notification-icon,
+.portal-notification.is-error .portal-notification-icon,
+.portal-notification.is-warning .portal-notification-icon,
+.portal-notification.is-info .portal-notification-icon {
+  color: var(--mono-700) !important; background: #ededed !important; border-color: #dedede !important; box-shadow: none !important;
+}
+.portal-notification { color: var(--mono-900) !important; background: rgba(250,250,250,.94) !important; border-color: #dedede !important; box-shadow: 0 12px 32px rgba(0,0,0,.08) !important; }
+.portal-notification-copy p, .portal-notification-close { color: var(--mono-600) !important; }
+.public-article-action.active { color: var(--mono-950) !important; background: #e9e9e9 !important; }
+.public-action-symbol, .public-article-action strong { color: var(--mono-600) !important; }
+.share-dialog-backdrop { background: rgba(0,0,0,.28) !important; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .site-header, .content-workspace-topbar, .account-sidebar, .content-outline-sidebar,
+  .content-tools-sidebar, .section-card, .published-content-card, .directory-tile,
+  .knowledge-list-item, .public-author-card, .glass-panel, .auth-panel, .share-dialog,
+  .content-editor-slash-menu, .content-editor-block-menu, .content-editor-context-menu,
+  .content-editor-image-menu, .virtualized-select-popover, .portal-notification {
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: #fff !important;
+  }
+}

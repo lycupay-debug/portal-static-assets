@@ -18,11 +18,11 @@ const imageUrl = ref('')
 const imageUploadError = ref('')
 const imagePosition = ref({ left: 12, top: 40 })
 const imageFileInput = ref<HTMLInputElement | null>(null)
-const calloutColors = ['#FFF2CC', '#DDEBFF', '#DDF5E4', '#FCE1E8', '#EDE1FF', '#FBE5D5', '#F1F3F5']
+const calloutColors = ['#F0F0F0', '#E6E6E6', '#DCDCDC', '#F7F7F7', '#D2D2D2', '#EAEAEA', '#F1F1F1']
 const imageWidths = ['25%', '50%', '75%', '100%']
 const contextMenu = ref({ open: false, x: 0, y: 0, target: "text" })
-const backgroundColors = [{ name: '浅黄', value: '#FFF2A8' }, { name: '浅蓝', value: '#CDE7FF' }, { name: '浅绿', value: '#D5F5D5' }, { name: '浅粉', value: '#FFDCE5' }, { name: '浅紫', value: '#E8D9FF' }, { name: '无背景', value: '' }]
-const textColors = [{ name: '默认', value: '#25334D' }, { name: '蓝色', value: '#315CF5' }, { name: '红色', value: '#D83A52' }, { name: '绿色', value: '#23845B' }, { name: '紫色', value: '#8153C7' }, { name: '橙色', value: '#B96818' }]
+const backgroundColors = [{ name: '浅灰', value: '#F1F1F1' }, { name: '中浅灰', value: '#E5E5E5' }, { name: '灰白', value: '#F8F8F8' }, { name: '中灰', value: '#D6D6D6' }, { name: '深浅灰', value: '#C9C9C9' }, { name: '无背景', value: '' }]
+const textColors = [{ name: '默认', value: '#292929' }, { name: '深黑', value: '#111111' }, { name: '深灰', value: '#444444' }, { name: '中灰', value: '#707070' }, { name: '浅灰', value: '#929292' }]
 const outlineItems = ref<Array<{ level: number; text: string; index: number }>>([])
 
 const editor = useEditor({

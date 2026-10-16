@@ -188,7 +188,7 @@ test('content tools apply their intended block and mark types', () => {
     ['编号列表', node => node.type === 'orderedList'],
     ['待办清单', node => node.type === 'taskList'],
     ['引用', node => node.type === 'blockquote'],
-    ['提醒', node => node.type === 'callout' && node.attrs.backgroundColor === '#FFF2CC'],
+    ['提醒', node => node.type === 'callout' && node.attrs.backgroundColor === '#F1F1F1'],
     ['代码块', node => node.type === 'codeBlock'],
     ['分割线', node => node.type === 'horizontalRule'],
     ['表格', node => node.type === 'table'],
