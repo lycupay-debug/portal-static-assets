@@ -180,3 +180,45 @@ test('published historical restore commits its event before notifying C; notific
   assert.equal(restored.payload.eventId, h.events[0].eventId);
   await new Promise((resolve) => setImmediate(resolve));
 });
+
+
+test('teaching resource metadata can be edited without creating content versions', async () => {
+  const calls = [];
+  const resourceId = '44444444-4444-4444-8444-444444444444';
+  const handlers = createContentHandlers({
+    pool: { async query(sql, params) {
+      calls.push({ sql, params });
+      if (sql.includes('UPDATE portal.teaching_resources SET title=$1')) return {
+        rows: [{ id: resourceId, title: params[0], description: params[1], filename: 'lesson.pdf', mimeType: 'application/pdf', fileSize: 1234, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-10-16T00:00:00Z' }], rowCount: 1,
+      };
+      throw new Error(`Unexpected query: ${sql}`);
+    } },
+    getSessionUser: async () => ({ user_id: authorId }),
+    json: (_res, status, payload) => ({ status, payload }),
+    readBody: async req => req.body || {},
+  });
+  const response = await handlers.handleContentRequest(
+    { method: 'PATCH', body: { title: '  Updated resource  ', description: 'New description' } }, {},
+    new URL(`http://local/resources/${resourceId}`),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.payload.item.title, 'Updated resource');
+  assert.equal(response.payload.item.description, 'New description');
+  assert.match(calls[0].sql, /owner_id=\$4 AND deleted_at IS NULL/);
+  assert.deepEqual(calls[0].params, ['Updated resource', 'New description', resourceId, authorId]);
+  assert.equal(calls.length, 1, 'metadata editing must not create version history or touch the stored file');
+});
+
+test('teaching resource edit validates title and description lengths', async () => {
+  const handlers = createContentHandlers({
+    pool: { async query() { throw new Error('invalid resource input must not reach the database'); } },
+    getSessionUser: async () => ({ user_id: authorId }),
+    json: (_res, status, payload) => ({ status, payload }),
+    readBody: async req => req.body || {},
+  });
+  const path = new URL('http://local/resources/44444444-4444-4444-8444-444444444444');
+  const noTitle = await handlers.handleContentRequest({ method: 'PATCH', body: { title: '  ', description: '' } }, {}, path);
+  assert.equal(noTitle.status, 400);
+  const tooLong = await handlers.handleContentRequest({ method: 'PATCH', body: { title: 'valid', description: 'x'.repeat(2001) } }, {}, path);
+  assert.equal(tooLong.status, 400);
+});

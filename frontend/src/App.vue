@@ -180,6 +180,7 @@ const teachingResources = ref<TeachingResource[]>([])
 const teachingResourceTrash = ref<TeachingResource[]>([])
 const resourceViewMode = ref<'active' | 'trash'>('active')
 const resourceDialogOpen = ref(false)
+const editingResourceId = ref<string | null>(null)
 const resourceBusy = ref(false)
 const resourceError = ref('')
 const resourceTitle = ref('')
@@ -526,20 +527,33 @@ async function loadTeachingResources() {
   } catch (error) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') }
   finally { resourceBusy.value = false }
 }
-function openResourceDialog() { resourceTitle.value = ''; resourceDescription.value = ''; resourceFile.value = null; resourceError.value = ''; resourceDialogOpen.value = true }
+function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceFile.value = null; resourceError.value = ''; resourceDialogOpen.value = true }
+function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceFile.value = null; resourceError.value = ''; resourceDialogOpen.value = true }
+function openResourceEditById(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item) openResourceEdit(item) }
 async function createTeachingResource() {
-  if (!resourceTitle.value.trim() || !resourceFile.value) { resourceError.value = '请填写资源名称并选择文件。'; return }
-  if (resourceFile.value.size > 25 * 1024 * 1024) { resourceError.value = '单个文件大小不能超过 25 MB。'; return }
+  if (!resourceTitle.value.trim()) { resourceError.value = '请填写资源名称。'; return }
+  if (!editingResourceId.value && !resourceFile.value) { resourceError.value = '请选择要上传的文件。'; return }
+  if (resourceFile.value && resourceFile.value.size > 25 * 1024 * 1024) { resourceError.value = '单个文件大小不能超过 25 MB。'; return }
   resourceBusy.value = true; resourceError.value = ''
   try {
-    const file = resourceFile.value
-    const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
-    const response = await fetch('/api/resources', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), filename: file.name, mimeType: file.type || 'application/octet-stream', data }) })
+    let response: Response
+    if (editingResourceId.value) {
+      response = await fetch(`/api/resources/${encodeURIComponent(editingResourceId.value)}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ title: resourceTitle.value.trim(), description: resourceDescription.value.trim() }) })
+    } else {
+      const file = resourceFile.value!
+      const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
+      response = await fetch('/api/resources', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), filename: file.name, mimeType: file.type || 'application/octet-stream', data }) })
+    }
     const result = await response.json() as { item?: TeachingResource; error?: string }
-    if (!response.ok) throw new Error(result.error || '创建资源失败。')
-    if (result.item) teachingResources.value = [result.item, ...teachingResources.value]
-    resourceDialogOpen.value = false; portalNotify.success('资源已保存到数据库。')
-  } catch (error) { resourceError.value = error instanceof Error ? error.message : '创建资源失败。' }
+    if (!response.ok) throw new Error(result.error || (editingResourceId.value ? '保存资源修改失败。' : '创建资源失败。'))
+    if (result.item) {
+      if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
+      else teachingResources.value = [result.item, ...teachingResources.value]
+    }
+    const wasEditing = Boolean(editingResourceId.value)
+    resourceDialogOpen.value = false; editingResourceId.value = null
+    portalNotify.success(wasEditing ? '资源信息已更新。' : '资源已保存到数据库。')
+  } catch (error) { resourceError.value = error instanceof Error ? error.message : (editingResourceId.value ? '保存资源修改失败。' : '创建资源失败。') }
   finally { resourceBusy.value = false }
 }
 async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 'permanent') {
@@ -1402,6 +1416,7 @@ onBeforeUnmount(() => {
                           <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'permanent')">永久删除</button>
                         </template>
                         <template v-else>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="openResourceEditById(String(record.id))">编辑</button>
                           <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="downloadTeachingResource(String(record.id))">下载</button>
                           <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'trash')">删除</button>
                         </template>
@@ -1436,19 +1451,21 @@ onBeforeUnmount(() => {
       <section class="share-dialog resource-create-dialog" role="dialog" aria-modal="true" aria-labelledby="resource-create-title">
         <button type="button" class="share-dialog-close" aria-label="关闭" @click="resourceDialogOpen = false">×</button>
         <span class="share-dialog-eyebrow">TEACHING LIBRARY</span>
-        <h2 id="resource-create-title">创建教学资源</h2>
-        <p>上传课件、听力音频或其他教学文件。文件最大 25 MB，保存后可下载或移入回收站。</p>
+        <h2 id="resource-create-title">{{ editingResourceId ? '编辑教学资源' : '创建教学资源' }}</h2>
+        <p>{{ editingResourceId ? '修改资源名称或说明。原文件保持不变，不创建版本历史。' : '上传课件、听力音频或其他教学文件。文件最大 25 MB，保存后可下载或移入回收站。' }}</p>
         <form class="resource-create-form" @submit.prevent="createTeachingResource">
           <label class="share-dialog-label" for="resource-title">资源名称</label>
           <input id="resource-title" v-model="resourceTitle" class="form-control share-dialog-url" maxlength="200" required placeholder="例如：七年级英语听力 Unit 1" />
           <label class="share-dialog-label" for="resource-description">资源说明</label>
           <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="关联课程、章节或使用说明（选填）"></textarea>
-          <label class="share-dialog-label" for="resource-file">上传文件</label>
-          <input id="resource-file" class="form-control resource-file-input" type="file" accept=".ppt,.pptx,.mp3,.pdf,.doc,.docx,.txt" required @change="resourceFile = ($event.target as HTMLInputElement).files?.[0] || null" />
-          <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。</p>
-          <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}</p>
+          <template v-if="!editingResourceId">
+            <label class="share-dialog-label" for="resource-file">上传文件</label>
+            <input id="resource-file" class="form-control resource-file-input" type="file" accept=".ppt,.pptx,.mp3,.pdf,.doc,.docx,.txt" required @change="resourceFile = ($event.target as HTMLInputElement).files?.[0] || null" />
+            <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。</p>
+            <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}</p>
+          </template>
           <p v-if="resourceError" class="resource-error">{{ resourceError }}</p>
-          <div class="resource-form-actions"><button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="btn content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? '正在上传…' : '保存资源' }}</button></div>
+          <div class="resource-form-actions"><button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="btn content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? (editingResourceId ? '正在保存…' : '正在上传…') : (editingResourceId ? '保存修改' : '保存资源') }}</button></div>
         </form>
       </section>
     </div>

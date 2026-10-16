@@ -122,6 +122,21 @@ async function handleContentRequest(req, res, url) {
   const resourceAction = path.match(/^\/resources\/([0-9a-f-]{36})(?:\/(restore|permanent|download))?$/i);
   if (resourceAction) {
     const [, resourceId, action] = resourceAction;
+    if (req.method === 'PATCH' && !action) {
+      const body = await readBody(req, 16 * 1024);
+      const title = String(body.title ?? '').trim();
+      const description = String(body.description ?? '').trim();
+      if (!title || [...title].length > 200) return json(res, 400, { error: '资源名称必须为 1 至 200 个字符。' });
+      if ([...description].length > 2000) return json(res, 400, { error: '资源说明不能超过 2000 个字符。' });
+      const result = await pool.query(
+        `UPDATE portal.teaching_resources SET title=$1, description=$2, updated_at=now()
+         WHERE resource_id=$3 AND owner_id=$4 AND deleted_at IS NULL
+         RETURNING resource_id AS \"id\", title, description, original_filename AS \"filename\",
+           mime_type AS \"mimeType\", file_size AS \"fileSize\", created_at AS \"createdAt\", updated_at AS \"updatedAt\"`,
+        [title, description, resourceId, user.user_id],
+      );
+      return result.rowCount ? json(res, 200, { item: result.rows[0] }) : json(res, 404, { error: '资源不存在、已删除或无权编辑。' });
+    }
     if (req.method === 'POST' && action === 'restore') {
       const result = await pool.query(`UPDATE portal.teaching_resources SET deleted_at=NULL,updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL RETURNING resource_id AS "id", title, description, original_filename AS "filename", mime_type AS "mimeType", file_size AS "fileSize", created_at AS "createdAt"`, [resourceId,user.user_id]);
       return result.rowCount ? json(res,200,{item:result.rows[0]}) : json(res,404,{error:'资源不存在或无权恢复。'});
