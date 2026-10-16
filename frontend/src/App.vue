@@ -153,6 +153,12 @@ function accountGroupIcon(groupId: string): string {
 type TableColumn = { key: string; label: string; width?: string }
 type TableRecord = Record<string, string | number>
 const tableQuery = ref('')
+const debouncedTableQuery = ref('')
+let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
+watch(tableQuery, (query) => {
+  if (tableSearchDebounceTimer) clearTimeout(tableSearchDebounceTimer)
+  tableSearchDebounceTimer = setTimeout(() => { debouncedTableQuery.value = query }, 150)
+})
 const tableScrollTop = ref(0)
 const virtualTableScrollElement = ref<HTMLElement | null>(null)
 const virtualTableViewportWidth = ref(0)
@@ -403,10 +409,21 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
   : activeAccountSection.value === 'teaching-resources'
     ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.filename.split('.').pop()?.toUpperCase() || '文件', course: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
     : [])
+// Build each record's normalized search text once per data change, rather than
+// converting every cell to lowercase on every keystroke. Action/status helper fields
+// are excluded because they are UI-only and do not add useful search content.
+const searchableTableRecords = computed<TableRecord[]>(() => tableRecords.value.map((record): TableRecord => ({
+  ...record,
+  _searchText: Object.entries(record)
+    .filter(([key, value]) => key !== 'actions' && (typeof value === 'string' || typeof value === 'number'))
+    .map(([, value]) => String(value))
+    .join(' ')
+    .toLocaleLowerCase(),
+})))
 const filteredTableRecords = computed(() => {
-  const keyword = tableQuery.value.trim().toLocaleLowerCase()
-  if (!keyword) return tableRecords.value
-  return tableRecords.value.filter((record) => Object.values(record).some((value) => String(value).toLocaleLowerCase().includes(keyword)))
+  const keyword = debouncedTableQuery.value.trim().toLocaleLowerCase()
+  if (!keyword) return searchableTableRecords.value
+  return searchableTableRecords.value.filter((record) => String(record['_searchText'] || '').includes(keyword))
 })
 const virtualTableStart = computed(() => Math.max(0, Math.floor(tableScrollTop.value / virtualTableRowHeight) - virtualTableOverscan))
 const virtualTableEnd = computed(() => Math.min(filteredTableRecords.value.length, Math.ceil((tableScrollTop.value + virtualTableViewportHeight) / virtualTableRowHeight) + virtualTableOverscan))
@@ -1031,6 +1048,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   saveScrollPosition()
+  if (tableSearchDebounceTimer) clearTimeout(tableSearchDebounceTimer)
   tableResizeObserver?.disconnect()
   window.removeEventListener('popstate', onPopState)
   document.removeEventListener('scroll', onScrollCapture, true)
