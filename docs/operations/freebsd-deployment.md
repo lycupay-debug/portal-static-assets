@@ -47,7 +47,7 @@ install -o root -g wheel -m 0644 /opt/personal-portal/deploy/freebsd/newsyslog/p
 - `pg_hba.conf` 对 `personal_portal_app` 的本地 Unix socket、IPv4 loopback 和 IPv6 loopback 连接使用 SCRAM-SHA-256；其他既有角色规则保持原样。
 - Go API 使用 pgx 的 `database/sql` 驱动与有限连接池。`/dbz` 检查数据库连通性；`/readyz` 同时检查 C 核心与数据库。
 - 数据库迁移文件位于 `backend/migrations/`。业务迁移应由管理员/部署步骤显式执行，不在 API 启动时自动执行。
-- `portal.schema_migrations` 记录迁移版本；迁移 002 创建 `portal.event_inbox`，迁移 003 增加通知分发状态、租约和重试字段，迁移 004 增加业务处理租约及下一次重试时间，迁移 006 创建账户与会话表，迁移 007 创建门户内容表；迁移 008 创建内容历史快照表并增加回收站索引。内容 API 说明见 `backend/content-api/README.md`。
+- `portal.schema_migrations` 记录迁移版本；迁移 002 创建 `portal.event_inbox`，迁移 003 增加通知分发状态、租约和重试字段，迁移 004 增加业务处理租约及下一次重试时间，迁移 005 增加事件处理结果字段，迁移 006 创建账户与会话表，迁移 007 创建门户内容表；迁移 008 创建内容历史快照表并增加回收站索引。内容 API 说明见 `backend/content-api/README.md`。
 
 应用基础迁移时，避免把包含密码的 URL 放在命令行参数中。可使用 Python 将密码放入子进程环境，再调用 `psql`：
 
@@ -128,6 +128,6 @@ personal_portal_api_enable="YES"
 # replace the migration path with backend/migrations/002_event_inbox.sql.
 ```
 
-迁移不会由 API 自动执行。部署新 API 前先备份数据库并依次应用迁移 002、003；回滚代码不应自动删除已收到的事件数据。
+迁移不会由 API 自动执行。部署新 API 前先备份数据库并依次应用迁移 002、003、004、005；回滚代码不应自动删除已收到的事件数据。
 
-迁移 003 文件：`backend/migrations/003_event_dispatch_state.sql`，已在当前 `personal_portal` 数据库应用并记录为版本 3。迁移 004 文件：`backend/migrations/004_event_processing_leases.sql`，已在当前数据库应用并记录为版本 4。
+迁移 003 文件：`backend/migrations/003_event_dispatch_state.sql`，已在当前 `personal_portal` 数据库应用并记录为版本 3。迁移 004 文件：`backend/migrations/004_event_processing_leases.sql`，已在当前数据库应用并记录为版本 4。迁移 005 文件：`backend/migrations/005_event_processing_result.sql`，已在当前数据库应用并记录为版本 5。

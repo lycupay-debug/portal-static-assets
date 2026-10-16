@@ -14,7 +14,7 @@
 - `api/event_processor.go` 提供独立业务处理执行层：默认启动 4 个业务 Worker（`PERSONAL_PORTAL_EVENT_WORKERS` 可设为 1–8，超出上限会限制为 8）；各 Worker 使用独立 ID 并通过 `FOR UPDATE SKIP LOCKED`、处理租约竞争领取事件。成功后才写 `completed`；失败时指数退避重试，达到 10 次后写 `failed`；过期的 `processing` 租约可被重新领取。
 - 处理器必须遵守幂等约定、响应 context 超时；由于外部副作用与数据库完成状态无法原子提交，执行语义是至少一次，处理器不得假设只执行一次。
 - 只有 `portal.content.validate` 注册了生产业务处理器；其他未知事件类型不会被自动标为完成或失败。新增事件类型时，必须先定义业务语义并注册对应 handler。
-- 迁移 `004_event_processing_leases.sql` 为处理租约和重试调度增加字段。`PERSONAL_PORTAL_TEST_DATABASE_URL_FILE` 可显式启用 PostgreSQL 集成测试；应优先指向专用测试库。
+- 迁移 `004_event_processing_leases.sql` 为处理租约和重试调度增加字段；迁移 `005_event_processing_result.sql` 增加处理结果字段。`PERSONAL_PORTAL_TEST_DATABASE_URL_FILE` 可显式启用 PostgreSQL 集成测试；应优先指向专用测试库。
 - `api/main_test.go` 包含 IPC 状态、事件通知成功/异常响应及 HTTP 接收幂等测试。
 
 ## 本地开发
@@ -46,4 +46,4 @@ go run ./api
 
 ## Durable event intake
 
-`POST /events` accepts `{ "event_id": "<UUID>", "event_type": "lowercase.name", "payload": {} }` and persists it to `portal.event_inbox`. Apply migrations 002, 003, and 004 explicitly before deploying this API version. The endpoint guarantees durable receipt and idempotent duplicate handling. The background dispatcher sends a metadata notification and retries failures; it does not claim business processing or completion. The production handler registry currently includes `portal.content.validate`, which validates portal content fields and persists a JSON result. Verify the end-to-end path after deployment by posting a unique event ID and checking that `portal.event_inbox.status` becomes `completed` and `processing_result` is populated. The C core accepts only event ID/type metadata; business payload processing remains in Go.
+`POST /events` accepts `{ "event_id": "<UUID>", "event_type": "lowercase.name", "payload": {} }` and persists it to `portal.event_inbox`. Apply migrations 002, 003, 004, and 005 explicitly before deploying this API version. The endpoint guarantees durable receipt and idempotent duplicate handling. The background dispatcher sends a metadata notification and retries failures; it does not claim business processing or completion. The production handler registry currently includes `portal.content.validate`, which validates portal content fields and persists a JSON result. Verify the end-to-end path after deployment by posting a unique event ID and checking that `portal.event_inbox.status` becomes `completed` and `processing_result` is populated. The C core accepts only event ID/type metadata; business payload processing remains in Go.
