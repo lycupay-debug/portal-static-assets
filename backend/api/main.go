@@ -191,13 +191,15 @@ func (c IPCClient) Status(ctx context.Context) error {
 // the processor recovery scan because notifications can be missed on reconnect.
 func (c IPCClient) Subscribe(ctx context.Context, wake chan<- struct{}) {
 	backoff := time.Second
+	var reconnects uint64
 	for ctx.Err() == nil {
-		if err := c.subscribeOnce(ctx, wake); err != nil && ctx.Err() == nil {
-			fmt.Printf("event core subscriber disconnected: %v\n", err)
-		}
+		started := time.Now()
+		err := c.subscribeOnce(ctx, wake)
 		if ctx.Err() != nil {
 			return
 		}
+		reconnects++
+		fmt.Printf("event_core_subscriber_disconnected reconnect=%d connection_duration=%s backoff=%s error=%v\n", reconnects, time.Since(started).Round(time.Millisecond), backoff, err)
 		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
@@ -237,6 +239,7 @@ func (c IPCClient) subscribeOnce(ctx context.Context, wake chan<- struct{}) erro
 	if len(fields) != 4 || fields[0] != protocolVersion || fields[1] != id || fields[2] != "OK" || fields[3] != "SUBSCRIBED" {
 		return fmt.Errorf("unexpected subscription response %q", strings.TrimSpace(line))
 	}
+	fmt.Printf("event_core_subscriber_connected request_id=%s\n", id)
 	// A persistent subscription cannot use the short request deadline.
 	_ = conn.SetDeadline(time.Time{})
 	for {
@@ -252,6 +255,7 @@ func (c IPCClient) subscribeOnce(ctx context.Context, wake chan<- struct{}) erro
 			fields[2] != "EVENT" || !eventIDPattern.MatchString(fields[3]) || !eventTypePattern.MatchString(fields[4]) {
 			return fmt.Errorf("invalid event push %q", strings.TrimSpace(line))
 		}
+		fmt.Printf("event_core_push_received event_id=%s event_type=%s\n", fields[3], fields[4])
 		if wake != nil {
 			select {
 			case wake <- struct{}{}:
@@ -415,8 +419,12 @@ func (d EventDispatcher) Run(ctx context.Context) {
 		claimCtx, claimCancel := context.WithTimeout(ctx, 3*time.Second)
 		events, err := d.claim(claimCtx)
 		claimCancel()
+		if err != nil {
+			fmt.Printf("event_dispatcher_claim_failed error=%v\n", err)
+		}
 		if err == nil {
 			for _, event := range events {
+				notifyStarted := time.Now()
 				if ctx.Err() != nil {
 					return
 				}
@@ -425,15 +433,18 @@ func (d EventDispatcher) Run(ctx context.Context) {
 				notifyCancel()
 				if notifyErr != nil {
 					retryCtx, retryCancel := context.WithTimeout(context.Background(), 2*time.Second)
-					_ = d.markRetry(retryCtx, event, notifyErr)
+					retryErr := d.markRetry(retryCtx, event, notifyErr)
 					retryCancel()
+					fmt.Printf("event_dispatch_failed event_id=%s event_type=%s attempt=%d duration=%s error=%v retry_state_error=%v\n", event.EventID, event.EventType, event.Attempts, time.Since(notifyStarted).Round(time.Millisecond), notifyErr, retryErr)
 					continue
 				}
 				markCtx, markCancel := context.WithTimeout(context.Background(), 2*time.Second)
 				markErr := d.markNotified(markCtx, event.EventID)
 				markCancel()
 				if markErr != nil {
-					fmt.Printf("event dispatcher notification state update failed for %s: %v\n", event.EventID, markErr)
+					fmt.Printf("event_dispatch_state_update_failed event_id=%s error=%v\n", event.EventID, markErr)
+				} else {
+					fmt.Printf("event_dispatch_notified event_id=%s event_type=%s attempt=%d duration=%s\n", event.EventID, event.EventType, event.Attempts, time.Since(notifyStarted).Round(time.Millisecond))
 				}
 				// A successful C-core acknowledgement is the fast-path wakeup.
 				// Wakeups are hints only; PostgreSQL leases and recovery scans

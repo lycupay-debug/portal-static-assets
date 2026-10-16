@@ -337,3 +337,63 @@ func TestIPCSubscriberReceivesPushAndWakesWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIPCSubscriberReconnectsAfterDisconnect(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "event.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverErr := make(chan error, 1)
+	go func() {
+		for attempt := 0; attempt < 2; attempt++ {
+			conn, err := listener.Accept()
+			if err != nil {
+				serverErr <- err
+				return
+			}
+			reader := bufio.NewReader(conn)
+			request, err := reader.ReadString('\n')
+			if err != nil {
+				conn.Close()
+				serverErr <- err
+				return
+			}
+			fields := strings.Fields(strings.TrimSpace(request))
+			if len(fields) != 3 || fields[0] != protocolVersion || fields[2] != "SUBSCRIBE" {
+				conn.Close()
+				serverErr <- fmt.Errorf("unexpected subscribe request %q", request)
+				return
+			}
+			if _, err := fmt.Fprintf(conn, "%s %s OK SUBSCRIBED\n", protocolVersion, fields[1]); err != nil {
+				conn.Close()
+				serverErr <- err
+				return
+			}
+			if attempt == 1 {
+				_, err = fmt.Fprint(conn, "v1 push2 EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab portal.content.validate\n")
+				if err != nil {
+					conn.Close()
+					serverErr <- err
+					return
+				}
+			}
+			conn.Close()
+		}
+		serverErr <- nil
+	}()
+
+	wake := make(chan struct{}, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	go (IPCClient{SocketPath: socketPath, Timeout: time.Second}).Subscribe(ctx, wake)
+	select {
+	case <-wake:
+	case <-ctx.Done():
+		t.Fatal("subscriber did not reconnect and deliver the second connection's push")
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatal(err)
+	}
+}

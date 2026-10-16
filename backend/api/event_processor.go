@@ -195,6 +195,7 @@ func (p EventProcessor) processOne(ctx context.Context, eventTypes []string) boo
 	}
 
 	handler := p.Handlers[event.EventType]
+	processingStarted := time.Now()
 	handlerCtx, cancelHandler := context.WithTimeout(ctx, processingTimeout)
 	processingResult, handlerErr := handler(handlerCtx, EventInput{
 		EventID: event.EventID, EventType: event.EventType, Payload: event.Payload,
@@ -205,12 +206,15 @@ func (p EventProcessor) processOne(ctx context.Context, eventTypes []string) boo
 	defer cancelUpdate()
 	if handlerErr != nil {
 		if err := p.fail(updateCtx, *event, handlerErr); err != nil {
-			log.Printf("event processor failure update failed for %s: %v", event.EventID, err)
+			log.Printf("event_processor_failure_update_failed event_id=%s error=%v", event.EventID, err)
 		}
+		log.Printf("event_processed event_id=%s event_type=%s outcome=failed duration=%s error=%v", event.EventID, event.EventType, time.Since(processingStarted).Round(time.Millisecond), handlerErr)
 		return true
 	}
 	if err := p.complete(updateCtx, *event, processingResult); err != nil {
-		log.Printf("event processor completion update failed for %s: %v", event.EventID, err)
+		log.Printf("event_processor_completion_update_failed event_id=%s error=%v", event.EventID, err)
+	} else {
+		log.Printf("event_processed event_id=%s event_type=%s outcome=completed duration=%s", event.EventID, event.EventType, time.Since(processingStarted).Round(time.Millisecond))
 	}
 	return true
 }
