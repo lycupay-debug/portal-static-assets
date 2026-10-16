@@ -22,7 +22,7 @@ make clean all
 make test
 ```
 
-测试覆盖：PING、STATUS、未知命令、协议版本、请求 ID、嵌入 NUL、超长请求、24 个并发客户端，以及 SIGTERM 退出。
+C 测试覆盖：PING、STATUS、EVENT 元数据校验、SUBSCRIBE/PUBLISH 推送、未知命令、协议版本、请求 ID、嵌入 NUL、超长请求、24 个并发客户端，以及 SIGTERM 退出。Go 集成测试还会编译临时 C 核心进程，验证核心真实重启后订阅客户端能够重连并再次收到推送。
 
 ## 本地协议 v1
 
@@ -37,6 +37,8 @@ v1 <request_id> <command>\n
 - PING → v1 <request_id> OK PONG
 - STATUS → v1 <request_id> OK RUNNING
 - EVENT <event_id> <event_type> → v1 <request_id> OK ACCEPTED（仅表示元数据校验通过）
+- SUBSCRIBE → v1 <request_id> OK SUBSCRIBED，连接保持打开并接收推送
+- PUBLISH <event_id> <event_type> → v1 <request_id> OK PUBLISHED；向当前订阅者广播 `v1 <push_id> EVENT <event_id> <event_type>`。这是 best-effort 通知，不提供持久投递保证。
 
 错误响应形如：
 
@@ -58,4 +60,4 @@ v1 <request_id> ERROR <error_code>
 
 ## 当前边界与后续事项
 
-这个程序目前是事件核心的连通性原型，不是完整的业务任务调度器。它不提供持久化、重试、幂等、身份认证或跨进程任务队列。Unix socket 的文件权限是当前的访问控制边界。下一阶段应定义稳定的内部事件结构与 Go API 的 IPC 契约，并补上压力测试、资源清理验证和服务部署配置。
+这个程序负责 IPC 通知，不是持久消息队列或业务任务执行器。事件的持久事实、领取、租约、重试和幂等由 PostgreSQL 与 Go API 负责；C 核心推送只用于低延迟唤醒。订阅断开期间的推送可能丢失，因此 Go API 必须保留数据库恢复扫描。当前 IPC 访问控制依赖 Unix socket 文件权限（0600）及服务用户隔离；协议本身不提供身份认证。后续重点是持续验证真实进程重启、通知丢失恢复、租约恢复与业务副作用幂等。
