@@ -27,7 +27,7 @@ const (
 	defaultHTTPAddr        = "127.0.0.1:8081"
 	defaultSocket          = "/var/run/personal-portal/event.sock"
 	defaultDatabaseURLFile = "/usr/local/etc/personal-portal/database-url"
-	protocolVersion        = "v1"
+	protocolVersion        = "v2"
 )
 
 var requestSequence atomic.Uint64
@@ -104,27 +104,27 @@ func receiveEventHandler(store EventStore) http.HandlerFunc {
 		decoder.DisallowUnknownFields()
 		var event EventInput
 		if err := decoder.Decode(&event); err != nil {
-			http.Error(w, "invalid event request", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid event request", nil)
 			return
 		}
 		var extra any
 		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-			http.Error(w, "invalid event request", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid event request", nil)
 			return
 		}
 		if err := validateEvent(event); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		duplicate, err := store.ReceiveEvent(ctx, event)
 		if errors.Is(err, errEventConflict) {
-			http.Error(w, "event_id conflicts with previously received content", http.StatusConflict)
+			writeError(w, http.StatusConflict, "event_id conflicts with previously received content", nil)
 			return
 		}
 		if err != nil {
-			http.Error(w, "event persistence unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "event persistence unavailable", nil)
 			return
 		}
 		status := http.StatusAccepted
@@ -252,13 +252,27 @@ func (c IPCClient) subscribeOnce(ctx context.Context, wake chan<- struct{}) erro
 			fields[2] != "EVENT" || !eventIDPattern.MatchString(fields[3]) || !eventTypePattern.MatchString(fields[4]) {
 			return fmt.Errorf("invalid event push %q", strings.TrimSpace(line))
 		}
-		fmt.Printf("event_core_push_received event_id=%s event_type=%s\n", fields[3], fields[4])
+		eventID, eventType := fields[3], fields[4]
+		fmt.Printf("event_core_push_received event_id=%s event_type=%s\n", eventID, eventType)
 		if wake != nil {
 			select {
 			case wake <- struct{}{}:
 			default:
 			}
 		}
+		ackID := fmt.Sprintf("ack%d", requestSequence.Add(1))
+		if _, err := fmt.Fprintf(conn, "%s %s ACK %s %s\n", protocolVersion, ackID, eventID, eventType); err != nil {
+			return fmt.Errorf("send event push acknowledgement: %w", err)
+		}
+		ackLine, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("read event push acknowledgement: %w", err)
+		}
+		ackFields := strings.Fields(strings.TrimSuffix(ackLine, "\n"))
+		if len(ackFields) != 4 || ackFields[0] != protocolVersion || ackFields[1] != ackID || ackFields[2] != "OK" || ackFields[3] != "ACKNOWLEDGED" {
+			return fmt.Errorf("unexpected event push acknowledgement %q", strings.TrimSpace(ackLine))
+		}
+		fmt.Printf("event_core_push_acknowledged event_id=%s event_type=%s\n", eventID, eventType)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -278,7 +292,15 @@ func validIPCRequestID(value string) bool {
 	return true
 }
 
+func (c IPCClient) PublishEvent(ctx context.Context, eventID, eventType string) error {
+	return c.sendEventCommand(ctx, "PUBLISH", eventID, eventType, "PUBLISHED")
+}
+
 func (c IPCClient) NotifyEvent(ctx context.Context, eventID, eventType string) error {
+	return c.sendEventCommand(ctx, "EVENT", eventID, eventType, "ACCEPTED")
+}
+
+func (c IPCClient) sendEventCommand(ctx context.Context, command, eventID, eventType, expected string) error {
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = time.Second
@@ -297,8 +319,8 @@ func (c IPCClient) NotifyEvent(ctx context.Context, eventID, eventType string) e
 		return fmt.Errorf("set IPC deadline: %w", err)
 	}
 	id := fmt.Sprintf("evt%d", requestSequence.Add(1))
-	if _, err := fmt.Fprintf(conn, "%s %s EVENT %s %s\n",
-		protocolVersion, id, eventID, eventType); err != nil {
+	if _, err := fmt.Fprintf(conn, "%s %s %s %s %s\n",
+		protocolVersion, id, command, eventID, eventType); err != nil {
 		return fmt.Errorf("write IPC event notification: %w", err)
 	}
 	line, err := bufio.NewReader(conn).ReadString('\n')
@@ -310,8 +332,8 @@ func (c IPCClient) NotifyEvent(ctx context.Context, eventID, eventType string) e
 	}
 	fields := strings.Fields(strings.TrimSuffix(line, "\n"))
 	if len(fields) != 4 || fields[0] != protocolVersion ||
-		fields[1] != id || fields[2] != "OK" || fields[3] != "ACCEPTED" {
-		return fmt.Errorf("unexpected IPC event response %q", strings.TrimSpace(line))
+		fields[1] != id || fields[2] != "OK" || fields[3] != expected {
+		return fmt.Errorf("unexpected IPC %s response %q", command, strings.TrimSpace(line))
 	}
 	return nil
 }
@@ -446,7 +468,7 @@ func (d EventDispatcher) Run(ctx context.Context) {
 					return
 				}
 				notifyCtx, notifyCancel := context.WithTimeout(ctx, d.IPC.Timeout)
-				notifyErr := d.IPC.NotifyEvent(notifyCtx, event.EventID, event.EventType)
+				notifyErr := d.IPC.PublishEvent(notifyCtx, event.EventID, event.EventType)
 				notifyCancel()
 				if notifyErr != nil {
 					retryCtx, retryCancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -590,38 +612,34 @@ func main() {
 	}()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
+	mux.HandleFunc("GET /metrics", eventMetricsHandler(db))
 	mux.HandleFunc("POST /events", receiveEventHandler(PostgresEventStore{DB: db}))
+	mux.Handle("/", newPortalAPI(db, ipc))
 	mux.HandleFunc("GET /dbz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 		defer cancel()
 		if err := db.PingContext(ctx); err != nil {
-			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "database unavailable", nil)
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok\n"))
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), ipc.Timeout)
 		defer cancel()
 		if err := ipc.Status(ctx); err != nil {
-			http.Error(w, "event core unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "event core unavailable", nil)
 			return
 		}
 		dbCtx, dbCancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 		defer dbCancel()
 		if err := db.PingContext(dbCtx); err != nil {
-			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "database unavailable", nil)
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ready\n"))
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ready"})
 	})
 
 	server := &http.Server{

@@ -1,49 +1,65 @@
 # Backend API
 
-## 当前实现
+## Single Go business backend
 
-首个 Go 标准库 API 原型位于 `api/main.go`：
+The only production business HTTP API is the Go service in api/main.go and api/portal_api.go. Caddy strips the public /api prefix and proxies to 127.0.0.1:8081. The retired Node.js implementation is kept temporarily for rollback evidence only; it must remain stopped and disabled after a successful Go-only cutover.
 
-- `GET /healthz`：检查 HTTP 进程是否响应。
-- `GET /readyz`：通过 Unix Domain Socket 请求 C 事件核心的 `STATUS`，仅在收到匹配的 `v1 <request_id> OK RUNNING` 响应时返回 200，否则返回 503。
-- 默认监听 `127.0.0.1:8081`，不对外网开放。收到 SIGTERM 或中断信号时，HTTP 服务执行最长 5 秒的优雅关闭，并取消后台分发、订阅和处理循环；未完成事件由 PostgreSQL 租约恢复机制接管。
-- 可通过 `PERSONAL_PORTAL_HTTP_ADDR` 和 `PERSONAL_PORTAL_EVENT_SOCKET` 覆盖监听地址和 socket 路径。
-- IPC 客户端设有连接/读写超时，并验证协议版本、请求 ID、状态和响应载荷。
-- `POST /events` 将事件持久化到 `portal.event_inbox`；后台 `EventDispatcher` 使用 `FOR UPDATE SKIP LOCKED` 领取待通知事件，租约超时后可恢复，并在 IPC 失败时以 1–64 秒指数退避重试。分发状态更新以 `dispatch_attempts` 作为租约 fencing token，旧领取者不能覆盖新领取者的通知或重试结果。
-- IPC `EVENT` 仅传送 event ID/type 元数据。数据库 `dispatch_state=notified` 不代表业务完成，也不应修改事件的业务 `status`。
-- `api/event_processor.go` 提供独立业务处理执行层：默认启动 4 个业务 Worker（`PERSONAL_PORTAL_EVENT_WORKERS` 可设为 1–8，超出上限会限制为 8）；各 Worker 使用独立 ID 并通过 `FOR UPDATE SKIP LOCKED`、处理租约竞争领取事件。成功后才写 `completed`；失败时指数退避重试，达到 10 次后写 `failed`；过期的 `processing` 租约可被重新领取，但若最后一次允许的尝试发生进程崩溃，租约到期后会终止为 `failed`，不会无限重试。
-- 处理器必须遵守幂等约定、响应 context 超时；由于外部副作用与数据库完成状态无法原子提交，执行语义是至少一次，处理器不得假设只执行一次。
-- 只有 `portal.content.validate` 注册了生产业务处理器；其他未知事件类型不会被自动标为完成或失败。新增事件类型时，必须先定义业务语义并注册对应 handler。
-- 迁移 `004_event_processing_leases.sql` 为处理租约和重试调度增加字段；迁移 `005_event_processing_result.sql` 增加处理结果字段。`PERSONAL_PORTAL_TEST_DATABASE_URL_FILE` 可显式启用 PostgreSQL 集成测试；应优先指向专用测试库。
-- `api/main_test.go` 包含 IPC 状态、事件通知成功/异常响应及 HTTP 接收幂等测试。
+Go owns:
+- Registration, password hashing, login/logout, session cookie lifecycle and authentication.
+- Content CRUD, publish/unpublish, public reads, likes/favorites, version snapshots, restore and recycle bin.
+- Teaching resource metadata, URL-only resources, file uploads/downloads, recycle bin and permanent deletion.
+- Event intake, dispatch leases, retries, business handlers, processing results and recovery.
+- Standard JSON error responses and PostgreSQL transactions.
 
-## 本地开发
+C only validates and forwards bounded event metadata over the local Unix Socket. It never receives business payloads. PostgreSQL remains the durable source of truth.
 
-需要 Go 1.24 或兼容的较新版本：
+## HTTP routes
 
-```sh
-cd backend
-gofmt -w api/*.go
-go test -race ./...
-go vet ./...
-go run ./api
-```
+The complete contract is api/openapi.yaml. The public API includes:
+- /auth/register, /auth/login, /auth/me, /auth/logout
+- /uploads
+- /content, /content/{id}, /content/{id}/publish, /content/{id}/unpublish, /content/{id}/versions, /content/{id}/versions/{versionId}/restore, /content/trash, restore and permanent-delete routes
+- /public/content, /public/content/{slug}, /public/content/{slug}/interactions
+- /resources, /resources/{id}, /resources/{id}/download, restore and permanent-delete routes
+- /layout-policy and /healthz
 
-## FreeBSD 验证记录
+The internal Go endpoints /events, /dbz, /readyz and /metrics are intentionally denied by public Caddy routing. They are used by local integrations, deployment checks and monitoring.
 
-在目标 FreeBSD 15.1-RELEASE-p4 amd64 主机上安装了 `go127` 包（Go 1.27.2，仅作为编译/验证工具），并完成以下检查：
+## API contract
 
-- `gofmt127 -w api/main.go api/main_test.go`：完成。
-- `go127 test -race ./...`：通过。
-- `go127 vet ./...`：通过。
-- `go127 build -o /var/tmp/personal-portal-api ./api`：通过，生成 FreeBSD amd64 可执行文件。
-- IPC 集成测试：C 事件核心运行时，`GET /healthz` 返回 200、`GET /readyz` 返回 200；停止 C 事件核心后，`GET /readyz` 返回 503。
-- API 安装至 `/usr/local/libexec/personal-portal/api`，并通过 FreeBSD `rc.d` 临时启动验证正式默认地址 `127.0.0.1:8081` 的 `/healthz` 与 `/readyz`。
-- 两个服务的 `onestart`、`onestop` 和状态检查均已验证；测试结束后服务均已停止，未启用开机自启。
+api/openapi.yaml is the source contract. TypeScript types are generated with @hey-api/openapi-ts into frontend/src/api/generated. Change the OpenAPI schema first, regenerate types, and require CI to confirm generated output is current. Redocly lint validates the OpenAPI document.
 
-服务配置源文件位于 `deploy/freebsd/`，部署步骤见 `docs/operations/freebsd-deployment.md`。这些验证不代表业务事件投递、持久化或重试机制已实现。
+Business API errors use JSON with an error field and an optional errors array. Content parent/child taxonomy is independently stored and validated in Go and PostgreSQL; explicit null values clear both taxonomy fields, while mismatched pairs are rejected.
 
+## Event lifecycle and IPC v2
 
-## Durable event intake
+- POST /events commits event ID/type/payload to portal.event_inbox before returning 202. Identical replays return 200 with duplicate=true; conflicting reuse returns 409.
+- EventDispatcher claims notification work with PostgreSQL leases and publishes ID/type metadata to C over IPC v2. Failed publication is retried with exponential backoff; lease fencing prevents stale dispatchers from overwriting newer results.
+- C supports PING, STATUS, EVENT, SUBSCRIBE, PUBLISH and ACK. PUBLISHED confirms a fan-out attempt. ACKNOWLEDGED confirms Go received a matching push. Neither is business completion.
+- Each subscriber has one outstanding push and a bounded FIFO of 32 metadata notifications. Queue overflow, disconnects and core restarts may lose in-memory hints. Go's periodic PostgreSQL scans and expired-lease recovery remain enabled.
+- EventProcessor claims registered event types independently, runs handlers, persists processing_result and commits terminal status. Only portal.content.validate is registered for production. Handlers must be idempotent because processing is at-least-once.
 
-`POST /events` accepts `{ "event_id": "<UUID>", "event_type": "lowercase.name", "payload": {} }` and persists it to `portal.event_inbox`. Apply migrations 002, 003, 004, and 005 explicitly before deploying this API version. The endpoint guarantees durable receipt and idempotent duplicate handling. The background dispatcher sends a metadata notification and retries failures; it does not claim business processing or completion. The production handler registry currently includes `portal.content.validate`, which validates portal content fields and persists a JSON result. Verify the end-to-end path after deployment by posting a unique event ID and checking that `portal.event_inbox.status` becomes `completed` and `processing_result` is populated. The C core accepts only event ID/type metadata; business payload processing remains in Go.
+## Local verification
+
+From the repository root:
+
+    cd frontend
+    npm run api:lint
+    npm run api:generate
+    npm run type-check
+    npm test
+    npm run build
+
+    cd ../backend
+    go test -race ./...
+    go vet ./...
+    go build ./api
+
+    cd ../event-core
+    make clean all test
+
+For PostgreSQL integration tests, set PERSONAL_PORTAL_TEST_DATABASE_URL_FILE to a dedicated test database URL file after applying all migrations. Never point the full integration suite at the live database while the production worker is running.
+
+## Deployment
+
+Use deploy/freebsd/deploy.sh. It requires a clean Git checkout, runs tests/builds, creates a full database backup, applies pending migrations, installs Go/C binaries, switches the frontend and Caddy routes, runs health checks, then stops and disables the Node.js compatibility service. deploy/freebsd/rollback.sh restores the previous binaries, Caddyfile and frontend release using the deployment timestamp.

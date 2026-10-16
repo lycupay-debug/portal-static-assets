@@ -6,7 +6,7 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 
 - 前端：Vue 3、TypeScript、Vite；生产环境只提供构建后的静态文件。
 - 事件驱动核心：必须使用 C 语言实现，并优先利用 FreeBSD 原生 `kqueue` / `kevent`。
-- 后端：Go API 使用 `database/sql` + pgx 连接 PostgreSQL；`POST /events` 持久化接收事件，后台分发器带租约和退避重试，通过 Unix Socket 通知 C 核心。
+- 后端：唯一业务 API 使用 Go（`database/sql` + pgx），统一处理认证、会话、内容、教学资源和事件生命周期；C 仅负责 FreeBSD 本地 IPC/kqueue 元数据通知，PostgreSQL 保存业务与事件持久状态。
 - 服务管理：FreeBSD `rc.d`。
 - 内容：初期由项目自身管理，不接入 Notion。
 - 分类字段：文章内容独立保存父类与子类，年级与教育人力资源分类由共享 taxonomy 定义驱动。全站自定义下拉菜单统一使用 `VirtualizedSelect.vue`，设计参数通过 `frontend/src/monochrome.css` 中的 `--portal-select-*` CSS 变量集中维护。
@@ -16,13 +16,13 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 
 - `frontend/`：Vue + TypeScript 前端。
 - `backend/api/`：Go HTTP API 与持久化事件接收入口。
-- `event-core/`：C 语言 `kqueue` 事件核心；IPC v1 提供 PING/STATUS/EVENT 元数据通知。EVENT 的 ACCEPTED 不是业务处理完成确认。
+- `event-core/`：C 语言 `kqueue` 事件核心；IPC v2 提供 PING/STATUS/PUBLISH/SUBSCRIBE/ACK 元数据通知。PUBLISHED 与 ACKNOWLEDGED 都不是业务处理完成确认。
 - `deploy/freebsd/`：FreeBSD 部署与 `rc.d` 脚本。
 - `docs/`：产品、架构、安全和运维文档。
 
 ## 本地构建前端
 
-要求 Node.js 24 系列及 npm。
+前端构建需要 Node.js 24 系列及 npm；生产业务 API 不依赖 Node.js。后端需要 Go 1.24+ 与 PostgreSQL。
 
 ```sh
 cd frontend
@@ -35,4 +35,4 @@ npm run build
 
 ## 当前状态
 
-当前已部署 FreeBSD 原生 C `kqueue` 事件核心、Go API、PostgreSQL 事件收件箱、通知分发器和 Go 业务处理器。C 核心负责本地 IPC 与事件元数据通知；业务 payload 的持久化、租约、重试和处理结果由 PostgreSQL 与 Go `EventProcessor` 负责。已注册 `portal.content.validate` handler。2026-10-16 生产烟雾测试验证带有批准标签的事件最终达到 `status=completed`、`dispatch_state=notified`、`attempts=1`、`processing_result.valid=true`，并在验证后删除临时测试事件。自动化测试覆盖并发重复接收、JSONB 幂等比较、C 核心重启后的订阅恢复、Worker 进程崩溃恢复、最大重试次数、分发租约 fencing、优雅关闭和内容标签目录一致性。`notified` 仅表示 C IPC 接受了事件 ID/type 元数据，不表示 C 处理了业务 payload。当前事件核心、Go API 和 PostgreSQL 服务正在运行。
+当前架构目标为单一 Go 业务 API、PostgreSQL 事件收件箱/租约/重试/结果与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。CI 覆盖 OpenAPI 生成契约、全量迁移、Go race tests、C IPC FIFO/ACK/错误 ACK 与并发测试。生产部署使用 deploy/freebsd/deploy.sh，包含备份、迁移、健康检查与可回滚发布。

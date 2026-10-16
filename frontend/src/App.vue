@@ -5,6 +5,7 @@ import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions, taxonomyParentOptions } from './utils/taxonomy'
+import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const knowledgeTagOptions = portalTaxonomy.filter(category => !['年级', '教育人力资源'].includes(category.value))
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
@@ -17,27 +18,10 @@ type PortalSection = {
   description: string
   tags: string[]
 }
-type PortalUser = { id: string; email: string; displayName: string; createdAt: string }
-type PortalContent = {
-  id: string
-  title: string
-  slug: string
-  contentType: 'article' | 'tool' | 'resource' | 'project'
-  tags: string[]
-  parentCategory: string | null
-  childCategory: string | null
-  summary: string
-  body: string
-  visibility: 'public' | 'private'
-  status: 'draft' | 'published' | 'unpublished'
-  createdAt: string
-  updatedAt: string
-  publishedAt: string | null
-  likeCount?: number
-  favoriteCount?: number
-}
-type ContentVersion = { versionId: string; versionNumber: number; title: string; slug: string; status: PortalContent['status']; createdAt: string }
-type TeachingResource = { id: string; title: string; description: string; type: string; url: string | null; filename: string | null; mimeType: string | null; fileSize: number | null; createdAt: string; updatedAt?: string; deletedAt?: string }
+type PortalUser = APIUser
+type PortalContent = APIContent
+type ContentVersion = APIContentVersion
+type TeachingResource = APITeachingResource
 type ContentForm = {
   title: string
   slug: string

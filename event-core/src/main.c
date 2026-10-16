@@ -20,6 +20,12 @@
 #define INPUT_CAP (PP_IPC_REQUEST_MAX_BYTES + 2)
 #define OUTPUT_CAP 256
 #define EVENT_BATCH 32
+#define EVENT_QUEUE_CAP 32
+
+struct queued_event {
+    char event_id[37];
+    char event_type[101];
+};
 
 struct client {
     int fd;
@@ -29,6 +35,14 @@ struct client {
     size_t output_len;
     size_t output_sent;
     int subscribed;
+    int awaiting_ack;
+    int output_is_push;
+
+    char pending_event_id[37];
+    char pending_event_type[101];
+    struct queued_event queue[EVENT_QUEUE_CAP];
+    size_t queue_head;
+    size_t queue_count;
 };
 
 static struct client clients[MAX_CLIENTS];
@@ -84,13 +98,14 @@ queue_response(struct client *client, const char *request_id,
     const char *status, const char *payload)
 {
     int length = snprintf(client->output, sizeof(client->output),
-        "v1 %s %s %s\n", request_id, status, payload);
+        PP_IPC_PROTOCOL_VERSION " %s %s %s\n", request_id, status, payload);
 
     if (length < 0 || (size_t)length >= sizeof(client->output))
         return -1;
 
     client->output_len = (size_t)length;
     client->output_sent = 0;
+    client->output_is_push = 0;
 
     if (change_event((uintptr_t)client->fd, EVFILT_READ, EV_DELETE,
         client) == -1 && errno != ENOENT)
@@ -155,26 +170,61 @@ valid_event_type(const char *value)
     return 1;
 }
 
+static int
+queue_event_push(struct client *client, const char *event_id,
+    const char *event_type)
+{
+    int length = snprintf(client->output, sizeof(client->output),
+        PP_IPC_PROTOCOL_VERSION " push%lu EVENT %s %s\n", ++notification_sequence,
+        event_id, event_type);
+    if (length < 0 || (size_t)length >= sizeof(client->output))
+        return -1;
+    client->output_len = (size_t)length;
+    client->output_sent = 0;
+    client->output_is_push = 1;
+    client->awaiting_ack = 1;
+    memcpy(client->pending_event_id, event_id, strlen(event_id) + 1);
+    memcpy(client->pending_event_type, event_type, strlen(event_type) + 1);
+    printf("event_core_push_queued event_id=%s event_type=%s queue_depth=%zu\n",
+        event_id, event_type, client->queue_count);
+    return change_event((uintptr_t)client->fd, EVFILT_WRITE,
+        EV_ADD | EV_ENABLE, client);
+}
+
+static int
+queue_next_event(struct client *client)
+{
+    if (client->queue_count == 0 || client->awaiting_ack)
+        return 0;
+    struct queued_event event = client->queue[client->queue_head];
+    client->queue_head = (client->queue_head + 1) % EVENT_QUEUE_CAP;
+    client->queue_count--;
+    return queue_event_push(client, event.event_id, event.event_type);
+}
+
 static void
 broadcast_event(const char *event_id, const char *event_type)
 {
     for (size_t i = 0; i < MAX_CLIENTS; i++) {
         struct client *client = &clients[i];
-        if (client->fd < 0 || !client->subscribed ||
-            client->output_sent < client->output_len)
+        if (client->fd < 0 || !client->subscribed)
             continue;
-        int length = snprintf(client->output, sizeof(client->output),
-            "v1 push%lu EVENT %s %s\n", ++notification_sequence,
-            event_id, event_type);
-        if (length < 0 || (size_t)length >= sizeof(client->output)) {
-            close_client(client);
+        if (!client->awaiting_ack && client->output_len == 0) {
+            if (queue_event_push(client, event_id, event_type) == -1)
+                close_client(client);
             continue;
         }
-        client->output_len = (size_t)length;
-        client->output_sent = 0;
-        if (change_event((uintptr_t)client->fd, EVFILT_WRITE,
-            EV_ADD | EV_ENABLE, client) == -1)
-            close_client(client);
+        if (client->queue_count >= EVENT_QUEUE_CAP) {
+            printf("event_core_push_queue_overflow event_id=%s event_type=%s capacity=%d\n",
+                event_id, event_type, EVENT_QUEUE_CAP);
+            continue;
+        }
+        size_t tail = (client->queue_head + client->queue_count) % EVENT_QUEUE_CAP;
+        memcpy(client->queue[tail].event_id, event_id, strlen(event_id) + 1);
+        memcpy(client->queue[tail].event_type, event_type, strlen(event_type) + 1);
+        client->queue_count++;
+        printf("event_core_push_buffered event_id=%s event_type=%s queue_depth=%zu\n",
+            event_id, event_type, client->queue_count);
     }
 }
 
@@ -190,7 +240,7 @@ handle_request(struct client *client, char *line)
     int fields = sscanf(line, "%7s %31s %31s %36s %100s %1s",
         version, request_id, command, event_id, event_type, extra);
 
-    if (strcmp(version, "v1") != 0 || !valid_request_id(request_id))
+    if (strcmp(version, PP_IPC_PROTOCOL_VERSION) != 0 || !valid_request_id(request_id))
         return queue_response(client, "0", "ERROR", "BAD_REQUEST");
 
     if (strcmp(command, "PING") == 0 || strcmp(command, "STATUS") == 0) {
@@ -214,6 +264,24 @@ handle_request(struct client *client, char *line)
             return queue_response(client, "0", "ERROR", "BAD_REQUEST");
         broadcast_event(event_id, event_type);
         return queue_response(client, request_id, "OK", "PUBLISHED");
+    }
+
+    if (strcmp(command, "ACK") == 0) {
+        if (fields != 5 || !valid_event_id(event_id) ||
+            !valid_event_type(event_type))
+            return queue_response(client, "0", "ERROR", "BAD_REQUEST");
+        if (!client->subscribed || !client->awaiting_ack ||
+            strcmp(client->pending_event_id, event_id) != 0 ||
+            strcmp(client->pending_event_type, event_type) != 0) {
+            printf("event_core_push_ack_rejected event_id=%s event_type=%s\n", event_id, event_type);
+            return queue_response(client, request_id, "ERROR", "BAD_ACK");
+        }
+        client->awaiting_ack = 0;
+        client->pending_event_id[0] = '\0';
+        client->pending_event_type[0] = '\0';
+        printf("event_core_push_acknowledged event_id=%s event_type=%s\n", event_id, event_type);
+        /* ACK response completion drains the next queued push. */
+        return queue_response(client, request_id, "OK", "ACKNOWLEDGED");
     }
 
     if (strcmp(command, "EVENT") == 0) {
@@ -304,8 +372,12 @@ read_client(struct client *client)
         char *newline = memchr(client->input, '\n', client->input_len);
         if (newline != NULL) {
             *newline = '\0';
-            if (handle_request(client, client->input) == -1)
+            if (handle_request(client, client->input) == -1) {
                 close_client(client);
+            } else {
+                client->input_len = 0;
+                client->input[0] = '\0';
+            }
             return;
         }
     }
@@ -334,10 +406,24 @@ write_client(struct client *client)
         client->output_sent += (size_t)count;
     }
     if (client->subscribed) {
+        int was_push = client->output_is_push;
         client->output_len = 0;
         client->output_sent = 0;
+        client->output_is_push = 0;
         if (change_event((uintptr_t)client->fd, EVFILT_WRITE,
-            EV_DELETE, client) == -1 && errno != ENOENT)
+            EV_DELETE, client) == -1 && errno != ENOENT) {
+            close_client(client);
+            return;
+        }
+        if (!was_push && !client->awaiting_ack && client->queue_count > 0) {
+
+            if (queue_next_event(client) == -1)
+                close_client(client);
+            return;
+        }
+
+        if (change_event((uintptr_t)client->fd, EVFILT_READ,
+            EV_ADD | EV_ENABLE, client) == -1)
             close_client(client);
         return;
     }

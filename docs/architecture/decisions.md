@@ -39,7 +39,7 @@
 - 门户使用独立数据库 `personal_portal` 与登录角色 `personal_portal_app`；不得访问 `n8n_db` 或 `host_mcp_oauth`。
 - Go API 使用 `database/sql` 与 pgx stdlib 驱动；连接 URL 从主机受限权限文件读取，不提交到 Git。
 - SQL schema 变更通过 `backend/migrations/` 中的版本化 SQL 管理；应用启动时不自动修改 schema。
-- `portal.schema_migrations` 记录已应用的迁移版本。当前仅建立基础结构，不预设门户内容或业务事件表。
+- `portal.schema_migrations` 记录已应用的迁移版本；当前 schema 包含事件收件箱、处理租约/结果、账户与会话、内容、历史版本、互动、教学资源和父子分类字段。
 - C `kqueue` 核心仍负责 IPC/事件通知；持久化事务与后续业务数据由 PostgreSQL 管理。
 
 
@@ -47,7 +47,7 @@
 - 状态：事件接收、分发、业务处理、租约恢复与基础故障注入测试已实现；生产业务处理器仍仅覆盖 `portal.content.validate`，新增业务类型需单独定义契约并验证。
 - Go API 先验证并将业务事件写入 `portal.event_inbox`，成功提交后才返回接收成功。
 - 调用方提供 UUID `event_id` 作为幂等键；同 ID 同内容为重放，同 ID 不同内容返回冲突。
-- C IPC v1 暂不承载任意业务 payload；事件持久化与 C 核心通知分开，避免把内存通知误当作可靠队列。
+- C IPC v2 只传递事件 ID/type 元数据，并为订阅推送提供 ACK 与容量为 32 的有界 FIFO；不承载业务 payload。事件持久化、租约、重试和处理结果由 PostgreSQL + Go 管理。
 - 不在 API 启动时自动执行数据库迁移。
 
 

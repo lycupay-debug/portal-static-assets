@@ -317,7 +317,20 @@ func TestIPCSubscriberReceivesPushAndWakesWorker(t *testing.T) {
 			serverErr <- err
 			return
 		}
-		_, err = fmt.Fprint(conn, "v1 push1 EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab portal.content.validate\n")
+		_, err = fmt.Fprintf(conn, "%s push1 EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab portal.content.validate\n", protocolVersion)
+		if err == nil {
+			ack, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				serverErr <- readErr
+				return
+			}
+			ackFields := strings.Fields(strings.TrimSpace(ack))
+			if len(ackFields) != 5 || ackFields[0] != protocolVersion || ackFields[2] != "ACK" || ackFields[3] != "018f2f5e-7a2b-7c4d-8e9f-0123456789ab" || ackFields[4] != "portal.content.validate" {
+				serverErr <- fmt.Errorf("unexpected push ACK %q", ack)
+				return
+			}
+			_, err = fmt.Fprintf(conn, "%s %s OK ACKNOWLEDGED\n", protocolVersion, ackFields[1])
+		}
 		serverErr <- err
 	}()
 
@@ -372,7 +385,22 @@ func TestIPCSubscriberReconnectsAfterDisconnect(t *testing.T) {
 				return
 			}
 			if attempt == 1 {
-				_, err = fmt.Fprint(conn, "v1 push2 EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab portal.content.validate\n")
+				_, err = fmt.Fprintf(conn, "%s push2 EVENT 018f2f5e-7a2b-7c4d-8e9f-0123456789ab portal.content.validate\n", protocolVersion)
+				if err == nil {
+					ack, readErr := reader.ReadString('\n')
+					if readErr != nil {
+						conn.Close()
+						serverErr <- readErr
+						return
+					}
+					ackFields := strings.Fields(strings.TrimSpace(ack))
+					if len(ackFields) != 5 || ackFields[2] != "ACK" {
+						conn.Close()
+						serverErr <- fmt.Errorf("unexpected push ACK %q", ack)
+						return
+					}
+					_, err = fmt.Fprintf(conn, "%s %s OK ACKNOWLEDGED\n", protocolVersion, ackFields[1])
+				}
 				if err != nil {
 					conn.Close()
 					serverErr <- err
@@ -392,6 +420,43 @@ func TestIPCSubscriberReconnectsAfterDisconnect(t *testing.T) {
 	case <-wake:
 	case <-ctx.Done():
 		t.Fatal("subscriber did not reconnect and deliver the second connection's push")
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIPCClientPublishEvent(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "event.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverErr := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		defer conn.Close()
+		request, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		fields := strings.Fields(strings.TrimSpace(request))
+		if len(fields) != 5 || fields[0] != protocolVersion || fields[2] != "PUBLISH" {
+			serverErr <- fmt.Errorf("unexpected publish request %q", request)
+			return
+		}
+		_, err = fmt.Fprintf(conn, "%s %s OK PUBLISHED\n", fields[0], fields[1])
+		serverErr <- err
+	}()
+	client := IPCClient{SocketPath: socketPath, Timeout: time.Second}
+	if err := client.PublishEvent(context.Background(), "018f2f5e-7a2b-7c4d-8e9f-0123456789ab", "portal.content.validate"); err != nil {
+		t.Fatal(err)
 	}
 	if err := <-serverErr; err != nil {
 		t.Fatal(err)

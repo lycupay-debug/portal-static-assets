@@ -143,14 +143,14 @@ func publishTestEvent(socketPath, eventID, eventType string) error {
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(200 * time.Millisecond))
-	if _, err := fmt.Fprintf(conn, "v1 restarttest PUBLISH %s %s\n", eventID, eventType); err != nil {
+	if _, err := fmt.Fprintf(conn, "%s restarttest PUBLISH %s %s\n", protocolVersion, eventID, eventType); err != nil {
 		return err
 	}
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(line) != "v1 restarttest OK PUBLISHED" {
+	if strings.TrimSpace(line) != protocolVersion+" restarttest OK PUBLISHED" {
 		return fmt.Errorf("unexpected publish response %q", strings.TrimSpace(line))
 	}
 	return nil

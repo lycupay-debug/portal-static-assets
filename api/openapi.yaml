@@ -1,0 +1,756 @@
+openapi: 3.1.0
+info:
+  title: Personal Portal API
+  version: 1.0.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: >-
+    Shared API contract for the Personal Portal. The Go API is the only business
+    backend. C IPC acknowledgements represent notification delivery only; the
+    PostgreSQL event state determines durable processing outcomes.
+servers:
+  - url: /api
+security:
+  - sessionCookie: []
+tags:
+  - name: Auth
+    description: Account registration, login, and cookie-based sessions.
+  - name: Content
+    description: Authenticated content authoring, history, publishing, and recycle bin.
+  - name: Public content
+    description: Published articles and user interactions.
+  - name: Teaching resources
+    description: Authenticated teaching resource metadata, files, and recycle bin.
+  - name: Platform
+    description: Health, layout policy, and internal event intake.
+paths:
+  /healthz:
+    get:
+      tags: [Platform]
+      security: []
+      summary: Check Go API process health
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Go API process is alive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /layout-policy:
+    get:
+      tags: [Platform]
+      security: []
+      summary: Get responsive layout policy
+      operationId: getLayoutPolicy
+      parameters:
+        - { in: query, name: width, schema: { type: integer, minimum: 240, maximum: 10000 } }
+        - { in: query, name: height, schema: { type: integer, minimum: 240, maximum: 10000 } }
+      responses:
+        '200':
+          description: Shared responsive layout tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LayoutPolicy' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /readyz:
+    get:
+      tags: [Platform]
+      summary: Check database and C event core readiness (internal only)
+      operationId: readinessCheck
+      security: []
+      x-internal: true
+      responses:
+        '200':
+          description: Database and C event core are ready
+          content:
+            application/json:
+              schema: { type: object, required: [status], properties: { status: { type: string, enum: [ready] } } }
+        '503': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /dbz:
+    get:
+      tags: [Platform]
+      summary: Check PostgreSQL connectivity (internal only)
+      operationId: databaseHealthCheck
+      security: []
+      x-internal: true
+      responses:
+        '200':
+          description: Database is reachable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /metrics:
+    get:
+      tags: [Platform]
+      summary: Export database-derived event metrics (internal only)
+      operationId: getEventMetrics
+      security: []
+      x-internal: true
+      responses:
+        '200':
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: { type: string }
+        '503': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Register an account
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/UserResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Create an authenticated session
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/UserResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the current session user
+      operationId: getCurrentUser
+      responses:
+        '200': { $ref: '#/components/responses/UserResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current session
+      operationId: logout
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema: { type: object, required: [ok], properties: { ok: { type: boolean } } }
+        '405': { $ref: '#/components/responses/ErrorResponse' }
+  /uploads:
+    post:
+      tags: [Content]
+      summary: Upload an editor image
+      operationId: uploadImage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mime, data]
+              properties:
+                mime: { type: string, enum: [image/png, image/jpeg, image/gif, image/webp, image/avif] }
+                data: { type: string, contentEncoding: base64 }
+      responses:
+        '201':
+          description: Image uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, mime, size]
+                properties:
+                  url: { type: string }
+                  mime: { type: string }
+                  size: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+  /content:
+    get:
+      tags: [Content]
+      summary: List the current user’s content
+      operationId: listContent
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [draft, published, unpublished] }
+      responses:
+        '200': { $ref: '#/components/responses/ContentListResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+    post:
+      tags: [Content]
+      summary: Create a content record
+      operationId: createContent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContentWrite' }
+      responses:
+        '201': { $ref: '#/components/responses/ContentResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+  /content/trash:
+    get:
+      tags: [Content]
+      summary: List content in the recycle bin
+      operationId: listContentTrash
+      responses:
+        '200': { $ref: '#/components/responses/ContentListResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+  /content/{contentId}:
+    parameters:
+      - $ref: '#/components/parameters/ContentId'
+    get:
+      tags: [Content]
+      summary: Get an owned content record
+      operationId: getContent
+      responses:
+        '200': { $ref: '#/components/responses/ContentResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+    patch:
+      tags: [Content]
+      summary: Update an owned content record
+      operationId: updateContent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContentPatch' }
+      responses:
+        '200':
+          description: Content updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item, versionCreated]
+                properties:
+                  item: { $ref: '#/components/schemas/Content' }
+                  versionCreated: { type: boolean }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+    delete:
+      tags: [Content]
+      summary: Move content to the recycle bin
+      operationId: moveContentToTrash
+      responses:
+        '200': { $ref: '#/components/responses/OkResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /content/{contentId}/publish:
+    post:
+      tags: [Content]
+      summary: Publish a content record and enqueue validation
+      operationId: publishContent
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200': { $ref: '#/components/responses/ContentResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /content/{contentId}/unpublish:
+    post:
+      tags: [Content]
+      summary: Unpublish a content record
+      operationId: unpublishContent
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200': { $ref: '#/components/responses/ContentResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /content/{contentId}/restore:
+    post:
+      tags: [Content]
+      summary: Restore content from the recycle bin
+      operationId: restoreContentFromTrash
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200': { $ref: '#/components/responses/ContentResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /content/{contentId}/permanent:
+    delete:
+      tags: [Content]
+      summary: Permanently delete content from the recycle bin
+      operationId: permanentlyDeleteContent
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200': { $ref: '#/components/responses/OkResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /content/{contentId}/versions:
+    get:
+      tags: [Content]
+      summary: List content version history
+      operationId: listContentVersions
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200':
+          description: Version history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ContentVersion' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /content/{contentId}/versions/{versionId}/restore:
+    post:
+      tags: [Content]
+      summary: Restore a historical content version
+      operationId: restoreContentVersion
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Historical content restored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item: { $ref: '#/components/schemas/Content' }
+                  eventId: { type: [string, 'null'], format: uuid }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /public/content:
+    get:
+      tags: [Public content]
+      security: []
+      summary: List published public content
+      operationId: listPublicContent
+      responses:
+        '200': { $ref: '#/components/responses/PublicContentListResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /public/content/{slug}:
+    get:
+      tags: [Public content]
+      security: []
+      summary: Get a published public content record
+      operationId: getPublicContent
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+      responses:
+        '200': { $ref: '#/components/responses/ContentResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /public/content/{slug}/interactions:
+    post:
+      tags: [Public content]
+      summary: Toggle a like or favorite
+      operationId: toggleContentInteraction
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [like, favorite] }
+      responses:
+        '200':
+          description: Interaction toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active, likeCount, favoriteCount]
+                properties:
+                  active: { type: boolean }
+                  likeCount: { type: integer }
+                  favoriteCount: { type: integer }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+  /resources:
+    get:
+      tags: [Teaching resources]
+      summary: List teaching resources
+      operationId: listTeachingResources
+      responses:
+        '200': { $ref: '#/components/responses/ResourceListResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+    post:
+      tags: [Teaching resources]
+      summary: Create a teaching resource
+      operationId: createTeachingResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResourceWrite' }
+      responses:
+        '201': { $ref: '#/components/responses/ResourceResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '413': { $ref: '#/components/responses/ErrorResponse' }
+  /resources/trash:
+    get:
+      tags: [Teaching resources]
+      summary: List teaching resources in the recycle bin
+      operationId: listTeachingResourceTrash
+      responses:
+        '200': { $ref: '#/components/responses/ResourceListResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+  /resources/{resourceId}:
+    parameters:
+      - name: resourceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Teaching resources]
+      summary: Update teaching resource metadata or file
+      operationId: updateTeachingResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResourceWrite' }
+      responses:
+        '200': { $ref: '#/components/responses/ResourceResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+    delete:
+      tags: [Teaching resources]
+      summary: Move a teaching resource to the recycle bin
+      operationId: moveTeachingResourceToTrash
+      responses:
+        '200': { $ref: '#/components/responses/OkResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /resources/{resourceId}/restore:
+    post:
+      tags: [Teaching resources]
+      summary: Restore a teaching resource
+      operationId: restoreTeachingResource
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200': { $ref: '#/components/responses/ResourceResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /resources/{resourceId}/permanent:
+    delete:
+      tags: [Teaching resources]
+      summary: Permanently delete a teaching resource
+      operationId: permanentlyDeleteTeachingResource
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200': { $ref: '#/components/responses/OkResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /resources/{resourceId}/download:
+    get:
+      tags: [Teaching resources]
+      summary: Download a teaching resource file
+      operationId: downloadTeachingResource
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Original teaching resource file
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /events:
+    post:
+      tags: [Platform]
+      security: []
+      x-internal: true
+      description: Internal event intake. Public Caddy routing intentionally denies this path; use the loopback Go API or a future authenticated ingress.
+      summary: Durably receive an internal business event
+      operationId: receiveEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '202':
+          description: Event durably accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventReceipt' }
+        '200':
+          description: Idempotent duplicate receipt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventReceipt' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: portal_session
+  parameters:
+    ContentId:
+      name: contentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ResourceId:
+      name: resourceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    ErrorResponse:
+      description: Structured API error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    OkResponse:
+      description: Operation completed
+      content:
+        application/json:
+          schema: { type: object, required: [ok], properties: { ok: { type: boolean } } }
+    UserResponse:
+      description: Authenticated user
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [user]
+            properties:
+              user: { $ref: '#/components/schemas/User' }
+    ContentResponse:
+      description: Content record
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [item]
+            properties:
+              item: { $ref: '#/components/schemas/Content' }
+              eventId: { type: [string, 'null'], format: uuid }
+    ContentListResponse:
+      description: Content records
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Content' } }
+    PublicContentListResponse:
+      description: Published public content
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/PublicContent' } }
+    ResourceResponse:
+      description: Teaching resource record
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [item]
+            properties:
+              item: { $ref: '#/components/schemas/TeachingResource' }
+    ResourceListResponse:
+      description: Teaching resources
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/TeachingResource' } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        errors: { type: array, items: { type: string } }
+    Health:
+      type: object
+      required: [status]
+      properties: { status: { type: string, enum: [ok] } }
+    User:
+      type: object
+      required: [id, email, displayName, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        createdAt: { type: string, format: date-time }
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        displayName: { type: string, maxLength: 60 }
+        password: { type: string, minLength: 10, maxLength: 72 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1, maxLength: 72 }
+    Content:
+      type: object
+      required: [id, title, slug, contentType, tags, summary, body, visibility, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 100 }
+        contentType: { type: string, enum: [article, tool, resource, project] }
+        tags: { type: array, items: { type: string } }
+        parentCategory: { anyOf: [{ $ref: '#/components/schemas/ParentCategory' }, { type: 'null' }] }
+        childCategory: { anyOf: [{ $ref: '#/components/schemas/ChildCategory' }, { type: 'null' }] }
+        summary: { type: string, maxLength: 500 }
+        body: { type: string, maxLength: 100000 }
+        visibility: { type: string, enum: [public, private] }
+        status: { type: string, enum: [draft, published, unpublished] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        publishedAt: { type: [string, 'null'], format: date-time }
+        deletedAt: { type: [string, 'null'], format: date-time }
+        likeCount: { type: integer }
+        favoriteCount: { type: integer }
+        viewerLiked: { type: boolean }
+        viewerFavorited: { type: boolean }
+        authorName: { type: string }
+        authorJoinedAt: { type: string, format: date-time }
+    PublicContent:
+      type: object
+      required: [id, title, slug, contentType, tags, parentCategory, childCategory, summary, publishedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        contentType: { type: string, enum: [article, tool, resource, project] }
+        tags: { type: array, items: { type: string } }
+        parentCategory: { anyOf: [{ $ref: '#/components/schemas/ParentCategory' }, { type: 'null' }] }
+        childCategory: { anyOf: [{ $ref: '#/components/schemas/ChildCategory' }, { type: 'null' }] }
+        summary: { type: string }
+        publishedAt: { type: [string, 'null'], format: date-time }
+    ParentCategory:
+      type: string
+      enum: [教育, 年级, 教育人力资源, 旅游, 网络, 系统, 编程, 软件工具]
+    ChildCategory:
+      type: string
+      enum: [学前教育, 小学教育, 中学教育, 高等教育, 职业教育, 家庭教育, 教学资源, 一年级, 二年级, 三年级, 四年级, 五年级, 六年级, 初一, 初二, 初三, 高一, 高二, 高三, 本科, 硕士, 事业编, 国企, 省考, 国考, 住宿, 交通, 景点攻略, 旅行规划, 美食体验, 网络安全, 网络维护, 网络基础知识, 网络诊断, 云与服务器, 操作系统, 系统配置, 系统维护, 部署运维, 故障排查, 前端开发, 后端开发, Python, 'JavaScript / TypeScript', 数据库, 'API 与集成', 代码实践, 效率工具, 开发工具, 文档工具, 'AI 工具', 自动化工具]
+    ContentWrite:
+      type: object
+      required: [title, slug, contentType, tags, body]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 100 }
+        contentType: { type: string, enum: [article, tool, resource, project] }
+        tags: { type: array, minItems: 1, maxItems: 40, items: { type: string } }
+        parentCategory: { anyOf: [{ $ref: '#/components/schemas/ParentCategory' }, { type: 'null' }] }
+        childCategory: { anyOf: [{ $ref: '#/components/schemas/ChildCategory' }, { type: 'null' }] }
+        summary: { type: string, maxLength: 500, default: '' }
+        body: { type: string, minLength: 1, maxLength: 100000 }
+        visibility: { type: string, enum: [public, private], default: private }
+    ContentPatch:
+      type: object
+      minProperties: 1
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 100 }
+        contentType: { type: string, enum: [article, tool, resource, project] }
+        tags: { type: array, maxItems: 40, items: { type: string } }
+        parentCategory: { anyOf: [{ $ref: '#/components/schemas/ParentCategory' }, { type: 'null' }] }
+        childCategory: { anyOf: [{ $ref: '#/components/schemas/ChildCategory' }, { type: 'null' }] }
+        summary: { type: string, maxLength: 500 }
+        body: { type: string, minLength: 1, maxLength: 100000 }
+        visibility: { type: string, enum: [public, private] }
+    ContentVersion:
+      type: object
+      required: [versionId, versionNumber, title, slug, status, createdAt]
+      properties:
+        versionId: { type: string, format: uuid }
+        versionNumber: { type: integer }
+        title: { type: string }
+        slug: { type: string }
+        status: { type: string, enum: [draft, published, unpublished] }
+        createdAt: { type: string, format: date-time }
+    TeachingResource:
+      type: object
+      required: [id, title, description, type, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        type: { type: string, maxLength: 50 }
+        url: { type: [string, 'null'], format: uri }
+        filename: { type: [string, 'null'] }
+        mimeType: { type: [string, 'null'] }
+        fileSize: { type: [integer, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        deletedAt: { type: [string, 'null'], format: date-time }
+    ResourceWrite:
+      type: object
+      required: [title, description, type]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        type: { type: string, maxLength: 50 }
+        url: { type: string, maxLength: 2048, format: uri }
+        filename: { type: string, maxLength: 255 }
+        data: { type: string, contentEncoding: base64 }
+    EventInput:
+      type: object
+      required: [event_id, event_type, payload]
+      properties:
+        event_id: { type: string, format: uuid }
+        event_type: { type: string, pattern: '^[a-z][a-z0-9_.-]{0,99}$' }
+        payload: { type: object, additionalProperties: true }
+    EventReceipt:
+      type: object
+      required: [event_id, status, duplicate]
+      properties:
+        event_id: { type: string, format: uuid }
+        status: { type: string, enum: [received] }
+        duplicate: { type: boolean }
+    LayoutPolicy:
+      type: object
+      required: [version, viewport, profile, cssVariables]
+      properties:
+        version: { type: integer }
+        viewport:
+          type: object
+          required: [width, height]
+          properties:
+            width: { type: integer }
+            height: { type: integer }
+        profile: { type: string, enum: [compact-mobile, mobile, tablet, desktop, ultrawide] }
+        cssVariables:
+          type: object
+          additionalProperties: { type: string }

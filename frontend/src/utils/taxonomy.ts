@@ -1,4 +1,6 @@
-export type TaxonomyCategory = { value: string; children: string[] }
+import type { ChildCategory, ParentCategory } from '../api/generated'
+
+export type TaxonomyCategory = { value: ParentCategory; children: ChildCategory[] }
 
 /** Canonical parent/child taxonomy shared by all portal forms. */
 export const portalTaxonomy: TaxonomyCategory[] = [
@@ -15,4 +17,4 @@ export const portalTaxonomy: TaxonomyCategory[] = [
 export const taxonomyParentOptions = portalTaxonomy.map(({ value }) => ({ label: value, value }))
 export const taxonomyChildren = (parent: string) => portalTaxonomy.find(category => category.value === parent)?.children ?? []
 export const taxonomyChildOptions = (parent: string) => taxonomyChildren(parent).map(value => ({ label: value, value }))
-export const taxonomyParentForChild = (child: string) => portalTaxonomy.find(category => category.children.includes(child))?.value ?? ''
+export const taxonomyParentForChild = (child: ChildCategory) => portalTaxonomy.find(category => category.children.includes(child))?.value ?? ''
