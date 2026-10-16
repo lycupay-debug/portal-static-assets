@@ -4,7 +4,8 @@
 
 ## 生产拓扑
 
-- Caddy 负责 HTTPS、静态前端、上传文件与反向代理。
+- Caddy 负责 HTTPS、静态前端、上传文件与反向代理；公共静态站点配置 `nosniff`、禁止 iframe 嵌入、严格跨源 Referrer Policy 与限制摄像头/麦克风/定位的 Permissions Policy。
+- 网站由 Cloudflare 代理时，Caddy 只信任 Cloudflare 官方 IPv4/IPv6 CIDR，并只从 `CF-Connecting-IP` 解析客户端地址；Go 只接受 Caddy 通过 `X-Portal-Client-IP` 注入的已解析地址。Cloudflare 更新 IP 段时应同步更新 Caddyfile 并验证，不要信任任意来源的转发头。
 - /api/* 去除 /api 前缀后代理至 127.0.0.1:8081 的唯一 Go API。
 - Caddy 明确拒绝公网访问 /api/events、/api/dbz、/api/readyz 和 /api/metrics。这些控制端点只供本机部署、健康检查与监控使用。
 - Go 使用 database/sql + pgx，负责认证、会话、内容、历史版本、回收站、资源文件、公开内容互动、事件接收、分发、租约、重试和业务处理。

@@ -194,12 +194,14 @@ func rateLimitClientIP(r *http.Request) string {
 	}
 	remoteIP := net.ParseIP(strings.Trim(host, "[]"))
 	if remoteIP != nil && remoteIP.IsLoopback() {
-		// The API only listens on loopback in production. Caddy overwrites
-		// forwarded client metadata from the actual connection unless an
-		// explicitly trusted proxy is configured, so only trust XFF here.
-		forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
-		if forwardedIP := net.ParseIP(forwarded); forwardedIP != nil {
-			return forwardedIP.String()
+		// Caddy sets this private header from its parsed client IP. Its global
+		// trusted-proxy list is restricted to Cloudflare's published CIDRs and
+		// CF-Connecting-IP is the only source used to resolve the client address.
+		for _, header := range []string{"X-Portal-Client-IP", "X-Forwarded-For"} {
+			forwarded := strings.TrimSpace(strings.Split(r.Header.Get(header), ",")[0])
+			if forwardedIP := net.ParseIP(forwarded); forwardedIP != nil {
+				return forwardedIP.String()
+			}
 		}
 	}
 	if remoteIP != nil {
