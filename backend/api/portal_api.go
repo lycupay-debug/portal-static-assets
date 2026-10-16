@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -186,8 +187,32 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) erro
 	return nil
 }
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
+func rateLimitClientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	remoteIP := net.ParseIP(strings.Trim(host, "[]"))
+	if remoteIP != nil && remoteIP.IsLoopback() {
+		// The API only listens on loopback in production. Caddy overwrites
+		// forwarded client metadata from the actual connection unless an
+		// explicitly trusted proxy is configured, so only trust XFF here.
+		forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+		if forwardedIP := net.ParseIP(forwarded); forwardedIP != nil {
+			return forwardedIP.String()
+		}
+	}
+	if remoteIP != nil {
+		return remoteIP.String()
+	}
+	if host == "" {
+		return "unknown"
+	}
+	return host
+}
+
 func (a *portalAPI) rateLimited(w http.ResponseWriter, r *http.Request) bool {
-	key := r.RemoteAddr + ":" + r.URL.Path
+	key := rateLimitClientIP(r) + ":" + r.URL.Path
 	now := time.Now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
