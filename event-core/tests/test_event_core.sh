@@ -31,12 +31,13 @@ done
 
 PYTHON=${PYTHON:-python3.14}
 if ! command -v "$PYTHON" >/dev/null 2>&1; then PYTHON=python3; fi
-"$PYTHON" - "$SOCKET" <<'PY'
+"$PYTHON" - "$SOCKET" "$LOG" <<'PY'
 import socket
 import sys
 import threading
 
 path = sys.argv[1]
+log_path = sys.argv[2]
 
 def request(data):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
@@ -141,6 +142,9 @@ idle.connect(path)
 if idle.recv(1) != b"":
     raise SystemExit("FAIL: idle client received unexpected data")
 idle.close()
+with open(log_path, encoding="utf-8") as log_file:
+    if "event_core_client_timeout" not in log_file.read():
+        raise SystemExit("FAIL: idle-client timeout log was not flushed while the core was running")
 
 # A subscriber that never ACKs a push must be disconnected after the bounded ACK timeout.
 slow = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -164,6 +168,9 @@ if f"{slow_event_id} portal.content.validate".encode("ascii") not in slow_push:
 if slow.recv(1) != b"":
     raise SystemExit("FAIL: unacknowledged subscriber was not closed")
 slow.close()
+with open(log_path, encoding="utf-8") as log_file:
+    if "event_core_ack_timeout" not in log_file.read():
+        raise SystemExit("FAIL: ACK-timeout log was not flushed while the core was running")
 
 errors = []
 def parallel_check(index):

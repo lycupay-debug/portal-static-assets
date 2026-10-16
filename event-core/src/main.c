@@ -517,6 +517,9 @@ cleanup(void)
 int
 main(int argc, char **argv)
 {
+    /* The service redirects stdout to a file; flush each log line immediately. */
+    (void)setvbuf(stdout, NULL, _IOLBF, 0);
+
     if (argc == 2) {
         socket_path = argv[1];
     } else if (argc > 2) {
