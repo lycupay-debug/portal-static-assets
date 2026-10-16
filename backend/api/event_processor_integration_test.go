@@ -41,7 +41,8 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 	const terminalID = "018f2f5e-7a2b-7c4d-8e9f-0123456789af"
 	const validContentID = "018f2f5e-7a2b-7c4d-8e9f-0123456789b0"
 	const invalidContentID = "018f2f5e-7a2b-7c4d-8e9f-0123456789b1"
-	ids := []string{successID, retryID, expiredID, terminalID, validContentID, invalidContentID}
+	const crashedAtLimitID = "018f2f5e-7a2b-7c4d-8e9f-0123456789b3"
+	ids := []string{successID, retryID, expiredID, terminalID, validContentID, invalidContentID, crashedAtLimitID}
 	for _, id := range ids {
 		if _, err := db.ExecContext(ctx, "DELETE FROM portal.event_inbox WHERE event_id = $1::uuid", id); err != nil {
 			t.Fatal(err)
@@ -63,6 +64,7 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		{retryID, "test.processor.retry", "received", 0},
 		{expiredID, "test.processor.recovery", "processing", 1},
 		{terminalID, "test.processor.terminal", "received", maxProcessingAttempts - 1},
+		{crashedAtLimitID, "test.processor.crashed_at_limit", "processing", maxProcessingAttempts},
 		{validContentID, contentValidationEventType, "received", 0},
 		{invalidContentID, contentValidationEventType, "received", 0},
 	} {
@@ -154,6 +156,32 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		t.Fatal("processor did not claim terminal failure event")
 	}
 	assertEventState(t, ctx, db, terminalID, "failed", maxProcessingAttempts)
+
+	handlerCalled := false
+	crashLimitProcessor := EventProcessor{
+		DB:       db,
+		WorkerID: "integration-worker-crash-limit",
+		Handlers: map[string]EventHandler{
+			"test.processor.crashed_at_limit": func(context.Context, EventInput) (json.RawMessage, error) {
+				handlerCalled = true
+				return json.RawMessage(`{"unexpected":true}`), nil
+			},
+		},
+	}
+	if crashLimitProcessor.processOne(ctx, crashLimitProcessor.supportedTypes()) {
+		t.Fatal("processor unexpectedly reclaimed an expired lease after maximum attempts")
+	}
+	if handlerCalled {
+		t.Fatal("handler executed after maximum attempts were exhausted")
+	}
+	assertEventState(t, ctx, db, crashedAtLimitID, "failed", maxProcessingAttempts)
+	var terminalError string
+	if err := db.QueryRowContext(ctx, "SELECT last_error FROM portal.event_inbox WHERE event_id=$1::uuid", crashedAtLimitID).Scan(&terminalError); err != nil {
+		t.Fatal(err)
+	}
+	if terminalError != "processing lease expired after maximum attempts" {
+		t.Fatalf("terminal error = %q, unexpected value", terminalError)
+	}
 
 	contentProcessor := EventProcessor{DB: db, WorkerID: "integration-content-validation", Handlers: registeredEventHandlers()}
 	for range 2 {
