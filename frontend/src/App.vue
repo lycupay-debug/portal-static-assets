@@ -649,6 +649,7 @@ function selectAccountSection(id: string) {
   const target = sectionRoutes[id] || '/account'
   if (route.value !== target) void navigate(target)
   else if (id === 'content-management') void loadContentList()
+  else if (id === 'teaching-resources') void loadTeachingResources()
 }
 function openNewContent() {
   editingContentId.value = null
@@ -951,6 +952,7 @@ async function navigate(target: string) {
   }
   if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (route.value === '/content-management') await loadContentList()
+  if (route.value === '/education/teaching-resources') await loadTeachingResources()
   if (isContentEditorPage.value) void initializeContentEditorRoute()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (route.value === '/' && window.location.hash) {
@@ -1022,6 +1024,7 @@ function onPopState() {
   if (route.value === '/' || isPublicDirectoryPage.value) void loadPublicContents()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (route.value === '/content-management') void loadContentList()
+  if (route.value === '/education/teaching-resources') void loadTeachingResources()
   if (isProtectedPage.value) void loadSession().then((valid) => { if (!valid) void navigate('/login') })
   if (isContentEditorPage.value) void initializeContentEditorRoute()
   void restoreScrollPosition()
