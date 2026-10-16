@@ -427,7 +427,7 @@ const tableColumnTemplate = computed(() => {
   // Virtualization limits rendered rows, but column sizing must also avoid scanning
   // the entire dataset. A bounded sample keeps widths useful without doing O(rows × columns)
   // string processing every time the table data or search results change.
-  const records = filteredTableRecords.value.slice(0, 40)
+  const records = filteredTableRecords.value.slice(0, 20)
   const available = Math.max(320, virtualTableViewportWidth.value || window.innerWidth * 0.75)
   const actionIndex = columns.findIndex((column) => column.key === 'actions')
   const widths = columns.map((column) => {
