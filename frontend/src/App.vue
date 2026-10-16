@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
-import { renderMarkdown } from './utils/markdown'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
@@ -369,6 +368,8 @@ function ensureKnowledgeListFilled() {
 }
 onUpdated(ensureKnowledgeListFilled)
 const publicArticle = ref<PublicContent | null>(null)
+const publicArticleHtml = ref('')
+let publicArticleRequestSequence = 0
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
 const publicInteractionBusy = ref(false)
@@ -887,6 +888,7 @@ async function restoreScrollPosition() {
 }
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 async function loadPublicContents() {
+  publicArticleRequestSequence += 1
   publicContentLoading.value = true
   publicContentError.value = ''
   try {
@@ -902,18 +904,24 @@ async function loadPublicContents() {
   }
 }
 async function loadPublicArticle(slug: string) {
+  const requestId = ++publicArticleRequestSequence
   publicContentLoading.value = true
   publicContentError.value = ''
   publicArticle.value = null
+  publicArticleHtml.value = ''
   try {
     const response = await fetch(`/api/public/content/${encodeURIComponent(slug)}`, { headers: { Accept: 'application/json' } })
     const result = await response.json() as { item?: PublicContent; error?: string }
     if (!response.ok || !result.item) throw new Error(result.error || '内容不存在或尚未公开。')
+    if (requestId !== publicArticleRequestSequence || route.value !== `/content/${slug}`) return
+    const { renderMarkdown } = await import('./utils/markdown')
+    if (requestId !== publicArticleRequestSequence || route.value !== `/content/${slug}`) return
+    publicArticleHtml.value = renderMarkdown(result.item.body)
     publicArticle.value = result.item
   } catch (error) {
-    publicContentError.value = error instanceof Error ? error.message : '读取内容失败。'
+    if (requestId === publicArticleRequestSequence) publicContentError.value = error instanceof Error ? error.message : '读取内容失败。'
   } finally {
-    publicContentLoading.value = false
+    if (requestId === publicArticleRequestSequence) publicContentLoading.value = false
   }
 }
 async function togglePublicInteraction(type: 'like' | 'favorite') {
@@ -1276,7 +1284,7 @@ onBeforeUnmount(() => {
           </header>
           <h1>{{ publicArticle.title }}</h1>
           <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
-          <div class="public-article-body markdown-rendered" v-html="renderMarkdown(publicArticle.body)"></div>
+          <div class="public-article-body markdown-rendered" v-html="publicArticleHtml"></div>
         </article>
         <aside class="public-article-sidebar" aria-label="作者信息与文章操作">
           <section class="public-author-card">
