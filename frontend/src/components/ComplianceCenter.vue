@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { normalizeComplianceAssetDetail } from '../utils/compliance.ts'
 
 type AnyRecord = Record<string, any>
 type Tab = 'assets' | 'licenses' | 'documents' | 'complaints' | 'scans' | 'audit'
@@ -82,7 +83,7 @@ async function refreshAll() {
 async function openAsset(asset: AnyRecord) {
   const r = await run(() => api<AnyRecord>(`/compliance/assets/${asset.id}`))
   if (!r) return
-  selectedAsset.value = r.item
+  selectedAsset.value = normalizeComplianceAssetDetail(r.item)
   selectedEvidence.value = r.evidence || []
   selectedReviews.value = r.reviews || []
   assetForm.value = {
@@ -95,7 +96,8 @@ async function openAsset(asset: AnyRecord) {
 }
 async function saveAsset() {
   if (!selectedAsset.value) return
-  const id = selectedAsset.value.id
+  const id = String(selectedAsset.value.id || selectedAsset.value.asset_id || '')
+  if (!id) { error.value = '无法识别资产 ID，请关闭详情并重新打开。'; return }
   saving.value = true
   const r = await run(() => api(`/compliance/assets/${id}`, { method: 'PATCH', body: JSON.stringify(assetForm.value) }))
   if (r) { feedback.value = '资产台账已更新。'; await loadAssets(); await loadOverview(); await openAsset({ id }) }
@@ -103,7 +105,8 @@ async function saveAsset() {
 }
 async function saveReview() {
   if (!selectedAsset.value) return
-  const id = selectedAsset.value.id
+  const id = String(selectedAsset.value.id || selectedAsset.value.asset_id || '')
+  if (!id) { error.value = '无法识别资产 ID，请关闭详情并重新打开。'; return }
   saving.value = true
   const payload = { type: reviewForm.value.type, decision: reviewForm.value.decision, riskLevel: reviewForm.value.riskLevel, findings: reviewForm.value.findings, requiredActions: reviewForm.value.actions.split('\n').map(x => x.trim()).filter(Boolean) }
   const r = await run(() => api(`/compliance/assets/${id}/reviews`, { method: 'POST', body: JSON.stringify(payload) }))
@@ -112,7 +115,8 @@ async function saveReview() {
 }
 async function saveEvidence() {
   if (!selectedAsset.value || !evidenceForm.value.text.trim()) { error.value = '请填写证据内容。'; return }
-  const id = selectedAsset.value.id
+  const id = String(selectedAsset.value.id || selectedAsset.value.asset_id || '')
+  if (!id) { error.value = '无法识别资产 ID，请关闭详情并重新打开。'; return }
   saving.value = true
   const r = await run(() => api(`/compliance/assets/${id}/evidence`, { method: 'POST', body: JSON.stringify(evidenceForm.value) }))
   if (r) { feedback.value = '证据记录已保存。'; await openAsset({ id }) }
