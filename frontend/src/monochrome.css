@@ -374,11 +374,11 @@ body { -webkit-font-smoothing: antialiased; }
   --portal-type-line-height: 1.6;
 }
 html { font-size: var(--font-size-100-fae31e); }
-body { font-family: var(--bs-body-font-family); font-size: var(--portal-type-body); font-weight: var(--bs-body-font-weight); line-height: var(--portal-type-line-height); }
+body { font-family: var(--bs-body-font-family); font-size: var(--font-size-base); font-weight: var(--bs-body-font-weight); line-height: var(--portal-type-line-height); }
 #app, #app button, #app input, #app select, #app textarea { font-family: var(--bs-body-font-family); }
 h1, h2, h3, h4, h5, h6 { color: var(--bs-heading-color); font-weight: 600; line-height: 1.25; letter-spacing: -.025em; }
 p { line-height: var(--portal-type-line-height); }
-small, .small { font-size: var(--portal-type-small); }
+small, .small { font-size: var(--font-size-base); }
 code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMono-Regular, Consolas, monospace); }
 
 /* Education resource cards: four columns on desktop, compact two-column tablet and one-column mobile. */
