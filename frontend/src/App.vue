@@ -205,20 +205,40 @@ const emptyContentForm = (): ContentForm => ({
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
 const knowledgeTagDialogOpen = ref(false)
+const knowledgeTagTrigger = ref<HTMLButtonElement | null>(null)
+const knowledgeTagDialog = ref<HTMLElement | null>(null)
+const knowledgeTagDraft = ref<string[]>([])
 const expandedKnowledgeTagGroups = ref<string[]>(['教育'])
 const selectedKnowledgeTagCount = computed(() => contentForm.value.tags.filter(tag => !taxonomyParentNames.has(tag)).length)
-const isKnowledgeTagSelected = (tag: string) => contentForm.value.tags.includes(tag)
+const knowledgeTagDraftCount = computed(() => knowledgeTagDraft.value.filter(tag => !taxonomyParentNames.has(tag)).length)
+const isKnowledgeTagSelected = (tag: string) => knowledgeTagDraft.value.includes(tag)
+const openKnowledgeTagDialog = async () => {
+  if (contentBusy.value) return
+  knowledgeTagDraft.value = normalizeKnowledgeTags(contentForm.value.tags)
+  knowledgeTagDialogOpen.value = true
+  await nextTick()
+  knowledgeTagDialog.value?.focus()
+}
+const closeKnowledgeTagDialog = (apply = false) => {
+  if (apply) contentForm.value.tags = normalizeKnowledgeTags(knowledgeTagDraft.value)
+  knowledgeTagDialogOpen.value = false
+  nextTick(() => knowledgeTagTrigger.value?.focus())
+}
 const toggleKnowledgeTagGroup = (category: string) => {
   expandedKnowledgeTagGroups.value = expandedKnowledgeTagGroups.value.includes(category)
     ? expandedKnowledgeTagGroups.value.filter(item => item !== category)
     : [...expandedKnowledgeTagGroups.value, category]
 }
 const toggleKnowledgeTag = (tag: string, checked: boolean) => {
-  const selected = contentForm.value.tags.filter(item => !taxonomyParentNames.has(item))
+  const selected = knowledgeTagDraft.value.filter(item => !taxonomyParentNames.has(item))
   const next = checked ? [...selected, tag] : selected.filter(item => item !== tag)
-  contentForm.value.tags = normalizeKnowledgeTags(next)
+  knowledgeTagDraft.value = normalizeKnowledgeTags(next)
 }
-const clearKnowledgeTags = () => { contentForm.value.tags = [] }
+const clearKnowledgeTags = () => { knowledgeTagDraft.value = [] }
+const removeSelectedKnowledgeTag = (tag: string) => {
+  contentForm.value.tags = normalizeKnowledgeTags(contentForm.value.tags.filter(item => item !== tag))
+}
+const clearSelectedKnowledgeTags = () => { contentForm.value.tags = [] }
 const publicContents = ref<PublicContentCard[]>([])
 const publicTeachingResources = ref<PublicTeachingResource[]>([])
 const educationResourceLoading = ref(false)
@@ -1191,7 +1211,7 @@ onBeforeUnmount(() => {
             <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron bi bi-chevron-down" aria-hidden="true"></span></summary>
             <section class="workspace-properties">
               <label><span>内容标题</span><input class="form-control" v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
-              <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><button type="button" class="workspace-tag-picker-trigger" :disabled="contentBusy" :aria-expanded="knowledgeTagDialogOpen" @click="knowledgeTagDialogOpen = true"><span class="bi bi-diagram-3" aria-hidden="true"></span><span>{{ selectedKnowledgeTagCount ? `已选择 ${selectedKnowledgeTagCount} 个标签` : '点击选择标签' }}</span><span class="bi bi-chevron-down" aria-hidden="true"></span></button><div v-if="selectedKnowledgeTagCount" class="workspace-tag-selected-preview"><span v-for="tag in contentForm.tags.filter(item => !taxonomyParentNames.has(item))" :key="tag" class="workspace-tag-selected-chip">{{ tag }}<button type="button" :disabled="contentBusy" :aria-label="`移除标签 ${tag}`" @click="toggleKnowledgeTag(tag, false)">×</button></span><button type="button" class="workspace-tag-clear" :disabled="contentBusy" @click="clearKnowledgeTags">清空</button></div><p v-else class="workspace-tag-empty-hint">尚未选择标签</p></fieldset>
+              <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><button type="button" ref="knowledgeTagTrigger" class="workspace-tag-picker-trigger" :disabled="contentBusy" :aria-expanded="knowledgeTagDialogOpen" aria-haspopup="dialog" @click.stop="openKnowledgeTagDialog"><span class="bi bi-diagram-3" aria-hidden="true"></span><span>{{ selectedKnowledgeTagCount ? `已选择 ${selectedKnowledgeTagCount} 个标签` : '点击选择标签' }}</span><span class="bi bi-chevron-down" aria-hidden="true"></span></button><div v-if="selectedKnowledgeTagCount" class="workspace-tag-selected-preview"><span v-for="tag in contentForm.tags.filter(item => !taxonomyParentNames.has(item))" :key="tag" class="workspace-tag-selected-chip">{{ tag }}<button type="button" :disabled="contentBusy" :aria-label="`移除标签 ${tag}`" @click="removeSelectedKnowledgeTag(tag)">×</button></span><button type="button" class="workspace-tag-clear" :disabled="contentBusy" @click="clearSelectedKnowledgeTags">清空</button></div><p v-else class="workspace-tag-empty-hint">尚未选择标签</p></fieldset>
               <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
               <label><span>URL 别名</span><input class="form-control" v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               <label><span>摘要</span><textarea class="form-control" v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
@@ -1205,16 +1225,16 @@ onBeforeUnmount(() => {
         </template>
       </ContentDocumentEditor>
       <Teleport to="body">
-        <div v-if="knowledgeTagDialogOpen" class="knowledge-tag-dialog-backdrop" @click.self="knowledgeTagDialogOpen = false">
-          <section class="knowledge-tag-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledge-tag-dialog-title">
-            <header class="knowledge-tag-dialog-header"><div><span class="knowledge-tag-dialog-eyebrow">CONTENT TAXONOMY</span><h2 id="knowledge-tag-dialog-title">选择知识广场标签</h2><p>展开分类后选择具体标签；一级分类会随子标签自动关联。</p></div><button type="button" class="knowledge-tag-dialog-close" aria-label="关闭标签选择器" @click="knowledgeTagDialogOpen = false">×</button></header>
+        <div v-if="knowledgeTagDialogOpen" class="knowledge-tag-dialog-backdrop" @click.self="closeKnowledgeTagDialog(false)" @keydown.esc.stop.prevent="closeKnowledgeTagDialog(false)">
+          <section ref="knowledgeTagDialog" class="knowledge-tag-dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="knowledge-tag-dialog-title" @click.stop>
+            <header class="knowledge-tag-dialog-header"><div><span class="knowledge-tag-dialog-eyebrow">CONTENT TAXONOMY</span><h2 id="knowledge-tag-dialog-title">选择知识广场标签</h2><p>展开分类后选择具体标签；一级分类会随子标签自动关联。</p></div><button type="button" class="knowledge-tag-dialog-close" aria-label="关闭标签选择器" @click="closeKnowledgeTagDialog(false)">×</button></header>
             <div class="knowledge-tag-dialog-body">
               <section v-for="category in knowledgeTagOptions" :key="category.value" class="knowledge-tag-tree-group" :class="{ 'is-expanded': expandedKnowledgeTagGroups.includes(category.value) }">
                 <button type="button" class="knowledge-tag-tree-heading" :aria-expanded="expandedKnowledgeTagGroups.includes(category.value)" @click="toggleKnowledgeTagGroup(category.value)"><span class="bi" :class="expandedKnowledgeTagGroups.includes(category.value) ? 'bi-chevron-down' : 'bi-chevron-right'" aria-hidden="true"></span><span class="knowledge-tag-tree-title">{{ category.value }}</span><span class="knowledge-tag-parent-note">一级分类 · 自动关联</span><span class="knowledge-tag-tree-count">{{ category.children.filter(child => isKnowledgeTagSelected(child)).length }}/{{ category.children.length }}</span></button>
                 <div v-if="expandedKnowledgeTagGroups.includes(category.value)" class="knowledge-tag-tree-children"><label v-for="child in category.children" :key="child" class="knowledge-tag-tree-option" :class="{ 'is-selected': isKnowledgeTagSelected(child) }"><input type="checkbox" :checked="isKnowledgeTagSelected(child)" :disabled="contentBusy" @change="toggleKnowledgeTag(child, ($event.target as HTMLInputElement).checked)"/><span class="knowledge-tag-tree-checkbox"><span class="bi bi-check" aria-hidden="true"></span></span><span>{{ child }}</span></label></div>
               </section>
             </div>
-            <footer class="knowledge-tag-dialog-footer"><span>已选择 <strong>{{ selectedKnowledgeTagCount }}</strong> 个具体标签</span><div><button type="button" class="knowledge-tag-dialog-clear" :disabled="contentBusy || !selectedKnowledgeTagCount" @click="clearKnowledgeTags">清空选择</button><button type="button" class="knowledge-tag-dialog-confirm" @click="knowledgeTagDialogOpen = false">完成</button></div></footer>
+            <footer class="knowledge-tag-dialog-footer"><span>已选择 <strong>{{ knowledgeTagDraftCount }}</strong> 个具体标签</span><div><button type="button" class="knowledge-tag-dialog-clear" :disabled="contentBusy || !knowledgeTagDraftCount" @click="clearKnowledgeTags">清空选择</button><button type="button" class="knowledge-tag-dialog-confirm" @click="closeKnowledgeTagDialog(true)">完成</button></div></footer>
           </section>
         </div>
       </Teleport>
