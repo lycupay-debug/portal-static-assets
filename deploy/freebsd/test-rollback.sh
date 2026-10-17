@@ -41,3 +41,38 @@ grep -qx 'old-caddy-config' "$caddy_dir/Caddyfile"
 grep -qx 'previous frontend' "$www_base/current/index.html"
 
 echo "PASS: rollback restores API/C binaries, Caddy configuration, and frontend release in an isolated sandbox."
+
+# Verify that a full backup archive can replace loose rollback copies after cleanup.
+archive_bin="$tmp/archive-bin"
+archive_backup="$tmp/archive-backups"
+archive_www="$tmp/archive-www"
+archive_caddy="$tmp/archive-etc/caddy"
+archive_source="$tmp/archive-source"
+mkdir -p "$archive_bin" "$archive_backup" "$archive_www/releases/current" "$archive_caddy" "$archive_source/rollback/previous-frontend"
+printf 'new-go-binary\n' > "$archive_bin/api"
+printf 'new-event-core\n' > "$archive_bin/event-core"
+printf 'new-caddy-config\n' > "$archive_caddy/Caddyfile"
+printf 'current frontend\n' > "$archive_www/releases/current/index.html"
+ln -s "$archive_www/releases/current" "$archive_www/current"
+archive_stamp="archive-test"
+printf 'old-go-binary\n' > "$archive_source/rollback/api.pre-go-cutover-$archive_stamp"
+printf 'old-event-core\n' > "$archive_source/rollback/event-core.pre-go-cutover-$archive_stamp"
+printf 'old-caddy-config\n' > "$archive_source/rollback/Caddyfile.pre-go-cutover-$archive_stamp"
+printf '%s\n' "$archive_www/releases/previous" > "$archive_source/rollback/frontend-current-$archive_stamp"
+printf 'previous frontend\n' > "$archive_source/rollback/previous-frontend/index.html"
+tar -czf "$archive_backup/final-backup-$archive_stamp.tar.gz" -C "$archive_source" .
+
+PERSONAL_PORTAL_ROLLBACK_TEST_MODE=1 \
+PERSONAL_PORTAL_FULL_BACKUP="$archive_backup/final-backup-$archive_stamp.tar.gz" \
+PERSONAL_PORTAL_BIN_DIR="$archive_bin" \
+PERSONAL_PORTAL_CADDYFILE="$archive_caddy/Caddyfile" \
+PERSONAL_PORTAL_BACKUP_DIR="$archive_backup" \
+PERSONAL_PORTAL_WWW_BASE="$archive_www" \
+  "$repo/deploy/freebsd/rollback.sh" "$archive_stamp"
+
+grep -qx 'old-go-binary' "$archive_bin/api"
+grep -qx 'old-event-core' "$archive_bin/event-core"
+grep -qx 'old-caddy-config' "$archive_caddy/Caddyfile"
+[ "$(readlink "$archive_www/current")" = "$archive_www/releases/previous" ]
+grep -qx 'previous frontend' "$archive_www/current/index.html"
+echo "PASS: rollback can restore from the full backup archive after loose rollback copies and the previous release are cleaned."
