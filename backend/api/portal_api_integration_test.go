@@ -279,7 +279,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("owner preview should work for pending image: status=%d body=%v", ownerResponse.Code, ownerResponse.Body.Bytes())
 	}
 
-	body := "<p>Image rights gate integration test</p><img src=\" + uploaded.URL + \" alt=\"test\">"
+	body := "<p>Image rights gate integration test</p><img src=" + uploaded.URL + " alt=test>"
 	createdContent := requestJSON(t, api, http.MethodPost, "/content", map[string]any{
 		"title": "Image rights gate test", "slug": "image-rights-gate-test", "contentType": "article",
 		"tags": []string{"编程"}, "summary": "Integration test", "body": body, "visibility": "public",
