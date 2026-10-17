@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { normalizeComplianceAssetDetail } from '../utils/compliance.ts'
 
 type AnyRecord = Record<string, any>
+const props = defineProps<{ isAdmin?: boolean }>()
 type Tab = 'assets' | 'licenses' | 'documents' | 'complaints' | 'scans' | 'audit'
 const tabs: { id: Tab; label: string }[] = [
   { id: 'assets', label: '资产台账' }, { id: 'licenses', label: '许可证目录' }, { id: 'documents', label: '政策文件' }, { id: 'complaints', label: '版权投诉' }, { id: 'scans', label: '扫描记录' }, { id: 'audit', label: '操作日志' },
@@ -39,7 +40,16 @@ const licenseForm = ref<AnyRecord>({})
 const documentForm = ref<AnyRecord>({})
 const complaintForm = ref<AnyRecord>({})
 const feedback = ref('')
+const visibleTabs = computed(() => props.isAdmin ? tabs : tabs.filter(tab => tab.id !== 'complaints'))
 const filteredAssets = computed(() => assets.value)
+function reviewPreviewUrl(asset: AnyRecord): string | null {
+  const path = String(asset.path || '')
+  const content = path.match(/^db:\/\/portal\.portal_content\/([0-9a-f-]{36})$/i)
+  if (content) return `/account/compliance-preview/content/${content[1]}`
+  const resource = path.match(/^db:\/\/portal\.teaching_resources\/([0-9a-f-]{36})$/i)
+  if (resource) return `/account/compliance-preview/resource/${resource[1]}`
+  return null
+}
 
 async function api<T = AnyRecord>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
@@ -72,7 +82,7 @@ async function loadAssets(reset = false) {
 }
 async function loadLicenses() { const r = await api<AnyRecord>('/compliance/licenses'); licenses.value = r.items || [] }
 async function loadDocuments() { const r = await api<AnyRecord>('/compliance/documents'); documents.value = r.items || [] }
-async function loadComplaints() { const r = await api<AnyRecord>('/compliance/complaints'); complaints.value = r.items || [] }
+async function loadComplaints() { if (!props.isAdmin) { complaints.value = []; return } const r = await api<AnyRecord>('/compliance/complaints'); complaints.value = r.items || [] }
 async function loadScans() { const r = await api<AnyRecord>('/compliance/scans'); scans.value = r.items || [] }
 async function loadAuditLogs() { const r = await api<AnyRecord>('/compliance/audit'); auditLogs.value = r.items || [] }
 async function refreshAll() {
@@ -192,11 +202,11 @@ onMounted(() => { void refreshAll() })
         <article class="risk"><span>高风险待核验</span><strong>{{ overview.highRiskCount ?? '—' }}</strong><small>不代表已认定侵权</small></article>
         <article><span>许可证候选</span><strong>{{ overview.licenseCount ?? '—' }}</strong><small>{{ overview.unreviewedLicenseCount ?? '—' }} 条尚未人工审核</small></article>
       </div>
-      <nav class="cc-tabs" aria-label="版权合规管理模块"><button v-for="tab in tabs" :key="tab.id" type="button" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}<span v-if="tab.id === 'complaints' && overview.openComplaintCount">{{ overview.openComplaintCount }}</span></button></nav>
+      <nav class="cc-tabs" aria-label="版权合规管理模块"><button v-for="tab in visibleTabs" :key="tab.id" type="button" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}<span v-if="tab.id === 'complaints' && overview.openComplaintCount">{{ overview.openComplaintCount }}</span></button></nav>
       <section v-if="activeTab === 'assets'" class="cc-panel">
         <div class="cc-panel-heading"><div><h3>版权资产台账</h3><p>优先显示严重风险与来源待核实项；更新审核状态不会自动更改线上内容。</p></div><span class="cc-count">{{ assetsTotal }} 条记录</span></div>
         <div class="cc-filters"><input v-model="assetQuery" type="search" placeholder="搜索名称、路径或来源 URL" @keydown.enter="run(() => loadAssets(true))"><select v-model="assetType" aria-label="资产类型"><option value="">全部类型</option><option value="article">文章</option><option value="education_resource">教育资源</option><option value="software_dependency">软件依赖</option><option value="icon">图标</option><option value="image">图片</option><option value="font">字体</option><option value="audio">音频</option><option value="external_link">外部链接</option><option value="source_file">源文件</option></select><select v-model="assetRisk" aria-label="风险等级"><option value="">全部风险</option><option value="critical">严重</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option><option value="unknown">未知</option></select><select v-model="assetStatus" aria-label="审核状态"><option value="">全部状态</option><option value="pending">待审核</option><option value="in_review">审核中</option><option value="approved">已通过</option><option value="approved_with_conditions">附条件通过</option><option value="replace_or_remove">建议替换/下架</option><option value="blocked">已阻止</option></select><button class="cc-button secondary" type="button" @click="run(() => loadAssets(true))">筛选</button></div>
-        <div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>资产</th><th>类型</th><th>授权状态</th><th>风险</th><th>审核状态</th><th>公开/分发</th><th>操作</th></tr></thead><tbody><tr v-for="item in filteredAssets" :key="item.id"><td class="asset-name"><strong>{{ item.name }}</strong><small>{{ item.path }}</small><a v-if="item.sourceUrl" :href="item.sourceUrl" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></td><td>{{ item.type }}</td><td>{{ item.permissionStatus }}</td><td><span class="cc-risk" :class="item.riskLevel">{{ riskLabel(item.riskLevel) }}</span></td><td>{{ statusLabel(item.reviewStatus) }}</td><td>{{ item.active ? item.distributionStatus : '非活动/源文件' }}</td><td><button type="button" class="cc-text-button" @click="openAsset(item)">审核详情</button></td></tr><tr v-if="!assets.length"><td colspan="7" class="cc-empty">{{ loading ? '正在读取…' : '没有符合条件的资产。' }}</td></tr></tbody></table></div>
+        <div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>资产</th><th>类型</th><th>授权状态</th><th>风险</th><th>审核状态</th><th>公开/分发</th><th>操作</th></tr></thead><tbody><tr v-for="item in filteredAssets" :key="item.id"><td class="asset-name"><strong>{{ item.name }}</strong><small>{{ item.path }}</small><a v-if="reviewPreviewUrl(item)" class="cc-text-button" :href="reviewPreviewUrl(item)!" target="_blank" rel="noopener noreferrer">受限预览 ↗</a><a v-if="item.sourceUrl" :href="item.sourceUrl" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></td><td>{{ item.type }}</td><td>{{ item.permissionStatus }}</td><td><span class="cc-risk" :class="item.riskLevel">{{ riskLabel(item.riskLevel) }}</span></td><td>{{ statusLabel(item.reviewStatus) }}</td><td>{{ item.active ? item.distributionStatus : '非活动/源文件' }}</td><td><button type="button" class="cc-text-button" @click="openAsset(item)">审核详情</button></td></tr><tr v-if="!assets.length"><td colspan="7" class="cc-empty">{{ loading ? '正在读取…' : '没有符合条件的资产。' }}</td></tr></tbody></table></div>
         <div class="cc-pagination"><span>显示 {{ assets.length }} / {{ assetsTotal }} 条</span><div><button class="cc-button secondary" :disabled="assetOffset <= 0" @click="assetOffset = Math.max(0, assetOffset - assetLimit); run(() => loadAssets())">上一页</button><button class="cc-button secondary" :disabled="assetOffset + assets.length >= assetsTotal" @click="assetOffset += assetLimit; run(() => loadAssets())">下一页</button></div></div>
       </section>
       <section v-else-if="activeTab === 'licenses'" class="cc-panel"><div class="cc-panel-heading"><div><h3>许可证目录</h3><p>来源包括 package-lock、包内许可证文件及现有第三方声明文件。</p></div><span class="cc-count">{{ licenses.length }} 条</span></div><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>许可证</th><th>类型</th><th>商业使用标记</th><th>文本收录</th><th>审核</th><th></th></tr></thead><tbody><tr v-for="item in licenses" :key="item.id"><td><strong>{{ item.name }}</strong><small v-if="item.canonicalUrl"><a :href="item.canonicalUrl" target="_blank" rel="noopener noreferrer">许可证参考 ↗</a></small></td><td>{{ item.family }}</td><td>{{ item.commercialUseAllowed === true ? '元数据标记允许' : item.commercialUseAllowed === false ? '元数据标记受限' : '未判定' }}</td><td>{{ item.licenseTextCaptured ? '已收录文本' : '缺少文本' }}</td><td>{{ statusLabel(item.reviewStatus) }}</td><td><button class="cc-text-button" @click="openLicense(item)">复核</button></td></tr><tr v-if="!licenses.length"><td colspan="6" class="cc-empty">暂无许可证记录</td></tr></tbody></table></div></section>

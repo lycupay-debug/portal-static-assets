@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -136,7 +138,7 @@ func (a *portalAPI) requireComplianceAdmin(w http.ResponseWriter, r *http.Reques
 		return nil, false
 	}
 	var admin bool
-	if err := a.db.QueryRowContext(r.Context(), `SELECT is_admin FROM portal.portal_users WHERE user_id=$1`, u.ID).Scan(&admin); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), `SELECT (is_admin OR is_copyright_reviewer) FROM portal.portal_users WHERE user_id=$1`, u.ID).Scan(&admin); err != nil {
 		a.dbError(w, err, "无法验证版权合规管理权限。")
 		return nil, false
 	}
@@ -147,12 +149,88 @@ func (a *portalAPI) requireComplianceAdmin(w http.ResponseWriter, r *http.Reques
 	return u, true
 }
 
+func (a *portalAPI) compliancePreview(w http.ResponseWriter, r *http.Request, u *portalUser, tail string) {
+	parts := strings.Split(strings.Trim(tail, "/"), "/")
+	if len(parts) < 2 || r.Method != http.MethodGet || !portalUUID.MatchString(parts[1]) {
+		writeError(w, http.StatusNotFound, "审核预览不存在。", nil)
+		return
+	}
+	id := parts[1]
+	switch parts[0] {
+	case "content":
+		if len(parts) != 2 {
+			break
+		}
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT c.content_id::text AS "id",c.title,c.slug,c.content_type AS "contentType",c.tags,c.parent_category AS "parentCategory",c.child_category AS "childCategory",c.summary,c.body,c.visibility,c.status,c.created_at AS "createdAt",c.updated_at AS "updatedAt",c.published_at AS "publishedAt",u.display_name AS "authorName",u.created_at AS "authorJoinedAt",(SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='like') AS "likeCount",(SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='favorite') AS "favoriteCount" FROM portal.portal_content c JOIN portal.portal_users u ON u.user_id=c.author_id WHERE c.content_id=$1::uuid AND c.deleted_at IS NULL) x`, id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "内容不存在或已删除。", nil)
+			return
+		}
+		item["viewerLiked"] = false
+		item["viewerFavorited"] = false
+		writeJSON(w, http.StatusOK, map[string]any{"item": item, "previewOnly": true})
+		return
+	case "resource":
+		if len(parts) == 3 && parts[2] == "download" {
+			var stored, filename, mimeType sql.NullString
+			err := a.db.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename,mime_type FROM portal.teaching_resources WHERE resource_id=$1::uuid AND deleted_at IS NULL`, id).Scan(&stored, &filename, &mimeType)
+			if err != nil || !stored.Valid {
+				writeError(w, http.StatusNotFound, "资源不存在或已删除。", nil)
+				return
+			}
+			f, err := os.Open(filepath.Join(a.resourceDir, filepath.Base(stored.String)))
+			if err != nil {
+				writeError(w, http.StatusNotFound, "资源文件缺失。", nil)
+				return
+			}
+			defer f.Close()
+			w.Header().Set("Content-Type", mimeType.String)
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(filename.String)))
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Cache-Control", "private, no-store")
+			_, _ = io.Copy(w, f)
+			return
+		}
+		if len(parts) == 3 && parts[2] == "preview" {
+			var stored, filename sql.NullString
+			if err := a.db.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename FROM portal.teaching_resources WHERE resource_id=$1::uuid AND deleted_at IS NULL AND lower(original_filename) LIKE '%.mp3'`, id).Scan(&stored, &filename); err != nil || !stored.Valid || !filename.Valid {
+				writeError(w, http.StatusNotFound, "MP3 资源不存在或已删除。", nil)
+				return
+			}
+			f, err := os.Open(filepath.Join(a.resourceDir, filepath.Base(stored.String)))
+			if err != nil {
+				writeError(w, http.StatusNotFound, "资源文件缺失。", nil)
+				return
+			}
+			defer f.Close()
+			w.Header().Set("Cache-Control", "private, no-store")
+			serveMP3Preview(w, r, f, filename.String)
+			return
+		}
+		if len(parts) != 2 {
+			break
+		}
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade,is_public AS "isPublic",resource_url AS "url",'/api/compliance/preview/resource/' || resource_id::text || '/download' AS "downloadUrl",original_filename AS filename,mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1::uuid AND deleted_at IS NULL) x`, id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "资源不存在或已删除。", nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"item": item, "previewOnly": true})
+		return
+	}
+	writeError(w, http.StatusNotFound, "审核预览不存在。", nil)
+}
+
 func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireComplianceAdmin(w, r)
 	if !ok {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/compliance")
+	if strings.HasPrefix(path, "/preview/") {
+		a.compliancePreview(w, r, u, strings.TrimPrefix(path, "/preview/"))
+		return
+	}
 	if strings.HasPrefix(path, "/licenses/") && r.Method == http.MethodGet {
 		id := strings.TrimPrefix(path, "/licenses/")
 		if !portalUUID.MatchString(id) {
@@ -241,6 +319,10 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "/complaints":
+		if !u.IsAdmin {
+			writeError(w, http.StatusForbidden, "版权审核专员无权查看投诉人的个人信息。", nil)
+			return
+		}
 		if r.Method == http.MethodGet {
 			items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT complaint_id::text AS id,complainant_name AS name,complainant_email AS email,complainant_role AS role,work_description AS "workDescription",proof_of_rights AS "proofOfRights",infringing_urls AS "infringingUrls",requested_action AS "requestedAction",statement_truthful AS "statementTruthful",status,resolution_notes AS "resolutionNotes",assigned_to AS "assignedTo",received_at AS "receivedAt",updated_at AS "updatedAt",resolved_at AS "resolvedAt" FROM portal.compliance_copyright_complaints ORDER BY received_at DESC LIMIT 500) x`)
 			if err != nil {

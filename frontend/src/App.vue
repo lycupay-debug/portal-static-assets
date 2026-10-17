@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, o
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
+const ComplianceResourcePreview = defineAsyncComponent(() => import('./components/ComplianceResourcePreview.vue'))
 const CopyrightComplaintForm = defineAsyncComponent(() => import('./components/CopyrightComplaintForm.vue'))
 import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
@@ -106,7 +107,7 @@ const routeAliases: Record<string, string> = {
 }
 const contentEditorRouteId = computed(() => route.value.match(/^\/content-management\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1] || null)
 const isContentEditorPage = computed(() => route.value === '/content-management/new' || contentEditorRouteId.value !== null)
-const isProtectedPage = computed(() => isContentEditorPage.value || route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value))
+const isProtectedPage = computed(() => isContentEditorPage.value || isReviewContentPreviewPage.value || isReviewResourcePreviewPage.value || route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value))
 const isAccountPage = computed(() => !isContentEditorPage.value && (route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value)))
 const activeSidebarButton = ref('overview')
 const accountNavQuery = ref('')
@@ -899,7 +900,13 @@ const filteredSections = computed(() => {
 })
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
-const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
+const reviewContentPreviewId = computed(() => route.value.match(/^\/account\/compliance-preview\/content\/([0-9a-f-]{36})$/i)?.[1] || null)
+const reviewResourcePreviewId = computed(() => route.value.match(/^\/account\/compliance-preview\/resource\/([0-9a-f-]{36})$/i)?.[1] || null)
+const isReviewContentPreviewPage = computed(() => reviewContentPreviewId.value !== null)
+const isReviewResourcePreviewPage = computed(() => reviewResourcePreviewId.value !== null)
+const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value) || isReviewContentPreviewPage.value)
+const reviewResourcePreviewLoading = ref(false)
+const reviewResourcePreviewError = ref('')
 const isLegalPage = computed(() => /^\/legal\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
 const legalSlug = computed(() => isLegalPage.value ? route.value.slice('/legal/'.length) : '')
 const publishedLegalDocuments = ref<Array<{ slug: string; title: string; documentType: string }>>([])
@@ -1021,17 +1028,20 @@ async function loadPublicTeachingResources() {
 }
 async function loadPublicArticle(slug: string) {
   const requestId = ++publicArticleRequestSequence
+  const requestedRoute = route.value
+  const reviewPreview = isReviewContentPreviewPage.value
+  const apiPath = reviewPreview ? `/api/compliance/preview/content/${encodeURIComponent(slug)}` : `/api/public/content/${encodeURIComponent(slug)}`
   publicContentLoading.value = true
   publicContentError.value = ''
   publicArticle.value = null
   publicArticleHtml.value = ''
   try {
-    const response = await fetch(`/api/public/content/${encodeURIComponent(slug)}`, { headers: { Accept: 'application/json' } })
+    const response = await fetch(apiPath, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
     const result = await response.json() as { item?: PublicContent; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '内容不存在或尚未公开。')
-    if (requestId !== publicArticleRequestSequence || route.value !== `/content/${slug}`) return
+    if (!response.ok || !result.item) throw new Error(result.error || (reviewPreview ? '无权预览该内容。' : '内容不存在或尚未公开。'))
+    if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
     const { renderMarkdown } = await import('./utils/markdown')
-    if (requestId !== publicArticleRequestSequence || route.value !== `/content/${slug}`) return
+    if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
     publicArticleHtml.value = renderMarkdown(result.item.body)
     publicArticle.value = result.item
   } catch (error) {
@@ -1039,6 +1049,20 @@ async function loadPublicArticle(slug: string) {
   } finally {
     if (requestId === publicArticleRequestSequence) publicContentLoading.value = false
   }
+}
+async function loadComplianceResourcePreview(id: string) {
+  reviewResourcePreviewLoading.value = true
+  reviewResourcePreviewError.value = ''
+  selectedEducationResource.value = null
+  try {
+    const response = await fetch(`/api/compliance/preview/resource/${encodeURIComponent(id)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const result = await response.json() as { item?: PublicTeachingResource; error?: string }
+    if (!response.ok || !result.item) throw new Error(result.error || '无权预览该资源。')
+    if (route.value !== `/account/compliance-preview/resource/${id}`) return
+    selectedEducationResource.value = result.item
+  } catch (error) {
+    reviewResourcePreviewError.value = error instanceof Error ? error.message : '读取资源预览失败。'
+  } finally { reviewResourcePreviewLoading.value = false }
 }
 async function loadPublishedLegalDocuments() {
   try {
@@ -1139,7 +1163,8 @@ async function navigate(target: string) {
   if (route.value === '/content-management') await loadContentList()
   if (route.value === '/education/teaching-resources') await loadTeachingResources()
   if (isContentEditorPage.value) void initializeContentEditorRoute()
-  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
+  if (isReviewResourcePreviewPage.value && reviewResourcePreviewId.value) void loadComplianceResourcePreview(reviewResourcePreviewId.value)
+  if (isPublicContentPage.value) void loadPublicArticle(reviewContentPreviewId.value || route.value.slice('/content/'.length))
   if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   if (route.value === '/' && window.location.hash) {
     await nextTick()
@@ -1209,7 +1234,8 @@ function onPopState() {
   authError.value = ''
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
   if (route.value === '/education-resources') void loadPublicTeachingResources()
-  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
+  if (isReviewResourcePreviewPage.value && reviewResourcePreviewId.value) void loadComplianceResourcePreview(reviewResourcePreviewId.value)
+  if (isPublicContentPage.value) void loadPublicArticle(reviewContentPreviewId.value || route.value.slice('/content/'.length))
   if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   if (route.value === '/content-management') void loadContentList()
   if (route.value === '/education/teaching-resources') void loadTeachingResources()
@@ -1225,7 +1251,8 @@ onMounted(() => {
   window.addEventListener('beforeunload', saveScrollPosition)
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
   if (route.value === '/education-resources') void loadPublicTeachingResources()
-  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
+  if (isReviewResourcePreviewPage.value && reviewResourcePreviewId.value) void loadComplianceResourcePreview(reviewResourcePreviewId.value)
+  if (isPublicContentPage.value) void loadPublicArticle(reviewContentPreviewId.value || route.value.slice('/content/'.length))
   if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   void loadPublishedLegalDocuments()
   void loadSession().then((valid) => {
@@ -1494,7 +1521,9 @@ onBeforeUnmount(() => {
       </section>
     </main>
 
+    <ComplianceResourcePreview v-else-if="isReviewResourcePreviewPage" :loading="reviewResourcePreviewLoading" :error="reviewResourcePreviewError" :resource="selectedEducationResource" @back="navigate('/account/compliance')" />
     <main v-else-if="isPublicContentPage" class="public-content-page">
+      <section v-if="isReviewContentPreviewPage" class="compliance-preview-banner"><strong>版权审核受限预览</strong><span>仅超管或版权审核专员可访问；当前内容尚未向普通访客公开。</span><a href="/account/compliance" @click.prevent="navigate('/account/compliance')">返回版权合规中心</a></section>
       <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
       <section v-else-if="publicArticle" class="public-article-layout">
         <article class="public-article">
@@ -1506,7 +1535,7 @@ onBeforeUnmount(() => {
           <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
           <div class="public-article-body markdown-rendered" v-html="publicArticleHtml"></div>
         </article>
-        <aside class="public-article-sidebar" aria-label="作者信息与文章操作">
+        <aside v-if="!isReviewContentPreviewPage" class="public-article-sidebar" aria-label="作者信息与文章操作">
           <section class="public-author-card">
             <div class="public-author-avatar" aria-hidden="true">{{ (publicArticle.authorName || '作者').slice(0, 1) }}</div>
             <div class="public-author-heading"><span>本文作者</span><strong>{{ publicArticle.authorName || '平台作者' }}</strong></div>
@@ -1628,7 +1657,7 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else-if="activeAccountSection === 'copyright-compliance'">
-          <ComplianceCenter />
+          <ComplianceCenter :is-admin="user?.isAdmin === true" />
         </template>
 
         <template v-else>
