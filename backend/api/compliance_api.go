@@ -463,7 +463,7 @@ func (a *portalAPI) listComplianceAssets(w http.ResponseWriter, r *http.Request)
 	if offset > 100000 {
 		offset = 100000
 	}
-	base := ` FROM portal.compliance_assets WHERE ($1='' OR asset_type=$1) AND ($2='' OR review_status=$2) AND ($3='' OR risk_level=$3) AND ($4='' OR asset_name ILIKE '%'||$4||'%' OR source_url ILIKE '%'||$4||'%' OR asset_path ILIKE '%'||$4||'%')`
+	base := ` FROM portal.compliance_assets WHERE NOT EXISTS (SELECT 1 FROM portal.compliance_assets newer WHERE newer.asset_path=portal.compliance_assets.asset_path AND newer.asset_path<>'' AND (newer.updated_at>portal.compliance_assets.updated_at OR (newer.updated_at=portal.compliance_assets.updated_at AND newer.asset_id>portal.compliance_assets.asset_id))) AND ($1='' OR asset_type=$1) AND ($2='' OR review_status=$2) AND ($3='' OR risk_level=$3) AND ($4='' OR asset_name ILIKE '%'||$4||'%' OR source_url ILIKE '%'||$4||'%' OR asset_path ILIKE '%'||$4||'%')`
 	var total int
 	if err := a.db.QueryRowContext(r.Context(), `SELECT count(*)`+base, typ, status, risk, search).Scan(&total); err != nil {
 		a.dbError(w, err, "无法读取资产总数。")

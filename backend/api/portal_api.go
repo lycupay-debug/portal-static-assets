@@ -1855,7 +1855,37 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		}
 		return
 	}
-	contentChanged := b.Data != "" || b.Title != currentTitle || b.Description != currentDescription || b.Type != currentType || b.Grade != currentGrade.String || strings.TrimSpace(b.URL) != currentURL.String
+	var data []byte
+	var name, mt string
+	if b.Data != "" || strings.TrimSpace(b.URL) != "" {
+		data, name, mt, err = validateResourceFile(resourceInput{Title: b.Title, Description: b.Description, Type: b.Type, URL: b.URL, Filename: b.Filename, Data: b.Data})
+		if err != nil {
+			writeError(w, 400, err.Error(), nil)
+			return
+		}
+	}
+	if len(data) > maxResourceFile {
+		writeError(w, 413, "单个文件大小不能超过 25 MB。", nil)
+		return
+	}
+	fileChanged := false
+	if len(data) > 0 {
+		fileChanged = true
+		if old.Valid && old.String != "" && name == currentFilename.String {
+			currentData, readErr := os.ReadFile(filepath.Join(a.resourceDir, filepath.Base(old.String)))
+			if readErr != nil {
+				a.dbError(w, readErr, "读取现有资源文件失败，未保存任何修改。")
+				return
+			}
+			oldHash, newHash := sha256.Sum256(currentData), sha256.Sum256(data)
+			if oldHash == newHash {
+				fileChanged = false
+				data = nil
+				name, mt = "", ""
+			}
+		}
+	}
+	contentChanged := fileChanged || b.Title != currentTitle || b.Description != currentDescription || b.Type != currentType || b.Grade != currentGrade.String || strings.TrimSpace(b.URL) != currentURL.String
 	publishTransition := b.IsPublic != nil && *b.IsPublic && !currentPublic
 	unpublishTransition := b.IsPublic != nil && !*b.IsPublic && currentPublic
 	var publishAssetID string
@@ -1884,19 +1914,6 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 			}
 			return
 		}
-	}
-	var data []byte
-	var name, mt string
-	if b.Data != "" || strings.TrimSpace(b.URL) != "" {
-		data, name, mt, err = validateResourceFile(resourceInput{Title: b.Title, Description: b.Description, Type: b.Type, URL: b.URL, Filename: b.Filename, Data: b.Data})
-		if err != nil {
-			writeError(w, 400, err.Error(), nil)
-			return
-		}
-	}
-	if len(data) > maxResourceFile {
-		writeError(w, 413, "单个文件大小不能超过 25 MB。", nil)
-		return
 	}
 	stored := old.String
 	var newStored string
