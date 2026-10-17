@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 
 	api := newPortalAPI(db, IPCClient{SocketPath: t.TempDir() + "/not-running.sock", Timeout: 100 * time.Millisecond})
 	api.uploadDir = t.TempDir()
+	api.resourceDir = t.TempDir()
 	metrics := httptest.NewRecorder()
 	eventMetricsHandler(db).ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if metrics.Code != http.StatusOK || !strings.Contains(metrics.Body.String(), `personal_portal_events{status="received"}`) {
@@ -134,6 +136,41 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	publicList := requestJSON(t, api, http.MethodGet, "/public/resources", nil, nil, http.StatusOK)
 	if !bytes.Contains(publicList.Body.Bytes(), []byte(resourceID)) || !bytes.Contains(publicList.Body.Bytes(), []byte("https://example.com/edited")) {
 		t.Fatalf("published resource missing from public listing: %s", publicList.Body.String())
+	}
+
+	mp3Bytes := []byte("ID3sample-data-for-byte-range-preview")
+	mp3 := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{
+		"title": "MP3 range preview", "description": "integration", "type": "音频", "filename": "range-test.mp3",
+		"data": base64.StdEncoding.EncodeToString(mp3Bytes), "isPublic": true,
+	}, sessionCookie, http.StatusCreated)
+	var mp3Envelope map[string]map[string]any
+	if err := json.Unmarshal(mp3.Body.Bytes(), &mp3Envelope); err != nil {
+		t.Fatal(err)
+	}
+	mp3ID, _ := mp3Envelope["item"]["id"].(string)
+	if mp3ID == "" {
+		t.Fatalf("MP3 resource ID missing: %s", mp3.Body.String())
+	}
+	for _, target := range []struct {
+		path   string
+		cookie *http.Cookie
+	}{
+		{path: "/resources/" + mp3ID + "/preview", cookie: sessionCookie},
+		{path: "/public/resources/" + mp3ID + "/preview", cookie: nil},
+	} {
+		req := httptest.NewRequest(http.MethodGet, target.path, nil)
+		req.Header.Set("Range", "bytes=3-8")
+		if target.cookie != nil {
+			req.AddCookie(target.cookie)
+		}
+		rec := httptest.NewRecorder()
+		api.ServeHTTP(rec, req)
+		if rec.Code != http.StatusPartialContent || rec.Header().Get("Content-Range") != "bytes 3-8/"+strconv.Itoa(len(mp3Bytes)) || !bytes.Equal(rec.Body.Bytes(), mp3Bytes[3:9]) {
+			t.Fatalf("range preview %s: status=%d range=%q body=%q", target.path, rec.Code, rec.Header().Get("Content-Range"), rec.Body.Bytes())
+		}
+		if rec.Header().Get("Content-Type") != "audio/mpeg" || !strings.HasPrefix(rec.Header().Get("Content-Disposition"), "inline;") {
+			t.Fatalf("MP3 preview headers incorrect: %#v", rec.Header())
+		}
 	}
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/resources/"+resourceID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)

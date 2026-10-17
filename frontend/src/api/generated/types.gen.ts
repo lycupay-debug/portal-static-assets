@@ -982,6 +982,41 @@ export type DownloadPublicTeachingResourceResponses = {
     200: unknown;
 };
 
+export type PreviewPublicTeachingResourceMp3Data = {
+    body?: never;
+    headers?: {
+        /**
+         * Optional byte range used by native audio seeking
+         */
+        Range?: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/public/resources/{id}/preview';
+};
+
+export type PreviewPublicTeachingResourceMp3Errors = {
+    /**
+     * Structured API error
+     */
+    404: Error;
+};
+
+export type PreviewPublicTeachingResourceMp3Error = PreviewPublicTeachingResourceMp3Errors[keyof PreviewPublicTeachingResourceMp3Errors];
+
+export type PreviewPublicTeachingResourceMp3Responses = {
+    /**
+     * MP3 media stream
+     */
+    200: unknown;
+    /**
+     * Partial MP3 media stream for byte-range requests
+     */
+    206: unknown;
+};
+
 export type ListTeachingResourcesData = {
     body?: never;
     path?: never;
@@ -1213,6 +1248,45 @@ export type DownloadTeachingResourceResponses = {
 };
 
 export type DownloadTeachingResourceResponse = DownloadTeachingResourceResponses[keyof DownloadTeachingResourceResponses];
+
+export type PreviewTeachingResourceMp3Data = {
+    body?: never;
+    headers?: {
+        /**
+         * Optional byte range used by native audio seeking
+         */
+        Range?: string;
+    };
+    path: {
+        resourceId: string;
+    };
+    query?: never;
+    url: '/resources/{resourceId}/preview';
+};
+
+export type PreviewTeachingResourceMp3Errors = {
+    /**
+     * Structured API error
+     */
+    401: Error;
+    /**
+     * Structured API error
+     */
+    404: Error;
+};
+
+export type PreviewTeachingResourceMp3Error = PreviewTeachingResourceMp3Errors[keyof PreviewTeachingResourceMp3Errors];
+
+export type PreviewTeachingResourceMp3Responses = {
+    /**
+     * MP3 media stream
+     */
+    200: unknown;
+    /**
+     * Partial MP3 media stream for byte-range requests
+     */
+    206: unknown;
+};
 
 export type ReceiveEventData = {
     body: EventInput;

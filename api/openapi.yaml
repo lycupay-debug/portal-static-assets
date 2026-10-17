@@ -420,6 +420,19 @@ paths:
       responses:
         '200': { description: Public resource file }
         '404': { $ref: '#/components/responses/ErrorResponse' }
+  /public/resources/{id}/preview:
+    get:
+      tags: [Public content]
+      security: []
+      summary: Stream an MP3 attached to a published teaching resource with byte-range support
+      operationId: previewPublicTeachingResourceMP3
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: Range, required: false, schema: { type: string }, description: Optional byte range used by native audio seeking }
+      responses:
+        '200': { description: MP3 media stream, headers: { Accept-Ranges: { schema: { type: string } }, Content-Type: { schema: { type: string, example: audio/mpeg } } } }
+        '206': { description: Partial MP3 media stream for byte-range requests }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
   /resources:
     get:
       tags: [Teaching resources]
@@ -508,6 +521,19 @@ paths:
           content:
             application/octet-stream:
               schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /resources/{resourceId}/preview:
+    get:
+      tags: [Teaching resources]
+      summary: Stream an owned MP3 teaching resource with byte-range support
+      operationId: previewTeachingResourceMP3
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - { in: header, name: Range, required: false, schema: { type: string }, description: Optional byte range used by native audio seeking }
+      responses:
+        '200': { description: MP3 media stream }
+        '206': { description: Partial MP3 media stream for byte-range requests }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
         '404': { $ref: '#/components/responses/ErrorResponse' }
   /events:
     post:

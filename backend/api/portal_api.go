@@ -1247,6 +1247,10 @@ func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(path, "/")
+	if len(parts) == 2 && portalUUID.MatchString(parts[0]) && parts[1] == "preview" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		a.serveResourceMP3Preview(w, r, parts[0], true, "")
+		return
+	}
 	if len(parts) == 2 && portalUUID.MatchString(parts[0]) && parts[1] == "download" && r.Method == http.MethodGet {
 		var stored, filename, mtype sql.NullString
 		err := a.db.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename,mime_type FROM portal.teaching_resources WHERE resource_id=$1 AND is_public=TRUE AND deleted_at IS NULL`, parts[0]).Scan(&stored, &filename, &mtype)
@@ -1268,6 +1272,43 @@ func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, 404, "未找到公开资源接口。", nil)
+}
+
+func (a *portalAPI) serveResourceMP3Preview(w http.ResponseWriter, r *http.Request, id string, public bool, ownerID string) {
+	var stored, filename sql.NullString
+	var err error
+	if public {
+		err = a.db.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename FROM portal.teaching_resources WHERE resource_id=$1 AND is_public=TRUE AND deleted_at IS NULL AND lower(original_filename) LIKE '%.mp3'`, id).Scan(&stored, &filename)
+	} else {
+		err = a.db.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL AND lower(original_filename) LIKE '%.mp3'`, id, ownerID).Scan(&stored, &filename)
+	}
+	if err != nil || !stored.Valid || !filename.Valid {
+		writeError(w, http.StatusNotFound, "MP3 资源不存在或无权访问。", nil)
+		return
+	}
+	filePath := filepath.Join(a.resourceDir, filepath.Base(stored.String))
+	f, err := os.Open(filePath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "资源文件缺失。", nil)
+		return
+	}
+	defer f.Close()
+	serveMP3Preview(w, r, f, filename.String)
+}
+
+// serveMP3Preview uses net/http's range-aware file serving so native browser
+// audio controls can seek without downloading the entire file first.
+func serveMP3Preview(w http.ResponseWriter, r *http.Request, f *os.File, filename string) {
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename*=UTF-8''%s", url.PathEscape(filename)))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeContent(w, r, filepath.Base(filename), info.ModTime(), f)
 }
 
 func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
@@ -1360,6 +1401,10 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	action := ""
 	if len(parts) > 2 {
 		action = parts[2]
+	}
+	if action == "preview" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		a.serveResourceMP3Preview(w, r, id, false, u.ID)
+		return
 	}
 	if action == "download" && r.Method == http.MethodGet {
 		var stored, filename, mtype sql.NullString

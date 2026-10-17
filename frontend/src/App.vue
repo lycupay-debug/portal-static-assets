@@ -1383,6 +1383,10 @@ onBeforeUnmount(() => {
               <div v-if="selectedEducationResource.url"><dt>在线链接</dt><dd><a class="education-resource-detail-url" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer">{{ selectedEducationResource.url }}</a></dd></div>
               <div><dt>更新时间</dt><dd>{{ new Date(selectedEducationResource.updatedAt || selectedEducationResource.createdAt).toLocaleDateString('zh-CN') }}</dd></div>
             </dl>
+            <div v-if="selectedEducationResource.filename?.toLowerCase().endsWith('.mp3') && selectedEducationResource.downloadUrl" class="education-resource-audio-preview">
+              <label :for="'education-resource-audio-' + selectedEducationResource.id">MP3 音频预览</label>
+              <audio :id="'education-resource-audio-' + selectedEducationResource.id" controls preload="metadata" :src="selectedEducationResource.downloadUrl.replace(/\/download$/, '/preview')">当前浏览器不支持音频播放，请使用下载功能。</audio>
+            </div>
             <div v-if="selectedEducationResource.url || selectedEducationResource.downloadUrl" class="education-resource-detail-actions">
               <a v-if="selectedEducationResource.url" class="share-dialog-copy education-resource-detail-action" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> 打开在线资源</a>
               <a v-if="selectedEducationResource.downloadUrl" class="share-dialog-cancel education-resource-detail-action" :href="selectedEducationResource.downloadUrl"><i class="bi bi-download" aria-hidden="true"></i> 下载文件</a>
