@@ -1801,7 +1801,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .about-copy h2 { margin: 0; font-size: var(--font-size-clamp-25px-2-8vw-35px-b05804); line-height: 1.5; letter-spacing: -.04em; }
 .about-copy > p:last-child { max-width: 500px; margin: 14px 0 0; color: #727272; font-size: var(--font-size-14px-d65225); line-height: 2; }
 .about-meta { align-self: end; display: flex; flex-direction: column; gap: 9px; padding-bottom: 5px; color: #858585; font: var(--font-size-9px-min14-22be94) var(--mono); letter-spacing: .08em; }
-.about-meta span:last-child { color: #969696; font: var(--font-size-11px-min14-4bd46d) -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: 0; }
+.about-meta span:last-child { color: #969696; font: var(--font-size-11px-min14-4bd46d) var(--font-family-base); letter-spacing: 0; }
 
 .site-footer { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px clamp(22px, 7.1vw, 112px); color: #909090; font-size: var(--font-size-14px-d65225); }
 .footer-brand { color: #696969; font: var(--font-size-10px-min14-933cc7) var(--mono); letter-spacing: .08em; }
