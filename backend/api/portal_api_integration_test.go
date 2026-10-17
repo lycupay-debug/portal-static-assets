@@ -281,7 +281,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 
 	externalImageURL := "https://cdn.example.invalid/test.png"
 	externalImageAssetPath := "external-url://" + contentBodyHash(externalImageURL)
-	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_assets (asset_type,asset_name,asset_path,source_url,ownership_basis,permission_status,use_scope,distribution_status,review_status,risk_level,discovered_by,published_or_active,metadata,notes) VALUES ('external_link','Integration remote image',$1,$2,'unknown','unknown','commercial_web','not_distributed','pending','unknown','manual',FALSE,jsonb_build_object('uploader_id',$3),'External image requires rights review.')", externalImageAssetPath, externalImageURL, userID); err != nil {
+	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_assets (asset_type,asset_name,asset_path,source_url,ownership_basis,permission_status,use_scope,distribution_status,review_status,risk_level,discovered_by,published_or_active,metadata,notes) VALUES ('external_link','Integration remote image',$1,$2,'unknown','unknown','commercial_web','not_distributed','pending','unknown','manual',FALSE,jsonb_build_object('uploader_id',$3::text),'External image requires rights review.')", externalImageAssetPath, externalImageURL, userID); err != nil {
 		t.Fatal(err)
 	}
 	body := "<p>Image rights gate integration test</p><img src=" + uploaded.URL + " alt=test><img src=" + externalImageURL + " alt=remote>"
