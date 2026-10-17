@@ -488,8 +488,16 @@ func (a *portalAPI) complianceAssetByID(w http.ResponseWriter, r *http.Request, 
 		a.addComplianceEvidence(w, r, u, id)
 		return
 	}
+	if len(parts) == 3 && parts[1] == "evidence" && r.Method == http.MethodPatch {
+		a.updateComplianceEvidenceVerification(w, r, u, id, parts[2])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "reviews" && r.Method == http.MethodPost {
 		a.addComplianceReview(w, r, u, id)
+		return
+	}
+	if len(parts) == 4 && parts[1] == "evidence" && parts[3] == "download" && r.Method == http.MethodGet {
+		a.downloadComplianceEvidence(w, r, id, parts[2])
 		return
 	}
 	if len(parts) != 1 {
@@ -660,21 +668,13 @@ func (a *portalAPI) addComplianceEvidence(w http.ResponseWriter, r *http.Request
 		writeError(w, 400, "证据字段不正确或超出长度限制。", nil)
 		return
 	}
-	if b.Verified && strings.TrimSpace(b.VerifiedBy) == "" {
-		writeError(w, 400, "标记为已核验时必须填写核验人。", nil)
-		return
-	}
 	var assetExists bool
 	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_id=$1)`, id).Scan(&assetExists); err != nil || !assetExists {
 		writeError(w, 404, "资产不存在。", nil)
 		return
 	}
 	var evidenceID string
-	var verifiedAt any
-	if b.Verified {
-		verifiedAt = time.Now().UTC()
-	}
-	err := a.db.QueryRowContext(r.Context(), `INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,sha256,verified,verified_by,verified_at,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING evidence_id::text`, id, b.Type, strings.TrimSpace(b.URI), b.Text, b.SHA256, b.Verified, strings.TrimSpace(b.VerifiedBy), verifiedAt, b.Notes).Scan(&evidenceID)
+	err := a.db.QueryRowContext(r.Context(), `INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,sha256,verified,verified_by,verified_at,notes) VALUES($1,$2,$3,$4,$5,FALSE,'',NULL,$6) RETURNING evidence_id::text`, id, b.Type, strings.TrimSpace(b.URI), b.Text, b.SHA256, b.Notes).Scan(&evidenceID)
 	if err != nil {
 		a.dbError(w, err, "无法保存证据。")
 		return

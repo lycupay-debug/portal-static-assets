@@ -845,6 +845,10 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		action = strings.Join(parts[2:], "/")
 	}
 	ctx := r.Context()
+	if action == "evidence" && r.Method == http.MethodPost {
+		a.submitPublisherRights(w, r, u, "content", id)
+		return
+	}
 	if action == "versions" && r.Method == http.MethodGet {
 		items, err := queryJSONRows(ctx, a.db, `SELECT to_jsonb(x) FROM (SELECT version_id::text AS "versionId",version_number AS "versionNumber",snapshot->>'title' AS title,snapshot->>'slug' AS slug,snapshot->>'status' AS status,created_at AS "createdAt" FROM portal.portal_content_versions WHERE content_id=$1 AND author_id=$2 ORDER BY version_number DESC LIMIT 100) x`, id, u.ID)
 		if err != nil {
@@ -1622,6 +1626,10 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	action := ""
 	if len(parts) > 2 {
 		action = parts[2]
+	}
+	if action == "evidence" && r.Method == http.MethodPost {
+		a.submitPublisherRights(w, r, u, "resource", id)
+		return
 	}
 	if action == "preview" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 		a.serveResourceMP3Preview(w, r, id, false, u.ID)

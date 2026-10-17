@@ -5,6 +5,7 @@ import NotificationHost from './components/NotificationHost.vue'
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
 const ComplianceResourcePreview = defineAsyncComponent(() => import('./components/ComplianceResourcePreview.vue'))
 const CopyrightComplaintForm = defineAsyncComponent(() => import('./components/CopyrightComplaintForm.vue'))
+const PublisherRightsForm = defineAsyncComponent(() => import('./components/PublisherRightsForm.vue'))
 import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
@@ -219,6 +220,8 @@ const resourceType = ref('听力材料')
 const resourceGrade = ref('')
 const resourceIsPublic = ref(false)
 const resourceUrl = ref('')
+const emptyRightsForm = () => ({ ownershipBasis: 'original', rightsholder: '', sourceUrl: '', useScope: 'commercial_web', licenseName: '', licenseUrl: '', permissionExpiry: '', evidenceUri: '', evidenceText: '', evidenceFilename: '', evidenceData: '', statementAccepted: false })
+const rightsForm = ref(emptyRightsForm())
 const resourceUploadProgress = ref(0)
 const resourceUploadDone = ref(false)
 const resourceUploadResult = ref('')
@@ -627,9 +630,16 @@ async function loadTeachingResources() {
   } catch (error) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') }
   finally { resourceBusy.value = false }
 }
+function resetRightsForm() { rightsForm.value = emptyRightsForm() }
 function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
-function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
-function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceIsPublic.value = item.isPublic === true; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
+function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetRightsForm(); resetResourceUpload(); resourceDialogOpen.value = true }
+function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceIsPublic.value = item.isPublic === true; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetRightsForm(); resetResourceUpload(); resourceDialogOpen.value = true }
+async function submitPublisherRights(endpoint: string) {
+  const response = await fetch(endpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(rightsForm.value) })
+  const result = await response.json() as { message?: string; error?: string }
+  if (!response.ok) throw new Error(result.error || '版权材料提交失败。')
+  return result.message || '版权材料已提交，等待审核。'
+}
 function openResourceEditById(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item) openResourceEdit(item) }
 function requestWithUploadProgress(url: string, method: string, body: ResourceWrite): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
   return new Promise((resolve, reject) => {
@@ -654,9 +664,11 @@ async function createTeachingResource() {
     const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
     const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
     if (!result.item) throw new Error('服务器未返回已保存的资源。')
+    let rightsMessage = ''
+    if (rightsForm.value.statementAccepted) rightsMessage = await submitPublisherRights(`/api/resources/${encodeURIComponent(result.item.id)}/evidence`)
     if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
     else teachingResources.value = [result.item, ...teachingResources.value]
-    resourceUploadDone.value = true; resourceUploadResult.value = '资源已保存。请点击下方“完成”关闭窗口。'
+    resourceUploadDone.value = true; resourceUploadResult.value = rightsMessage || '资源已保存。发布前请提交版权材料并通过审核。请点击下方“完成”关闭窗口。'
   } catch (error) { resourceError.value = error instanceof Error ? error.message : '保存资源失败。'; resourceUploadProgress.value = 0 }
   finally { resourceBusy.value = false }
 }
@@ -776,6 +788,7 @@ function selectAccountSection(id: string) {
 }
 function openNewContent() {
   editingContentId.value = null
+  resetRightsForm()
   contentForm.value = emptyContentForm()
   contentError.value = ''
   contentNotice.value = ''
@@ -839,8 +852,13 @@ async function saveContent() {
     const result = await response.json() as { item?: PortalContent; error?: string }
     if (!response.ok || !result.item) throw new Error(result.error || '保存内容失败。')
     if (!editing) editingContentId.value = result.item.id
+    let rightsNotice = ''
+    if (rightsForm.value.statementAccepted) {
+      try { rightsNotice = await submitPublisherRights(`/api/content/${encodeURIComponent(result.item.id)}/evidence`) }
+      catch (error) { throw new Error(`内容草稿已保存，但版权材料提交失败：${error instanceof Error ? error.message : '未知错误'}。请保留当前页面并重试。`) }
+    }
     contentEditorOpen.value = false
-    contentNotice.value = editing ? '内容已保存。' : '草稿已创建。'
+    contentNotice.value = rightsNotice || (editing ? '内容已保存。发布前仍需提交版权材料并通过审核。' : '草稿已创建。发布前仍需提交版权材料并通过审核。')
     await navigate('/content-management')
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '保存内容失败。'
@@ -1317,7 +1335,8 @@ onBeforeUnmount(() => {
               <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
               <label><span>URL 别名</span><input class="form-control" v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               <label><span>摘要</span><textarea class="form-control" v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
-              <p class="workspace-privacy-note"><span>◈</span> 内容默认保存为草稿；保存后可在内容列表单独发布。</p>
+              <PublisherRightsForm v-model="rightsForm" />
+              <p class="workspace-privacy-note"><span>◈</span> 内容默认保存为草稿；保存后可在内容列表单独发布。未提交版权声明或未通过审核的内容不能发布。</p>
             </section>
           </details>
           <div class="workspace-create-actions">
@@ -1763,6 +1782,7 @@ onBeforeUnmount(() => {
           <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}{{ editingResourceId ? ' · 上传后替换原文件' : '' }}</p>
           <label class="share-dialog-label" for="resource-url">URL 链接（选填）</label>
           <input id="resource-url" v-model="resourceUrl" type="url" class="form-control share-dialog-url" placeholder="粘贴可分享的 https:// 链接" />
+          <PublisherRightsForm v-model="rightsForm" compact />
           <div v-if="resourceBusy" class="resource-upload-live-progress">
             <div class="resource-upload-progress-track" role="progressbar" :aria-valuenow="resourceUploadProgress" aria-valuemin="0" aria-valuemax="100"><div class="resource-upload-progress-bar" :style="{ width: resourceUploadProgress + '%' }"></div></div>
             <div class="resource-upload-progress-label"><span>{{ resourceUploadProgress >= 100 ? '正在等待服务器确认保存' : '正在上传并保存，请勿关闭窗口' }}</span><strong>{{ resourceUploadProgress }}%</strong></div>

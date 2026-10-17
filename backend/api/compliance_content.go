@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type rightsGateError struct{ message string }
@@ -118,9 +119,10 @@ func (a *portalAPI) syncResourceComplianceAsset(ctx context.Context, db complian
 // canPublishComplianceAsset checks the current revision only. It never changes
 // or deletes public content; it refuses a new publication until human review.
 func (a *portalAPI) canPublishComplianceAsset(ctx context.Context, db complianceSQLExecutor, assetPath, expectedHash string) (string, error) {
-	var id, ownership, permission, review string
+	var id, ownership, permission, review, useScope string
 	var licenseID sql.NullString
-	err := db.QueryRowContext(ctx, "SELECT asset_id::text,ownership_basis,permission_status,review_status,license_id::text FROM portal.compliance_assets WHERE asset_path=$1 AND sha256=$2 LIMIT 1", assetPath, expectedHash).Scan(&id, &ownership, &permission, &review, &licenseID)
+	var permissionExpiry sql.NullString
+	err := db.QueryRowContext(ctx, "SELECT asset_id::text,ownership_basis,permission_status,review_status,license_id::text,use_scope,metadata->'publisher_rights_submission'->>'permissionExpiry' FROM portal.compliance_assets WHERE asset_path=$1 AND sha256=$2 LIMIT 1", assetPath, expectedHash).Scan(&id, &ownership, &permission, &review, &licenseID, &useScope, &permissionExpiry)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", rightsGateError{message: "当前内容版本尚未建立版权资产记录，请先进入版权合规中心完成盘点"}
@@ -129,6 +131,15 @@ func (a *portalAPI) canPublishComplianceAsset(ctx context.Context, db compliance
 	}
 	if !copyrightReviewAllowsPublish(review) {
 		return "", rightsGateError{message: fmt.Sprintf("版权审核尚未通过（当前状态：%s）", review)}
+	}
+	if useScope == "internal_only" {
+		return "", rightsGateError{message: "当前权利声明仅允许内部使用，不允许发布到公开网站。"}
+	}
+	if permissionExpiry.Valid && strings.TrimSpace(permissionExpiry.String) != "" {
+		expiry, parseErr := time.Parse("2006-01-02", permissionExpiry.String)
+		if parseErr != nil || time.Now().UTC().After(expiry.Add(24*time.Hour-time.Nanosecond)) {
+			return "", rightsGateError{message: "授权有效期已过或无法核验，请补充有效授权后重新审核。"}
+		}
 	}
 	if permission != "confirmed" && permission != "conditional" {
 		return "", rightsGateError{message: fmt.Sprintf("授权状态尚未核实（当前状态：%s）", permission)}

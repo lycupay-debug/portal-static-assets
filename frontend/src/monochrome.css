@@ -527,3 +527,12 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
 @media (prefers-reduced-transparency: reduce) {
   .scroll-to-top { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+.publisher-rights-form{display:grid;gap:12px;margin:20px 0;padding:16px 0;border-top:1px solid rgba(0,0,0,.12)}
+.publisher-rights-form h3{margin:0;font-size:16px;font-weight:650;color:#111}
+.publisher-rights-form p{margin:0;color:#5d6268;font-size:13px;line-height:1.6}
+.publisher-rights-form label:not(.resource-public-toggle){display:grid;gap:6px;color:#222;font-size:13px;font-weight:550}
+.publisher-rights-form .form-control{width:100%;min-width:0}
+.publisher-rights-form textarea{resize:vertical}
+.publisher-evidence-file{margin:0;color:#30363d;font-size:12px;overflow-wrap:anywhere}
+.publisher-evidence-error{margin:0;color:#9b1c1c;font-size:12px}
