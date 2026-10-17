@@ -1295,7 +1295,7 @@ onBeforeUnmount(() => {
         <div class="knowledge-toolbar" aria-label="文章筛选与搜索">
           <div class="knowledge-toolbar-controls">
             <nav class="knowledge-category-nav" aria-label="知识分类">
-              <button v-for="category in knowledgeCategoryMenus" :key="category.value" type="button" class="knowledge-category-button" :class="{ 'is-active': knowledgeCategory === category.value && !knowledgeSubcategory }" :aria-pressed="knowledgeCategory === category.value && !knowledgeSubcategory" @click="chooseKnowledgeCategory(category.value)">{{ category.label }}</button>
+              <button v-for="category in knowledgeCategoryMenus" :key="category.value" type="button" class="knowledge-category-button" :class="{ 'is-active': knowledgeCategory === category.value }" :aria-pressed="knowledgeCategory === category.value" @click="chooseKnowledgeCategory(category.value)">{{ category.label }}</button>
             </nav>
             <div v-if="knowledgeCategory !== 'recent' && knowledgeCategoryMenus.find(category => category.value === knowledgeCategory)?.children.length" class="knowledge-subcategory-nav" aria-label="子分类">
               <button type="button" class="knowledge-subcategory-button" :class="{ 'is-active': !knowledgeSubcategory }" :aria-pressed="!knowledgeSubcategory" @click="chooseKnowledgeCategory(knowledgeCategory)">全部</button>
