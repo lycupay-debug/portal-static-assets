@@ -100,7 +100,6 @@ const routeAliases: Record<string, string> = {
   '/学生档案': '/education/student-records', '/课程日历': '/education/course-calendar',
   '/教学资源': '/education/teaching-resources', '/网络工具': '/tools/network',
   '/文档转换': '/tools/document-converters', '/添加工具': '/tools/add', '/工作流管理': '/workflows',
-  '/版权合规中心': '/account/compliance',
 }
 const contentEditorRouteId = computed(() => route.value.match(/^\/content-management\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1] || null)
 const isContentEditorPage = computed(() => route.value === '/content-management/new' || contentEditorRouteId.value !== null)
