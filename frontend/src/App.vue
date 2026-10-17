@@ -38,6 +38,16 @@ type ContentVersion = APIContentVersion
 type TeachingResource = APITeachingResource
 type PublicTeachingResource = Pick<TeachingResource, 'id' | 'title' | 'description' | 'type' | 'grade' | 'url' | 'filename' | 'fileSize' | 'createdAt' | 'updatedAt'> & { downloadUrl?: string | null }
 const selectedEducationResource = ref<PublicTeachingResource | null>(null)
+let educationResourcePreviousBodyOverflow = ''
+watch(selectedEducationResource, (resource, previous) => {
+  if (resource && !previous) {
+    educationResourcePreviousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+  } else if (!resource && previous) {
+    document.body.style.overflow = educationResourcePreviousBodyOverflow
+    educationResourcePreviousBodyOverflow = ''
+  }
+}, { flush: 'sync' })
 function formatResourceFileSize(size?: number | null) {
   if (size == null || !Number.isFinite(size) || size < 0) return ''
   if (size < 1024) return `${size} B`
@@ -1176,6 +1186,8 @@ onMounted(() => {
   void restoreScrollPosition()
 })
 onBeforeUnmount(() => {
+  if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
+  educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
   if (tableSearchDebounceTimer) clearTimeout(tableSearchDebounceTimer)
   tableResizeObserver?.disconnect()
@@ -1370,7 +1382,6 @@ onBeforeUnmount(() => {
         <p v-else class="directory-empty">目前还没有公开的教育资源。登录后在“教学资源”中创建资源，并勾选“公开展示”，资源就会显示在这里。</p>
         <div v-if="selectedEducationResource" class="share-dialog-backdrop education-resource-detail-backdrop" @click.self="selectedEducationResource = null" @keydown.esc.stop.prevent="selectedEducationResource = null">
           <section class="share-dialog education-resource-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="education-resource-detail-title" @click.stop>
-            <button type="button" class="share-dialog-close" aria-label="关闭资源详情" @click="selectedEducationResource = null">×</button>
             <span class="share-dialog-eyebrow">LEARNING RESOURCE</span>
             <h2 id="education-resource-detail-title">{{ selectedEducationResource.title }}</h2>
             <p v-if="selectedEducationResource.description" class="education-resource-detail-description">{{ selectedEducationResource.description }}</p>
@@ -1387,11 +1398,12 @@ onBeforeUnmount(() => {
               <label :for="'education-resource-audio-' + selectedEducationResource.id">MP3 音频预览</label>
               <audio :id="'education-resource-audio-' + selectedEducationResource.id" controls preload="metadata" :src="selectedEducationResource.downloadUrl.replace(/\/download$/, '/preview')">当前浏览器不支持音频播放，请使用下载功能。</audio>
             </div>
-            <div v-if="selectedEducationResource.url || selectedEducationResource.downloadUrl" class="education-resource-detail-actions">
-              <a v-if="selectedEducationResource.url" class="share-dialog-copy education-resource-detail-action" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> 打开在线资源</a>
-              <a v-if="selectedEducationResource.downloadUrl" class="share-dialog-cancel education-resource-detail-action" :href="selectedEducationResource.downloadUrl"><i class="bi bi-download" aria-hidden="true"></i> 下载文件</a>
+            <p v-if="!selectedEducationResource.url && !selectedEducationResource.downloadUrl" class="education-resource-detail-warning">该资源当前没有可访问的文件或链接，请联系资源发布者。</p>
+            <div class="education-resource-detail-actions">
+              <a v-if="selectedEducationResource.url" class="education-resource-detail-action education-resource-detail-open" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> 打开链接</a>
+              <a v-if="selectedEducationResource.downloadUrl" class="education-resource-detail-action education-resource-detail-download" :href="selectedEducationResource.downloadUrl"><i class="bi bi-download" aria-hidden="true"></i> 下载文件</a>
+              <button type="button" class="education-resource-detail-close" aria-label="关闭资源详情" @click="selectedEducationResource = null"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
             </div>
-            <p v-else class="education-resource-detail-warning">该资源当前没有可访问的文件或链接，请联系资源发布者。</p>
           </section>
         </div>
       </section>
