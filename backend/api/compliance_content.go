@@ -166,8 +166,8 @@ func (a *portalAPI) canPublishComplianceAsset(ctx context.Context, db compliance
 	}
 	if strings.HasPrefix(assetPath, "db://portal.portal_content/") {
 		contentID := strings.TrimPrefix(assetPath, "db://portal.portal_content/")
-		var body string
-		if err := db.QueryRowContext(ctx, "SELECT body FROM portal.portal_content WHERE content_id=$1::uuid", contentID).Scan(&body); err != nil {
+		var body, summary string
+		if err := db.QueryRowContext(ctx, "SELECT body,summary FROM portal.portal_content WHERE content_id=$1::uuid", contentID).Scan(&body, &summary); err != nil {
 			return "", err
 		}
 		seen := map[string]bool{}
@@ -186,6 +186,27 @@ func (a *portalAPI) canPublishComplianceAsset(ctx context.Context, db compliance
 			}
 			if _, err := a.canPublishComplianceAsset(ctx, db, "/uploads/"+filename, imageHash); err != nil {
 				return "", rightsGateError{message: "文章图片尚未通过独立版权审核（" + filename + "）： " + err.Error()}
+			}
+		}
+		externalSeen := map[string]bool{}
+		for _, rawURL := range externalContentURLPattern.FindAllString(body+" "+summary, -1) {
+			imageURL := strings.TrimRight(rawURL, ".,")
+			if !strings.Contains(imageURL, "/_next/image") && !strings.Contains(imageURL, "cdn.sanity.io/images/") && !externalImageFilePattern.MatchString(imageURL) {
+				continue
+			}
+			if externalSeen[imageURL] {
+				continue
+			}
+			externalSeen[imageURL] = true
+			var externalAssetPath, externalHash string
+			if err := db.QueryRowContext(ctx, "SELECT asset_path,sha256 FROM portal.compliance_assets WHERE asset_type='external_link' AND source_url=$1 ORDER BY updated_at DESC LIMIT 1", imageURL).Scan(&externalAssetPath, &externalHash); err != nil {
+				if err == sql.ErrNoRows {
+					return "", rightsGateError{message: "文章包含未登记的外部图片，需先登记来源和权利依据：" + imageURL}
+				}
+				return "", err
+			}
+			if _, err := a.canPublishComplianceAsset(ctx, db, externalAssetPath, externalHash); err != nil {
+				return "", rightsGateError{message: "文章外部图片尚未通过独立版权审核：" + imageURL + "；" + err.Error()}
 			}
 		}
 	}

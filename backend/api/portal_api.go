@@ -36,13 +36,15 @@ const (
 )
 
 var (
-	portalUUID              = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	uploadedImageName       = regexp.MustCompile(`^[0-9a-f-]{36}\.(png|jpg|gif|webp|avif)$`)
-	uploadedImageURLPattern = regexp.MustCompile(`/uploads/([0-9a-f-]{36}\.(?:png|jpg|gif|webp|avif))`)
-	portalSlug              = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-	portalEmail             = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-	portalTypes             = map[string]bool{"article": true, "tool": true, "resource": true, "project": true}
-	portalTags              = map[string]bool{
+	portalUUID                = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	uploadedImageName         = regexp.MustCompile(`^[0-9a-f-]{36}\.(png|jpg|gif|webp|avif)$`)
+	uploadedImageURLPattern   = regexp.MustCompile(`/uploads/([0-9a-f-]{36}\.(?:png|jpg|gif|webp|avif))`)
+	externalContentURLPattern = regexp.MustCompile(`https?://[^[:space:]<>\"')]+`)
+	externalImageFilePattern  = regexp.MustCompile(`(?i)\.(?:png|jpe?g|webp|gif|svg|avif)(?:\?|$)`)
+	portalSlug                = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	portalEmail               = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+	portalTypes               = map[string]bool{"article": true, "tool": true, "resource": true, "project": true}
+	portalTags                = map[string]bool{
 		"教育": true, "学前教育": true, "小学教育": true, "中学教育": true, "高等教育": true, "职业教育": true, "家庭教育": true, "教学资源": true,
 		"教育人力资源": true, "事业编": true, "国企": true, "省考": true, "国考": true,
 		"旅游": true, "住宿": true, "交通": true, "景点攻略": true, "旅行规划": true, "美食体验": true, "网络": true, "网络安全": true, "网络维护": true, "网络基础知识": true, "网络诊断": true, "云与服务器": true,

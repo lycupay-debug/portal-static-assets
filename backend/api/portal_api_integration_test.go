@@ -279,7 +279,12 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("owner preview should work for pending image: status=%d body=%v", ownerResponse.Code, ownerResponse.Body.Bytes())
 	}
 
-	body := "<p>Image rights gate integration test</p><img src=" + uploaded.URL + " alt=test>"
+	externalImageURL := "https://cdn.example.invalid/test.png"
+	externalImageAssetPath := "external-url://" + contentBodyHash(externalImageURL)
+	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_assets (asset_type,asset_name,asset_path,source_url,ownership_basis,permission_status,use_scope,distribution_status,review_status,risk_level,discovered_by,published_or_active,metadata,notes) VALUES ('external_link','Integration remote image',$1,$2,'unknown','unknown','commercial_web','not_distributed','pending','unknown','manual',FALSE,jsonb_build_object('uploader_id',$3),'External image requires rights review.')", externalImageAssetPath, externalImageURL, userID); err != nil {
+		t.Fatal(err)
+	}
+	body := "<p>Image rights gate integration test</p><img src=" + uploaded.URL + " alt=test><img src=" + externalImageURL + " alt=remote>"
 	createdContent := requestJSON(t, api, http.MethodPost, "/content", map[string]any{
 		"title": "Image rights gate test", "slug": "image-rights-gate-test", "contentType": "article",
 		"tags": []string{"编程"}, "summary": "Integration test", "body": body, "visibility": "public",
@@ -318,6 +323,20 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'author_declaration','test://image-gate','Test image ownership',TRUE,'integration-test')", imageAssetID); err != nil {
+		t.Fatal(err)
+	}
+	externalBlocked := requestJSON(t, api, http.MethodPost, "/content/"+contentResult.Item.ID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
+	if !bytes.Contains(externalBlocked.Body.Bytes(), []byte("文章外部图片尚未通过独立版权审核")) {
+		t.Fatalf("unreviewed external image should block article publication: %s", externalBlocked.Body.String())
+	}
+	var externalImageAssetID string
+	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1", externalImageAssetPath).Scan(&externalImageAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='third_party_permission',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", externalImageAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'permission_email','test://image-gate','Test external image permission',TRUE,'integration-test')", externalImageAssetID); err != nil {
 		t.Fatal(err)
 	}
 	requestJSON(t, api, http.MethodPost, "/content/"+contentResult.Item.ID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
