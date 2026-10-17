@@ -624,7 +624,9 @@ func randomUUID() string {
 	return s[:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:]
 }
 
-const contentSelect = `content_id::text AS "id",author_id::text AS "authorId",title,slug,content_type AS "contentType",tags,parent_category AS "parentCategory",child_category AS "childCategory",summary,body,visibility,status,created_at AS "createdAt",updated_at AS "updatedAt",published_at AS "publishedAt",deleted_at AS "deletedAt"`
+const contentSelect = `content_id::text AS "id",author_id::text AS "authorId",title,slug,content_type AS "contentType",tags,parent_category AS "parentCategory",child_category AS "childCategory",summary,body,visibility,status,created_at AS "createdAt",updated_at AS "updatedAt",published_at AS "publishedAt",deleted_at AS "deletedAt",
+(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.portal_content/'||c.content_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
+(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.portal_content/'||c.content_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails"`
 
 func queryJSON(ctx context.Context, db interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
@@ -1499,7 +1501,9 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.Trim(r.URL.Path, "/")
 	if path == "resources" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`, u.ID)
+		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
+(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
+(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`, u.ID)
 		if err != nil {
 			a.dbError(w, err, "读取资源失败。")
 			return
@@ -1569,7 +1573,9 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			a.dbError(w, err, "资源保存失败。")
 			return
 		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
+(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
+(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
 		if err != nil {
 			a.dbError(w, err, "资源已保存，但读取结果失败。")
 			return
@@ -1662,7 +1668,9 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "资源不存在或无权恢复。", nil)
 			return
 		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
+(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
+(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 		if err != nil {
 			a.dbError(w, err, "读取恢复结果失败。")
 			return
@@ -1945,7 +1953,9 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 			return
 		}
 	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
+	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
+(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
+(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 	if err != nil {
 		a.dbError(w, err, "资源已更新，但读取结果失败。")
 		return

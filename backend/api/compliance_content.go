@@ -17,6 +17,8 @@ type rightsGateError struct{ message string }
 
 func (e rightsGateError) Error() string { return e.message }
 
+func copyrightReviewAllowsPublish(status string) bool { return status == "approved" }
+
 func contentBodyHash(body string) string {
 	sum := sha256.Sum256([]byte(body))
 	return hex.EncodeToString(sum[:])
@@ -125,7 +127,7 @@ func (a *portalAPI) canPublishComplianceAsset(ctx context.Context, db compliance
 		}
 		return "", err
 	}
-	if review != "approved" && review != "approved_with_conditions" {
+	if !copyrightReviewAllowsPublish(review) {
 		return "", rightsGateError{message: fmt.Sprintf("版权审核尚未通过（当前状态：%s）", review)}
 	}
 	if permission != "confirmed" && permission != "conditional" {

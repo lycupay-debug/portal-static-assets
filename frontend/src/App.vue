@@ -8,6 +8,7 @@ import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
 import { resourceFileIcon } from './utils/resourceIcons'
+import { copyrightReviewLabel, copyrightReviewIsViolation } from './utils/copyrightReview'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const removedGradeTags = new Set(['年级', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'])
 const knowledgeTagOptions = portalTaxonomy
@@ -35,9 +36,9 @@ type PortalSection = {
   tags: string[]
 }
 type PortalUser = APIUser & { isAdmin?: boolean }
-type PortalContent = APIContent
+type PortalContent = APIContent & { copyrightStatus?: string | null; copyrightDetails?: string | null }
 type ContentVersion = APIContentVersion
-type TeachingResource = APITeachingResource
+type TeachingResource = APITeachingResource & { copyrightStatus?: string | null; copyrightDetails?: string | null }
 type PublicTeachingResource = Pick<TeachingResource, 'id' | 'title' | 'description' | 'type' | 'grade' | 'url' | 'filename' | 'fileSize' | 'createdAt' | 'updatedAt'> & { downloadUrl?: string | null }
 const selectedEducationResource = ref<PublicTeachingResource | null>(null)
 let educationResourcePreviousBodyOverflow = ''
@@ -476,12 +477,12 @@ const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
 const virtualTableOverscan = 6
 const tableDefinitions: Record<string, { title: string; columns: TableColumn[]; note: string }> = {
-  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
+  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'copyrightStatus', label: '版权审核' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
   'property-management': { title: '房源列表', columns: [{ key: 'property', label: '房源名称', width: 'minmax(180px, 1.6fr)' }, { key: 'address', label: '地址', width: 'minmax(180px, 2fr)' }, { key: 'roomCount', label: '房间数' }, { key: 'rent', label: '租金' }, { key: 'status', label: '房源状态' }, { key: 'updatedAt', label: '更新时间' }], note: '房源数据源尚未接入。' },
   'room-status': { title: '房态列表', columns: [{ key: 'room', label: '房间', width: 'minmax(140px, 1.3fr)' }, { key: 'property', label: '所属房源', width: 'minmax(180px, 1.7fr)' }, { key: 'status', label: '当前房态' }, { key: 'tenant', label: '租客' }, { key: 'checkIn', label: '入住日期' }, { key: 'checkOut', label: '退租日期' }], note: '房态数据源尚未接入。' },
   'student-records': { title: '学生档案', columns: [{ key: 'name', label: '学生姓名' }, { key: 'studentId', label: '学员编号' }, { key: 'course', label: '课程' }, { key: 'status', label: '学习状态' }, { key: 'updatedAt', label: '更新时间' }], note: '学生档案数据源尚未接入。' },
   'course-calendar': { title: '课程安排', columns: [{ key: 'course', label: '课程名称', width: 'minmax(180px, 1.6fr)' }, { key: 'class', label: '班级' }, { key: 'teacher', label: '教师' }, { key: 'startAt', label: '开始时间' }, { key: 'endAt', label: '结束时间' }, { key: 'status', label: '状态' }], note: '课程日历数据源尚未接入。' },
-  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'grade', label: '年级' }, { key: 'visibility', label: '公开状态' }, { key: 'description', label: '资源说明', width: 'minmax(220px, 2fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源已接入数据库。' },
+  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'grade', label: '年级' }, { key: 'copyrightStatus', label: '版权审核' }, { key: 'visibility', label: '公开状态' }, { key: 'description', label: '资源说明', width: 'minmax(220px, 2fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源已接入数据库。' },
   'network-tools': { title: '网络工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'description', label: '功能说明', width: 'minmax(220px, 2fr)' }, { key: 'url', label: '入口地址' }, { key: 'status', label: '状态' }], note: '网络工具目录尚未接入。' },
   'document-converters': { title: '文档转换工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'sourceFormat', label: '源格式' }, { key: 'targetFormat', label: '目标格式' }, { key: 'status', label: '状态' }, { key: 'actions', label: '操作' }], note: '文档转换工具目录尚未接入。' },
   'add-tool': { title: '工具清单', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'category', label: '分类' }, { key: 'url', label: '入口地址', width: 'minmax(220px, 2fr)' }, { key: 'status', label: '状态' }, { key: 'createdAt', label: '添加时间' }], note: '当前还没有接入工具管理数据源。' },
@@ -504,10 +505,13 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       updatedAt: new Date(contentViewMode.value === 'trash' && 'deletedAt' in item ? String(item.deletedAt) : item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),
       likeCount: item.likeCount ?? 0,
       favoriteCount: item.favoriteCount ?? 0,
+      copyrightStatus: copyrightReviewLabel(item.copyrightStatus),
+      copyrightStatusRaw: item.copyrightStatus || 'pending',
+      copyrightDetails: item.copyrightDetails || '暂无详细审核意见。请进入版权合规中心查看该资产的审核记录。',
       actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
     }))
   : activeAccountSection.value === 'teaching-resources'
-    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.type || '其他', grade: item.grade || '不限定年级', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
+    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.type || '其他', grade: item.grade || '不限定年级', copyrightStatus: copyrightReviewLabel(item.copyrightStatus), copyrightStatusRaw: item.copyrightStatus || 'pending', copyrightDetails: item.copyrightDetails || '暂无详细审核意见。请进入版权合规中心查看该资产的审核记录。', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
     : [])
 // Build each record's normalized search text once per data change, rather than
 // converting every cell to lowercase on every keystroke. Action/status helper fields
@@ -1690,6 +1694,10 @@ onBeforeUnmount(() => {
                         <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="contentBusy" @click="deleteContent(String(record.id))">删除</button>
                       </template>
                     </div>
+                    <div v-else-if="column.key === 'copyrightStatus'" class="copyright-status-cell" role="cell">
+                      <span class="copyright-status-label" :class="{ 'is-approved': record.copyrightStatus === '已通过', 'is-violation': record.copyrightStatus === '涉及违规' }">{{ record.copyrightStatus || '待审核' }}</span>
+                      <button v-if="copyrightReviewIsViolation(String(record.copyrightStatusRaw || 'pending'))" type="button" class="copyright-details-button" @click="openTableCell('版权审核详情', String(record.copyrightDetails || '暂无详细审核意见。请进入版权合规中心查看该资产的审核记录。'))">查看违规详情</button>
+                    </div>
                     <span v-else role="cell"><button type="button" class="table-cell-preview" :title="Array.from(tableCellValue(record, column.key)).length > 10 ? '点击查看完整内容' : undefined" @click="openTableCell(column.label, tableCellValue(record, column.key))">{{ tableCellPreview(tableCellValue(record, column.key)) }}</button></span>
                   </template>
                 </div>
@@ -2155,6 +2163,11 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .virtual-table-search { width: min(260px, 42%); min-width: 140px; height: 38px; padding: 0 12px; border: 1px solid rgba(147, 147, 147, .2); border-radius: 10px; color: #484848; background: rgba(255, 255, 255, .56); font-size: var(--font-size-14px-d65225); outline: none; }
 .virtual-table-search:focus { border-color: rgba(116, 116, 116, .5); box-shadow: 0 0 0 3px rgba(116, 116, 116, .08); }
 .virtual-table-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; max-height: none; overflow-x: scroll; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.copyright-status-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+.copyright-status-label { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; background: #f1f1f1; color: #333; font-size: 12px; white-space: nowrap; }
+.copyright-status-label.is-approved { background: #e8f4ea; color: #1c6630; }
+.copyright-status-label.is-violation { background: #fbe9e8; color: #9c2924; }
+.copyright-details-button { border: 0; padding: 0; color: #a02b25; background: transparent; text-decoration: underline; cursor: pointer; font-size: 12px; }
 .virtual-table-header, .virtual-table-row { display: grid; grid-template-columns: var(--table-columns); width: 100%; min-width: 100%; align-items: center; box-sizing: border-box; }
 .virtual-table-header { position: sticky; top: 0; z-index: 1; min-height: 44px; color: #828282; background: rgba(246, 246, 246, .96); border-bottom: 1px solid rgba(154, 154, 154, .16); font-size: var(--font-size-14px-d65225); font-weight: 600; }
 .virtual-table-header span, .virtual-table-row span { overflow: hidden; padding: 0 16px; text-overflow: ellipsis; white-space: nowrap; }
