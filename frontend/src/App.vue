@@ -37,6 +37,13 @@ type PortalContent = APIContent
 type ContentVersion = APIContentVersion
 type TeachingResource = APITeachingResource
 type PublicTeachingResource = Pick<TeachingResource, 'id' | 'title' | 'description' | 'type' | 'grade' | 'url' | 'filename' | 'fileSize' | 'createdAt' | 'updatedAt'> & { downloadUrl?: string | null }
+const selectedEducationResource = ref<PublicTeachingResource | null>(null)
+function formatResourceFileSize(size?: number | null) {
+  if (size == null || !Number.isFinite(size) || size < 0) return ''
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
   document.querySelectorAll<HTMLElement>('.account-content, .account-sidebar, .virtual-table-scroll, .content-workspace-page, .content-outline-sidebar, .content-tools-sidebar, .content-editor-document').forEach((element) => {
@@ -1352,7 +1359,7 @@ onBeforeUnmount(() => {
         <p v-if="educationResourceLoading && !publicTeachingResources.length" class="directory-empty">正在读取公开教育资源…</p>
         <p v-else-if="educationResourceError" class="directory-empty">{{ educationResourceError }}</p>
         <div v-else-if="filteredEducationResources.length" class="knowledge-infinite-list">
-          <a v-for="item in visibleEducationResources" :key="item.id" class="knowledge-list-item education-resource-list-item" :href="item.url || item.downloadUrl || '#resource'" :target="item.url ? '_blank' : undefined" :rel="item.url ? 'noopener noreferrer' : undefined" :aria-label="`${item.title}，${item.url ? '打开外部链接' : '下载资源'}`">
+          <a v-for="item in visibleEducationResources" :key="item.id" class="knowledge-list-item education-resource-list-item" href="#resource-detail" :aria-label="`${item.title}，查看资源详情`" @click.prevent="selectedEducationResource = item">
             <span class="education-resource-file-icon" aria-hidden="true"><i :class="['bi', resourceFileIcon(item.filename, item.url)]"></i></span>
             <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.description">{{ item.description }}</span><span class="education-resource-meta"><b>{{ item.type }}</b><b>{{ item.grade || '不限定年级' }}</b><span class="education-resource-filename">{{ item.filename || (item.url ? '在线资源' : '学习资料') }}</span></span></span>
             <time>{{ new Date(item.updatedAt || item.createdAt).toLocaleDateString('zh-CN') }}</time><span class="knowledge-list-arrow" aria-hidden="true"><i class="bi bi-arrow-up-right"></i></span>
@@ -1361,6 +1368,28 @@ onBeforeUnmount(() => {
         </div>
         <p v-else-if="educationResourceSearch.trim() || educationResourceCategory !== '全部资源' || educationResourceGrade !== '全部年级'" class="directory-empty">没有找到符合条件的公开资源。请调整筛选条件或搜索关键词。</p>
         <p v-else class="directory-empty">目前还没有公开的教育资源。登录后在“教学资源”中创建资源，并勾选“公开展示”，资源就会显示在这里。</p>
+        <div v-if="selectedEducationResource" class="share-dialog-backdrop education-resource-detail-backdrop" @click.self="selectedEducationResource = null" @keydown.esc.stop.prevent="selectedEducationResource = null">
+          <section class="share-dialog education-resource-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="education-resource-detail-title" @click.stop>
+            <button type="button" class="share-dialog-close" aria-label="关闭资源详情" @click="selectedEducationResource = null">×</button>
+            <span class="share-dialog-eyebrow">LEARNING RESOURCE</span>
+            <h2 id="education-resource-detail-title">{{ selectedEducationResource.title }}</h2>
+            <p v-if="selectedEducationResource.description" class="education-resource-detail-description">{{ selectedEducationResource.description }}</p>
+            <p v-else class="education-resource-detail-description education-resource-detail-empty-description">此资源暂无补充说明。</p>
+            <dl class="education-resource-detail-meta">
+              <div><dt>资源类型</dt><dd>{{ selectedEducationResource.type || '未分类' }}</dd></div>
+              <div><dt>适用年级</dt><dd>{{ selectedEducationResource.grade || '不限定年级' }}</dd></div>
+              <div v-if="selectedEducationResource.filename"><dt>文件名称</dt><dd>{{ selectedEducationResource.filename }}</dd></div>
+              <div v-if="selectedEducationResource.fileSize != null"><dt>文件大小</dt><dd>{{ formatResourceFileSize(selectedEducationResource.fileSize) }}</dd></div>
+              <div v-if="selectedEducationResource.url"><dt>在线链接</dt><dd><a class="education-resource-detail-url" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer">{{ selectedEducationResource.url }}</a></dd></div>
+              <div><dt>更新时间</dt><dd>{{ new Date(selectedEducationResource.updatedAt || selectedEducationResource.createdAt).toLocaleDateString('zh-CN') }}</dd></div>
+            </dl>
+            <div v-if="selectedEducationResource.url || selectedEducationResource.downloadUrl" class="education-resource-detail-actions">
+              <a v-if="selectedEducationResource.url" class="share-dialog-copy education-resource-detail-action" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> 打开在线资源</a>
+              <a v-if="selectedEducationResource.downloadUrl" class="share-dialog-cancel education-resource-detail-action" :href="selectedEducationResource.downloadUrl"><i class="bi bi-download" aria-hidden="true"></i> 下载文件</a>
+            </div>
+            <p v-else class="education-resource-detail-warning">该资源当前没有可访问的文件或链接，请联系资源发布者。</p>
+          </section>
+        </div>
       </section>
       <section v-if="route === '/software-tools'" class="directory-published-section">
         <div class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
