@@ -24,6 +24,6 @@
 
 ## 数据保留审计（只读 / Dry-run）
 
-每日完整盘点同时生成 `retention-dry-run.json` 与 `upload-filesystem-inventory.txt`。报告统计过期会话、软删除内容/资源、投诉保留期限到期或缺失，以及上传文件与登记记录的数量差异。报告目录仅 root 可读。
+每日完整盘点同时生成 `retention-dry-run.json`、`upload-filesystem-inventory.txt` 与 `backup-retention-inventory.txt`。报告统计过期会话、软删除内容/资源、投诉保留期限到期或缺失，以及上传文件与登记记录的数量差异。报告目录仅 root 可读。
 
 此阶段只生成报告，不执行删除。过期会话可按现有会话有效期规则评估清理；文章/资源回收站、投诉证据、未登记上传文件和备份的保留期仍需明确。投诉数据在保留期限、法律保全（legal hold）规则和执行机制获批前不得自动清理。当前数据库尚未实现法律保全字段/流程，因此不能将“无保全”视为已确认。

@@ -59,5 +59,18 @@ REGISTERED_UPLOADS=$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c "SELECT count
   echo "registered_image_asset_rows=$REGISTERED_UPLOADS"
   echo "delete_actions=none"
 } > "$REPORT_DIR/upload-filesystem-inventory.txt"
+BACKUP_DIR=/var/backups/personal-portal
+BACKUP_FILES=$(find "$BACKUP_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
+OLDEST_BACKUP_EPOCH=$(find "$BACKUP_DIR" -maxdepth 1 -type f -exec stat -f '%m' {} \; 2>/dev/null | sort -n | head -1)
+{
+  echo "mode=report_only"
+  echo "backup_files=$BACKUP_FILES"
+  if [ -n "$OLDEST_BACKUP_EPOCH" ]; then
+    echo "oldest_backup_mtime=$(date -u -r "$OLDEST_BACKUP_EPOCH" '+%Y-%m-%dT%H:%M:%SZ')"
+  else
+    echo "oldest_backup_mtime=none"
+  fi
+  echo "automatic_backup_deletion=not_configured_by_this_job"
+} > "$REPORT_DIR/backup-retention-inventory.txt"
 chmod 0600 "$REPORT_DIR"/*
 echo "Compliance inventory and retention dry-run completed: $REPORT_DIR"
