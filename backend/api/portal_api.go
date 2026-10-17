@@ -728,7 +728,12 @@ func validateContentInput(in portalContentInput, partial bool) (map[string]any, 
 	if s, ok := v["contentType"].(string); ok && !portalTypes[s] {
 		errs = append(errs, "内容类型不正确。")
 	}
-	if in.Tags != nil {
+	if in.Tags == nil {
+		if !partial {
+			errs = append(errs, "请至少选择一个知识广场标签。")
+			v["tags"] = []string{}
+		}
+	} else {
 		tags := append([]string{}, (*in.Tags)...)
 		if len(tags) > 40 {
 			errs = append(errs, "标签最多 40 个。")
@@ -1547,8 +1552,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		}
 		defer tx.Rollback()
 		var stored sql.NullString
-		var deletedTitle, deletedFilename string
-		if err = tx.QueryRowContext(r.Context(), `SELECT stored_filename,title,original_filename FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL FOR UPDATE`, id, u.ID).Scan(&stored, &deletedTitle, &deletedFilename); err != nil {
+		if err = tx.QueryRowContext(r.Context(), `SELECT stored_filename FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL FOR UPDATE`, id, u.ID).Scan(&stored); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				writeError(w, 404, "资源不存在或不在回收站。", nil)
 			} else {
@@ -1556,7 +1560,6 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		// Keep the compliance asset, evidence and reviews; make the asset explicitly unavailable.
 		if _, err = tx.ExecContext(r.Context(), `DELETE FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL`, id, u.ID); err != nil {
 			a.dbError(w, err, "资源永久删除失败。")
 			return

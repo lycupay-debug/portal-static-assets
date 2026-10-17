@@ -40,6 +40,9 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if err := db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		_, _ = db.ExecContext(context.Background(), "DELETE FROM portal.event_inbox WHERE event_type='portal.content.validate' AND (payload->>'slug' LIKE 'go-api-test-%' OR payload->>'slug' LIKE 'permanent-delete-%')")
+	}()
 	password := "portal-api-test-password-2026"
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 4)
 	if err != nil {
@@ -97,14 +100,17 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		requestJSON(t, api, http.MethodGet, path, nil, sessionCookie, http.StatusOK)
 	}
 	var testLicenseID string
-	if err := db.QueryRowContext(ctx, "INSERT INTO portal.compliance_license_catalog(spdx_id,license_name,license_version,license_family,canonical_url,full_text,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status) VALUES('MIT','MIT','', 'permissive','https://spdx.org/licenses/MIT.html','MIT test license text',TRUE,TRUE,TRUE,TRUE,FALSE,'unreviewed') RETURNING license_id::text").Scan(&testLicenseID); err != nil {
+	if err := db.QueryRowContext(ctx, "INSERT INTO portal.compliance_license_catalog(spdx_id,license_name,license_version,license_family,canonical_url,full_text,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status) VALUES('GO-API-TEST','MIT test','', 'permissive','https://example.invalid/license','MIT test license text',TRUE,TRUE,TRUE,TRUE,FALSE,'unreviewed') RETURNING license_id::text").Scan(&testLicenseID); err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		_, _ = db.ExecContext(context.Background(), "DELETE FROM portal.compliance_license_catalog WHERE license_id=$1", testLicenseID)
+	}()
 	licenseDetail := requestJSON(t, api, http.MethodGet, "/compliance/licenses/"+testLicenseID, nil, sessionCookie, http.StatusOK)
 	if !bytes.Contains(licenseDetail.Body.Bytes(), []byte("MIT test license text")) {
 		t.Fatalf("license detail did not return the captured license text: %s", licenseDetail.Body.String())
 	}
-	requestJSON(t, api, http.MethodPatch, "/compliance/documents/copyright-notice", map[string]any{"status": "published", "approvedBy": "integration-test", "legalReviewAt": "2026-10-17T00:00:00Z", "missingInformation": []string{}}, sessionCookie, http.StatusConflict)
+	requestJSON(t, api, http.MethodPatch, "/compliance/documents/copyright-notice", map[string]any{"status": "published", "approvedBy": "integration-test", "legalReviewAt": "2026-10-17T00:00:00Z", "missingInformation": []string{}}, sessionCookie, http.StatusNotFound)
 	if _, err := db.ExecContext(ctx, `UPDATE portal.portal_users SET is_admin=FALSE WHERE user_id=$1`, userID); err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +119,8 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if me.Body == nil || !bytes.Contains(me.Body.Bytes(), []byte(email)) {
 		t.Fatal("/auth/me did not return the authenticated user")
 	}
+
+	requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Missing tags", "slug": "missing-tags-" + randomUUID()[:8], "contentType": "article", "summary": "integration", "body": "missing tags must return a validation error", "visibility": "private"}, sessionCookie, http.StatusBadRequest)
 
 	slug := "go-api-test-" + randomUUID()[:8]
 	created := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Go API integration", "slug": slug, "contentType": "article", "tags": []string{"教育"}, "parentCategory": "年级", "childCategory": "初一", "summary": "integration", "body": "Go is the only business API", "visibility": "private"}, sessionCookie, http.StatusCreated)
@@ -220,7 +228,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("permanently deleted resource must not leave a compliance record: resource=%v asset=%v", resourceExists, resourceAssetExists)
 	}
 
-	deleteTest := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Permanent-delete audit test", "slug": "permanent-delete-" + randomUUID()[:8], "contentType": "article", "summary": "test", "body": "audit retention test", "visibility": "private"}, sessionCookie, http.StatusCreated)
+	deleteTest := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Permanent-delete audit test", "slug": "permanent-delete-" + randomUUID()[:8], "contentType": "article", "tags": []string{"编程"}, "summary": "test", "body": "audit retention test", "visibility": "private"}, sessionCookie, http.StatusCreated)
 	var deleteTestEnvelope struct {
 		Item map[string]any `json:"item"`
 	}
