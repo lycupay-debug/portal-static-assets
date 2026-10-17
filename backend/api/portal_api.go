@@ -36,11 +36,13 @@ const (
 )
 
 var (
-	portalUUID  = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	portalSlug  = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-	portalEmail = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-	portalTypes = map[string]bool{"article": true, "tool": true, "resource": true, "project": true}
-	portalTags  = map[string]bool{
+	portalUUID              = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	uploadedImageName       = regexp.MustCompile(`^[0-9a-f-]{36}\.(png|jpg|gif|webp|avif)$`)
+	uploadedImageURLPattern = regexp.MustCompile(`/uploads/([0-9a-f-]{36}\.(?:png|jpg|gif|webp|avif))`)
+	portalSlug              = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	portalEmail             = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+	portalTypes             = map[string]bool{"article": true, "tool": true, "resource": true, "project": true}
+	portalTags              = map[string]bool{
 		"教育": true, "学前教育": true, "小学教育": true, "中学教育": true, "高等教育": true, "职业教育": true, "家庭教育": true, "教学资源": true,
 		"教育人力资源": true, "事业编": true, "国企": true, "省考": true, "国考": true,
 		"旅游": true, "住宿": true, "交通": true, "景点攻略": true, "旅行规划": true, "美食体验": true, "网络": true, "网络安全": true, "网络维护": true, "网络基础知识": true, "网络诊断": true, "云与服务器": true,
@@ -142,6 +144,10 @@ func (a *portalAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/uploads" && r.Method == http.MethodPost {
 		a.uploadImage(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/uploads/") && r.Method == http.MethodGet {
+		a.serveUploadedImage(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/auth/") {
@@ -472,7 +478,6 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = u
 	var b struct {
 		MIME string `json:"mime"`
 		Data string `json:"data"`
@@ -481,8 +486,9 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "请求格式不正确。", nil)
 		return
 	}
+	mime := strings.ToLower(strings.TrimSpace(b.MIME))
 	allowed := map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/avif": "avif"}
-	ext, ok := allowed[strings.ToLower(b.MIME)]
+	ext, ok := allowed[mime]
 	if !ok {
 		writeError(w, 400, "仅支持 PNG、JPEG、GIF、WebP 或 AVIF 图片。", nil)
 		return
@@ -496,7 +502,7 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 413, "图片大小不能超过 8 MB。", nil)
 		return
 	}
-	if !validImageSignature(b.MIME, data) {
+	if !validImageSignature(mime, data) {
 		writeError(w, 400, "图片文件内容与声明格式不匹配。", nil)
 		return
 	}
@@ -505,12 +511,91 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := randomUUID() + "." + ext
-	if err = os.WriteFile(filepath.Join(a.uploadDir, name), data, 0640); err != nil {
+	fullPath := filepath.Join(a.uploadDir, name)
+	if err = os.WriteFile(fullPath, data, 0640); err != nil {
 		writeError(w, 500, "图片保存失败。", nil)
 		return
 	}
-	writeJSON(w, 201, map[string]any{"url": "/uploads/" + name, "mime": b.MIME, "size": len(data)})
+	sum := sha256.Sum256(data)
+	hash := hex.EncodeToString(sum[:])
+	metadata, _ := json.Marshal(map[string]any{"uploader_id": u.ID, "mime_type": mime, "filename": name, "rights_review_required": true, "publication_default": "blocked_pending_review"})
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		_ = os.Remove(fullPath)
+		writeError(w, 500, "图片版权登记失败。", nil)
+		return
+	}
+	defer tx.Rollback()
+	var complianceID string
+	err = tx.QueryRowContext(r.Context(), "INSERT INTO portal.compliance_assets (asset_type,asset_name,asset_path,ownership_basis,permission_status,use_scope,distribution_status,review_status,risk_level,sha256,file_size_bytes,discovered_by,published_or_active,metadata,notes) VALUES ('image',$1,$2,'unknown','unknown','commercial_web','not_distributed','pending','unknown',$3,$4,'manual',FALSE,$5::jsonb,'Uploaded image is private until rights evidence is reviewed and publication is approved.') RETURNING asset_id::text", name, "/uploads/"+name, hash, len(data), string(metadata)).Scan(&complianceID)
+	if err == nil {
+		_, err = tx.ExecContext(r.Context(), "INSERT INTO portal.uploaded_image_assets(filename,uploader_id,compliance_asset_id,mime_type,sha256,file_size_bytes) VALUES($1,$2::uuid,$3::uuid,$4,$5,$6)", name, u.ID, complianceID, mime, hash, len(data))
+	}
+	if err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		_ = os.Remove(fullPath)
+		writeError(w, 500, "图片已拒绝公开：版权资产登记未完成。", nil)
+		return
+	}
+	writeJSON(w, 201, map[string]any{"url": "/uploads/" + name, "mime": mime, "size": len(data), "rightsStatus": "pending_review", "public": false})
 }
+
+func (a *portalAPI) serveUploadedImage(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/uploads/")
+	if !uploadedImageName.MatchString(name) || strings.Contains(name, "/") || strings.Contains(name, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	var uploaderID, mime, hash string
+	err := a.db.QueryRowContext(r.Context(), "SELECT uploader_id::text,mime_type,sha256 FROM portal.uploaded_image_assets WHERE filename=$1", name).Scan(&uploaderID, &mime, &hash)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var referenced bool
+	err = a.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE status='published' AND visibility='public' AND deleted_at IS NULL AND position($1 in body)>0)", "/uploads/"+name).Scan(&referenced)
+	if err != nil {
+		writeError(w, 503, "图片访问状态暂时无法核验。", nil)
+		return
+	}
+	publicAllowed := false
+	if referenced {
+		_, gateErr := a.canPublishComplianceAsset(r.Context(), a.db, "/uploads/"+name, hash)
+		publicAllowed = gateErr == nil
+	}
+	if !publicAllowed {
+		u, sessionErr := a.session(r)
+		if sessionErr != nil {
+			writeError(w, 503, "图片访问状态暂时无法核验。", nil)
+			return
+		}
+		if u == nil || (u.ID != uploaderID && !u.IsAdmin) {
+			http.NotFound(w, r)
+			return
+		}
+	}
+	f, err := os.Open(filepath.Join(a.uploadDir, name))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, f)
+}
+
 func validImageSignature(m string, b []byte) bool {
 	switch m {
 	case "image/png":

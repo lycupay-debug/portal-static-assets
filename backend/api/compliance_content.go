@@ -164,5 +164,30 @@ func (a *portalAPI) canPublishComplianceAsset(ctx context.Context, db compliance
 	if !evidenceOK {
 		return "", rightsGateError{message: "缺少已核验的授权/来源证据；仅填写来源链接不足以通过发布审核"}
 	}
+	if strings.HasPrefix(assetPath, "db://portal.portal_content/") {
+		contentID := strings.TrimPrefix(assetPath, "db://portal.portal_content/")
+		var body string
+		if err := db.QueryRowContext(ctx, "SELECT body FROM portal.portal_content WHERE content_id=$1::uuid", contentID).Scan(&body); err != nil {
+			return "", err
+		}
+		seen := map[string]bool{}
+		for _, match := range uploadedImageURLPattern.FindAllStringSubmatch(body, -1) {
+			if len(match) < 2 || seen[match[1]] {
+				continue
+			}
+			filename := match[1]
+			seen[filename] = true
+			var imageHash string
+			if err := db.QueryRowContext(ctx, "SELECT sha256 FROM portal.uploaded_image_assets WHERE filename=$1", filename).Scan(&imageHash); err != nil {
+				if err == sql.ErrNoRows {
+					return "", rightsGateError{message: "文章包含未登记的站内图片：" + filename}
+				}
+				return "", err
+			}
+			if _, err := a.canPublishComplianceAsset(ctx, db, "/uploads/"+filename, imageHash); err != nil {
+				return "", rightsGateError{message: "文章图片尚未通过独立版权审核（" + filename + "）： " + err.Error()}
+			}
+		}
+	}
 	return id, nil
 }

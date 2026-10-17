@@ -56,6 +56,9 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		defer cleanCancel()
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_content_interactions WHERE user_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_content_versions WHERE author_id=$1`, userID)
+		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.uploaded_image_assets WHERE uploader_id=$1`, userID)
+		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.compliance_assets WHERE metadata->>'uploader_id'=$1`, userID)
+		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.compliance_assets a USING portal.portal_content c WHERE a.asset_path='db://portal.portal_content/' || c.content_id::text AND c.author_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_content WHERE author_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.teaching_resources WHERE owner_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_auth_sessions WHERE user_id=$1`, userID)
@@ -250,6 +253,78 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	}
 	if _, err := os.Stat(api.uploadDir); err != nil {
 		t.Fatal(err)
+	}
+	var uploaded struct {
+		URL          string `json:"url"`
+		RightsStatus string `json:"rightsStatus"`
+		Public       bool   `json:"public"`
+	}
+	if err := json.Unmarshal(image.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	if uploaded.RightsStatus != "pending_review" || uploaded.Public {
+		t.Fatalf("new image must default to private pending review: %#v", uploaded)
+	}
+	publicRequest := httptest.NewRequest(http.MethodGet, uploaded.URL, nil)
+	publicResponse := httptest.NewRecorder()
+	api.ServeHTTP(publicResponse, publicRequest)
+	if publicResponse.Code != http.StatusNotFound {
+		t.Fatalf("pending image should not be publicly retrievable: got %d", publicResponse.Code)
+	}
+	ownerRequest := httptest.NewRequest(http.MethodGet, uploaded.URL, nil)
+	ownerRequest.AddCookie(sessionCookie)
+	ownerResponse := httptest.NewRecorder()
+	api.ServeHTTP(ownerResponse, ownerRequest)
+	if ownerResponse.Code != http.StatusOK || !bytes.Equal(ownerResponse.Body.Bytes(), imageBytes) {
+		t.Fatalf("owner preview should work for pending image: status=%d body=%v", ownerResponse.Code, ownerResponse.Body.Bytes())
+	}
+
+	body := "<p>Image rights gate integration test</p><img src=\" + uploaded.URL + \" alt=\"test\">"
+	createdContent := requestJSON(t, api, http.MethodPost, "/content", map[string]any{
+		"title": "Image rights gate test", "slug": "image-rights-gate-test", "contentType": "article",
+		"tags": []string{"编程"}, "summary": "Integration test", "body": body, "visibility": "public",
+	}, sessionCookie, http.StatusCreated)
+	var contentResult struct {
+		Item struct {
+			ID string `json:"id"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal(createdContent.Body.Bytes(), &contentResult); err != nil {
+		t.Fatal(err)
+	}
+	if contentResult.Item.ID == "" {
+		t.Fatalf("created content response missing id: %s", createdContent.Body.String())
+	}
+	var imageGateContentAssetID string
+	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1 AND sha256=$2", "db://portal.portal_content/"+contentResult.Item.ID, contentBodyHash(body)).Scan(&imageGateContentAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='original',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", imageGateContentAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'author_declaration','test://image-gate','Test article ownership',TRUE,'integration-test')", imageGateContentAssetID); err != nil {
+		t.Fatal(err)
+	}
+	blocked := requestJSON(t, api, http.MethodPost, "/content/"+contentResult.Item.ID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
+	if !bytes.Contains(blocked.Body.Bytes(), []byte("文章图片尚未通过独立版权审核")) {
+		t.Fatalf("pending image should block article publication: %s", blocked.Body.String())
+	}
+
+	var imageAssetID string
+	if err := db.QueryRowContext(ctx, "SELECT compliance_asset_id::text FROM portal.uploaded_image_assets WHERE filename=$1", strings.TrimPrefix(uploaded.URL, "/uploads/")).Scan(&imageAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='original',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", imageAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'author_declaration','test://image-gate','Test image ownership',TRUE,'integration-test')", imageAssetID); err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, api, http.MethodPost, "/content/"+contentResult.Item.ID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
+	publicAfterApproval := httptest.NewRecorder()
+	api.ServeHTTP(publicAfterApproval, httptest.NewRequest(http.MethodGet, uploaded.URL, nil))
+	if publicAfterApproval.Code != http.StatusOK || !bytes.Equal(publicAfterApproval.Body.Bytes(), imageBytes) {
+		t.Fatalf("approved image referenced by published content should be public: status=%d body=%v", publicAfterApproval.Code, publicAfterApproval.Body.Bytes())
 	}
 }
 

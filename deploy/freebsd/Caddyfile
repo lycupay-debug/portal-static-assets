@@ -7,10 +7,12 @@
 }
 
 www.lycupaynotion.top {
-	handle_path /uploads/* {
-		root * /usr/local/www/personal-portal/uploads
-		encode zstd gzip
-		file_server
+	# Image requests must pass through the API rights gate; never serve this
+	# directory directly from Caddy because that bypasses per-asset review.
+	handle /uploads/* {
+		reverse_proxy 127.0.0.1:8081 {
+			header_up X-Portal-Client-IP {client_ip}
+		}
 	}
 
 	# Internal control surfaces must never be exposed through the public gateway.
