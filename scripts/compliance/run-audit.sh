@@ -48,5 +48,16 @@ python3.14 "$ROOT/scripts/compliance/scan_assets.py" \
   --release "$WEBROOT/current" --uploads "$WEBROOT/uploads" \
   --resources "$RESOURCE_DIR" --out "$REPORT_DIR"
 psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$REPORT_DIR/seed-compliance-inventory.sql"
+# Retention review is intentionally report-only. It never deletes data; complaint
+# retention and legal-hold rules still require an approved policy.
+psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -f "$ROOT/scripts/compliance/retention-dry-run.sql" > "$REPORT_DIR/retention-dry-run.json"
+UPLOAD_FILES=$(find "$WEBROOT/uploads" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
+REGISTERED_UPLOADS=$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM portal.uploaded_image_assets")
+{
+  echo "mode=report_only"
+  echo "files_on_disk=$UPLOAD_FILES"
+  echo "registered_image_asset_rows=$REGISTERED_UPLOADS"
+  echo "delete_actions=none"
+} > "$REPORT_DIR/upload-filesystem-inventory.txt"
 chmod 0600 "$REPORT_DIR"/*
-echo "Compliance inventory completed: $REPORT_DIR"
+echo "Compliance inventory and retention dry-run completed: $REPORT_DIR"
