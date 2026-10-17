@@ -4,9 +4,9 @@ import { normalizeComplianceAssetDetail } from '../utils/compliance.ts'
 
 type AnyRecord = Record<string, any>
 const props = defineProps<{ isAdmin?: boolean }>()
-type Tab = 'assets' | 'licenses' | 'documents' | 'complaints' | 'scans' | 'audit'
+type Tab = 'assets' | 'licenses' | 'documents' | 'complaints' | 'scans' | 'audit' | 'reviewers'
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'assets', label: '资产台账' }, { id: 'licenses', label: '许可证目录' }, { id: 'documents', label: '政策文件' }, { id: 'complaints', label: '版权投诉' }, { id: 'scans', label: '扫描记录' }, { id: 'audit', label: '操作日志' },
+  { id: 'assets', label: '资产台账' }, { id: 'licenses', label: '许可证目录' }, { id: 'documents', label: '政策文件' }, { id: 'complaints', label: '版权投诉' }, { id: 'scans', label: '扫描记录' }, { id: 'audit', label: '操作日志' }, { id: 'reviewers', label: '审核人员权限' },
 ]
 const activeTab = ref<Tab>('assets')
 const loading = ref(false)
@@ -27,6 +27,8 @@ const documents = ref<AnyRecord[]>([])
 const complaints = ref<AnyRecord[]>([])
 const scans = ref<AnyRecord[]>([])
 const auditLogs = ref<AnyRecord[]>([])
+const reviewerUsers = ref<AnyRecord[]>([])
+const reviewerUpdateBusy = ref<string | null>(null)
 const selectedAsset = ref<AnyRecord | null>(null)
 const selectedEvidence = ref<AnyRecord[]>([])
 const selectedReviews = ref<AnyRecord[]>([])
@@ -40,7 +42,7 @@ const licenseForm = ref<AnyRecord>({})
 const documentForm = ref<AnyRecord>({})
 const complaintForm = ref<AnyRecord>({})
 const feedback = ref('')
-const visibleTabs = computed(() => props.isAdmin ? tabs : tabs.filter(tab => tab.id !== 'complaints'))
+const visibleTabs = computed(() => props.isAdmin ? tabs : tabs.filter(tab => tab.id !== 'complaints' && tab.id !== 'reviewers'))
 const filteredAssets = computed(() => assets.value)
 function reviewPreviewUrl(asset: AnyRecord): string | null {
   const path = String(asset.path || '')
@@ -85,9 +87,16 @@ async function loadDocuments() { const r = await api<AnyRecord>('/compliance/doc
 async function loadComplaints() { if (!props.isAdmin) { complaints.value = []; return } const r = await api<AnyRecord>('/compliance/complaints'); complaints.value = r.items || [] }
 async function loadScans() { const r = await api<AnyRecord>('/compliance/scans'); scans.value = r.items || [] }
 async function loadAuditLogs() { const r = await api<AnyRecord>('/compliance/audit'); auditLogs.value = r.items || [] }
+async function loadReviewerUsers() { if (!props.isAdmin) { reviewerUsers.value = []; return } const r = await api<AnyRecord>('/compliance/reviewers'); reviewerUsers.value = r.items || [] }
+async function setReviewerRole(item: AnyRecord, enabled: boolean) {
+  reviewerUpdateBusy.value = String(item.id)
+  const result = await run(() => api<AnyRecord>(`/compliance/reviewers/${item.id}`, { method: 'PATCH', body: JSON.stringify({ isCopyrightReviewer: enabled }) }))
+  if (result?.item) { reviewerUsers.value = reviewerUsers.value.map(user => user.id === item.id ? result.item : user); feedback.value = `${item.displayName || item.email} 的版权审核专员权限已${enabled ? '启用' : '撤销'}。` }
+  reviewerUpdateBusy.value = null
+}
 async function refreshAll() {
   loading.value = true
-  await run(async () => { await Promise.all([loadOverview(), loadAssets(true), loadLicenses(), loadDocuments(), loadComplaints(), loadScans(), loadAuditLogs()]) })
+  await run(async () => { await Promise.all([loadOverview(), loadAssets(true), loadLicenses(), loadDocuments(), loadComplaints(), loadScans(), loadAuditLogs(), loadReviewerUsers()]) })
   loading.value = false
 }
 async function openAsset(asset: AnyRecord) {
@@ -209,7 +218,7 @@ onMounted(() => { void refreshAll() })
         <div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>资产</th><th>类型</th><th>授权状态</th><th>风险</th><th>审核状态</th><th>公开/分发</th><th>操作</th></tr></thead><tbody><tr v-for="item in filteredAssets" :key="item.id"><td class="asset-name"><strong>{{ item.name }}</strong><small>{{ item.path }}</small><a v-if="reviewPreviewUrl(item)" class="cc-text-button" :href="reviewPreviewUrl(item)!" target="_blank" rel="noopener noreferrer">受限预览 ↗</a><a v-if="item.sourceUrl" :href="item.sourceUrl" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></td><td>{{ item.type }}</td><td>{{ item.permissionStatus }}</td><td><span class="cc-risk" :class="item.riskLevel">{{ riskLabel(item.riskLevel) }}</span></td><td>{{ statusLabel(item.reviewStatus) }}</td><td>{{ item.active ? item.distributionStatus : '非活动/源文件' }}</td><td><button type="button" class="cc-text-button" @click="openAsset(item)">审核详情</button></td></tr><tr v-if="!assets.length"><td colspan="7" class="cc-empty">{{ loading ? '正在读取…' : '没有符合条件的资产。' }}</td></tr></tbody></table></div>
         <div class="cc-pagination"><span>显示 {{ assets.length }} / {{ assetsTotal }} 条</span><div><button class="cc-button secondary" :disabled="assetOffset <= 0" @click="assetOffset = Math.max(0, assetOffset - assetLimit); run(() => loadAssets())">上一页</button><button class="cc-button secondary" :disabled="assetOffset + assets.length >= assetsTotal" @click="assetOffset += assetLimit; run(() => loadAssets())">下一页</button></div></div>
       </section>
-      <section v-else-if="activeTab === 'licenses'" class="cc-panel"><div class="cc-panel-heading"><div><h3>许可证目录</h3><p>来源包括 package-lock、包内许可证文件及现有第三方声明文件。</p></div><span class="cc-count">{{ licenses.length }} 条</span></div><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>许可证</th><th>类型</th><th>商业使用标记</th><th>文本收录</th><th>审核</th><th></th></tr></thead><tbody><tr v-for="item in licenses" :key="item.id"><td><strong>{{ item.name }}</strong><small v-if="item.canonicalUrl"><a :href="item.canonicalUrl" target="_blank" rel="noopener noreferrer">许可证参考 ↗</a></small></td><td>{{ item.family }}</td><td>{{ item.commercialUseAllowed === true ? '元数据标记允许' : item.commercialUseAllowed === false ? '元数据标记受限' : '未判定' }}</td><td>{{ item.licenseTextCaptured ? '已收录文本' : '缺少文本' }}</td><td>{{ statusLabel(item.reviewStatus) }}</td><td><button class="cc-text-button" @click="openLicense(item)">复核</button></td></tr><tr v-if="!licenses.length"><td colspan="6" class="cc-empty">暂无许可证记录</td></tr></tbody></table></div></section>
+      <section v-else-if="activeTab === 'reviewers'" class="cc-panel"><div class="cc-panel-heading"><div><h3>版权审核专员权限</h3><p>只有超管可以分配或撤销。专员可以查看受限内容预览和版权资产记录，但不能查看投诉人的个人信息。</p></div><span class="cc-count">{{ reviewerUsers.filter(item => item.isCopyrightReviewer).length }} 位专员</span></div><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>账户</th><th>账户权限</th><th>版权审核专员</th><th>创建时间</th></tr></thead><tbody><tr v-for="item in reviewerUsers" :key="item.id"><td><strong>{{ item.displayName || '未设置昵称' }}</strong><small>{{ item.email }}</small></td><td>{{ item.isAdmin ? '超管' : '普通账户' }}</td><td><label class="cc-check"><input type="checkbox" :checked="item.isCopyrightReviewer" :disabled="item.isAdmin || reviewerUpdateBusy === item.id" @change="setReviewerRole(item, ($event.target as HTMLInputElement).checked)"><span>{{ item.isAdmin ? '超管默认拥有预览权限' : item.isCopyrightReviewer ? '已授权' : '未授权' }}</span></label></td><td>{{ formatDate(item.createdAt) }}</td></tr><tr v-if="!reviewerUsers.length"><td colspan="4" class="cc-empty">暂无账户</td></tr></tbody></table></div></section><section v-else-if="activeTab === 'licenses'" class="cc-panel"><div class="cc-panel-heading"><div><h3>许可证目录</h3><p>来源包括 package-lock、包内许可证文件及现有第三方声明文件。</p></div><span class="cc-count">{{ licenses.length }} 条</span></div><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>许可证</th><th>类型</th><th>商业使用标记</th><th>文本收录</th><th>审核</th><th></th></tr></thead><tbody><tr v-for="item in licenses" :key="item.id"><td><strong>{{ item.name }}</strong><small v-if="item.canonicalUrl"><a :href="item.canonicalUrl" target="_blank" rel="noopener noreferrer">许可证参考 ↗</a></small></td><td>{{ item.family }}</td><td>{{ item.commercialUseAllowed === true ? '元数据标记允许' : item.commercialUseAllowed === false ? '元数据标记受限' : '未判定' }}</td><td>{{ item.licenseTextCaptured ? '已收录文本' : '缺少文本' }}</td><td>{{ statusLabel(item.reviewStatus) }}</td><td><button class="cc-text-button" @click="openLicense(item)">复核</button></td></tr><tr v-if="!licenses.length"><td colspan="6" class="cc-empty">暂无许可证记录</td></tr></tbody></table></div></section>
       <section v-else-if="activeTab === 'documents'" class="cc-panel"><div class="cc-panel-heading"><div><h3>政策文件</h3><p>政策当前均为草稿。缺少主体、联系渠道或实际数据处理事实时，系统会阻止发布。</p></div><span class="cc-count">{{ documents.length }} 份</span></div><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>政策</th><th>辖区</th><th>版本</th><th>状态</th><th>缺失事实</th><th></th></tr></thead><tbody><tr v-for="item in documents" :key="item.id"><td><strong>{{ item.title }}</strong><small>/legal/{{ item.slug }}</small></td><td>{{ item.jurisdiction }}</td><td>v{{ item.version }}</td><td>{{ statusLabel(item.status) }}</td><td>{{ (item.missingInformation || []).length }}</td><td><button class="cc-text-button" @click="openDocument(item)">编辑/审核</button></td></tr><tr v-if="!documents.length"><td colspan="6" class="cc-empty">暂无政策文档</td></tr></tbody></table></div></section>
       <section v-else-if="activeTab === 'complaints'" class="cc-panel"><div class="cc-panel-heading"><div><h3>版权投诉</h3><p>投诉入口在“版权投诉”政策正式发布前不会接收个人信息。</p></div><span class="cc-count">{{ complaints.length }} 条</span></div><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>投诉人</th><th>作品说明</th><th>链接数</th><th>收到时间</th><th>状态</th><th></th></tr></thead><tbody><tr v-for="item in complaints" :key="item.id"><td><strong>{{ item.name }}</strong><small>{{ item.email }}</small></td><td>{{ item.workDescription }}</td><td>{{ (item.infringingUrls || []).length }}</td><td>{{ formatDate(item.receivedAt) }}</td><td>{{ statusLabel(item.status) }}</td><td><button class="cc-text-button" @click="openComplaint(item)">处理</button></td></tr><tr v-if="!complaints.length"><td colspan="6" class="cc-empty">暂无投诉记录</td></tr></tbody></table></div></section>
       <section v-else-if="activeTab === 'audit'" class="cc-panel"><div class="cc-panel-heading"><div><h3>操作审计日志</h3><p>记录资产、证据、审核、许可证、政策与投诉状态的变更；投诉审计快照会排除联系信息和证明正文。</p></div><span class="cc-count">{{ auditLogs.length }} 条</span></div><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>对象</th><th>变更快照</th></tr></thead><tbody><tr v-for="item in auditLogs" :key="item.id"><td>{{ formatDate(item.createdAt) }}</td><td>{{ item.actor }}</td><td>{{ item.action }}</td><td><strong>{{ item.objectType }}</strong><small>{{ item.objectId }}</small></td><td><details><summary>查看前后状态</summary><pre class="cc-audit-json">前：{{ JSON.stringify(item.beforeState, null, 2) }}

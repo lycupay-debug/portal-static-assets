@@ -149,6 +149,46 @@ func (a *portalAPI) requireComplianceAdmin(w http.ResponseWriter, r *http.Reques
 	return u, true
 }
 
+func (a *portalAPI) complianceReviewerUsers(w http.ResponseWriter, r *http.Request, u *portalUser, tail string) {
+	if tail == "" && r.Method == http.MethodGet {
+		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS "displayName",is_admin AS "isAdmin",is_copyright_reviewer AS "isCopyrightReviewer",created_at AS "createdAt" FROM portal.portal_users ORDER BY created_at DESC) x`)
+		if err != nil {
+			a.dbError(w, err, "无法读取审核人员列表。")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": items})
+		return
+	}
+	id := strings.TrimPrefix(tail, "/")
+	if !portalUUID.MatchString(id) || r.Method != http.MethodPatch {
+		writeError(w, http.StatusNotFound, "审核人员记录不存在。", nil)
+		return
+	}
+	var body struct {
+		IsCopyrightReviewer *bool `json:"isCopyrightReviewer"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil || body.IsCopyrightReviewer == nil {
+		writeError(w, http.StatusBadRequest, "请提供 isCopyrightReviewer 布尔值。", nil)
+		return
+	}
+	before, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS "displayName",is_admin AS "isAdmin",is_copyright_reviewer AS "isCopyrightReviewer" FROM portal.portal_users WHERE user_id=$1::uuid) x`, id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "账户不存在。", nil)
+		return
+	}
+	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.portal_users SET is_copyright_reviewer=$1,updated_at=now() WHERE user_id=$2::uuid`, *body.IsCopyrightReviewer, id); err != nil {
+		a.dbError(w, err, "无法更新版权审核专员权限。")
+		return
+	}
+	a.logComplianceChange(r, u, "update", "portal_user", id, before)
+	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS "displayName",is_admin AS "isAdmin",is_copyright_reviewer AS "isCopyrightReviewer" FROM portal.portal_users WHERE user_id=$1::uuid) x`, id)
+	if err != nil {
+		a.dbError(w, err, "权限已更新，但无法读取更新结果。")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+}
+
 func (a *portalAPI) compliancePreview(w http.ResponseWriter, r *http.Request, u *portalUser, tail string) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Vary", "Cookie")
@@ -230,6 +270,15 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/compliance")
+	if path == "/reviewers" || strings.HasPrefix(path, "/reviewers/") {
+		var superAdmin bool
+		if err := a.db.QueryRowContext(r.Context(), `SELECT is_admin FROM portal.portal_users WHERE user_id=$1`, u.ID).Scan(&superAdmin); err != nil || !superAdmin {
+			writeError(w, http.StatusForbidden, "只有超管可以分配版权审核专员权限。", nil)
+			return
+		}
+		a.complianceReviewerUsers(w, r, u, strings.TrimPrefix(path, "/reviewers"))
+		return
+	}
 	if strings.HasPrefix(path, "/preview/") {
 		a.compliancePreview(w, r, u, strings.TrimPrefix(path, "/preview/"))
 		return
@@ -1006,6 +1055,7 @@ func (a *portalAPI) logComplianceChange(r *http.Request, u *portalUser, action, 
 		"legal_document":      "SELECT to_jsonb(x) FROM (SELECT document_id,slug,title,document_type,jurisdiction,status,version,effective_at,last_legal_review_at,missing_information,approved_by,updated_at FROM portal.compliance_legal_documents WHERE document_id=$1) x",
 		"copyright_complaint": "SELECT to_jsonb(x) FROM (SELECT complaint_id,status,requested_action,resolution_notes,assigned_to,received_at,updated_at,resolved_at FROM portal.compliance_copyright_complaints WHERE complaint_id=$1) x",
 		"asset_evidence":      "SELECT to_jsonb(x) FROM (SELECT evidence_id,asset_id,evidence_type,evidence_uri,sha256,verified,verified_by,verified_at,captured_at,notes FROM portal.compliance_asset_evidence WHERE evidence_id=$1) x",
+		"portal_user":         "SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS displayName,is_admin AS isAdmin,is_copyright_reviewer AS isCopyrightReviewer FROM portal.portal_users WHERE user_id=$1::uuid) x",
 	}
 	after := map[string]any{}
 	var readErr error
