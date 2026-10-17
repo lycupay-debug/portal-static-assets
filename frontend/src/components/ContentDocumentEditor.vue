@@ -286,12 +286,12 @@ onBeforeUnmount(() => {
     <div class="content-workspace-grid">
       <aside class="content-outline-sidebar">
         <details class="workspace-fold workspace-outline-fold" open>
-          <summary><span><strong>文档目录</strong></span><span class="workspace-fold-chevron">⌄</span></summary>
+          <summary><span><strong>文档目录</strong></span><span class="workspace-fold-chevron bi bi-chevron-down" aria-hidden="true"></span></summary>
         <p v-if="!outlineItems.length" class="outline-empty">添加标题后，目录会自动生成。</p>
         <nav v-else class="content-outline-list" aria-label="文档目录">
           <button v-for="item in outlineItems" :key="item.index" type="button" :class="'outline-level-' + item.level" @click="jumpToHeading(item.index)"><span></span>{{ item.text }}</button>
         </nav>
-        <div class="outline-sidebar-foot"><span>▤</span> 标题目录自动更新</div>
+        <div class="outline-sidebar-foot"><i class="bi bi-journal-text" aria-hidden="true"></i> 标题目录自动更新</div>
         </details>
       </aside>
       <section class="content-paper-stage">
@@ -300,11 +300,11 @@ onBeforeUnmount(() => {
           <div class="content-editor-hint"><span>正文编辑</span><span>输入 <kbd>/</kbd> 插入内容 · 选中文字可快速格式化</span></div>
           <div class="content-editor-canvas" @contextmenu.prevent="openContextMenu" @click.capture="handleEditorClick" @click="contextMenu.open = false" @dblclick="handleEditorDoubleClick">
             <EditorContent :editor="editor" />
-            <div v-if="imageZoom" class="content-editor-image-zoom" role="dialog" aria-label="图片预览" @click.self="imageZoom = ''" @keydown.esc="imageZoom = ''"><button type="button" aria-label="关闭图片预览" @click="imageZoom = ''">×</button><img :src="imageZoom" alt="放大图片预览" /></div>
+            <div v-if="imageZoom" class="content-editor-image-zoom" role="dialog" aria-label="图片预览" @click.self="imageZoom = ''" @keydown.esc="imageZoom = ''"><button type="button" aria-label="关闭图片预览" @click="imageZoom = ''"><i class="bi bi-x-lg" aria-hidden="true"></i></button><img :src="imageZoom" alt="放大图片预览" /></div>
             <div v-if="imageMenuOpen && !disabled" class="content-editor-image-menu" :style="{ left: imagePosition.left + 'px', top: imagePosition.top + 'px' }" role="dialog" aria-label="插入图片"><strong>插入图片</strong><button type="button" @click="imageFileInput?.click()">上传本地文件</button><input ref="imageFileInput" name="imageFile" type="file" accept="image/*" hidden @change="onImageFileChange" /><div class="content-editor-image-url"><input class="form-control" v-model="imageUrl" name="imageUrl" type="url" placeholder="https:// 图片 URL" @keydown.enter.prevent="insertImageFromUrl" /><button type="button" @click="insertImageFromUrl">插入 URL</button></div><button type="button" class="content-editor-image-cancel" @click="imageMenuOpen = false">取消</button></div>
             <div v-if="contextMenu.open && !disabled" class="content-editor-context-menu" role="menu" aria-label="统一编辑快捷菜单" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @mousedown.prevent @click.stop>
               <template v-if="editor?.isActive('image')"><div class="context-menu-heading">图片操作</div><div class="context-menu-actions"><button v-for="width in imageWidths" :key="width" type="button" role="menuitem" @click="resizeSelectedImage(width); contextMenu.open = false">宽度 {{ width }}</button></div></template>
-              <template v-else-if="editor?.isActive('table')"><div class="context-menu-heading">表格操作</div><div class="context-menu-actions"><button type="button" role="menuitem" @click="editor?.chain().focus().addColumnAfter().run(); contextMenu.open = false">＋ 添加列</button><button type="button" role="menuitem" @click="editor?.chain().focus().deleteColumn().run(); contextMenu.open = false">− 删除列</button><button type="button" role="menuitem" @click="editor?.chain().focus().addRowAfter().run(); contextMenu.open = false">＋ 添加行</button><button type="button" role="menuitem" @click="editor?.chain().focus().deleteRow().run(); contextMenu.open = false">− 删除行</button><button type="button" role="menuitem" @click="editor?.chain().focus().deleteTable().run(); contextMenu.open = false">删除表格</button></div></template>
+              <template v-else-if="editor?.isActive('table')"><div class="context-menu-heading">表格操作</div><div class="context-menu-actions"><button type="button" role="menuitem" @click="editor?.chain().focus().addColumnAfter().run(); contextMenu.open = false"><i class="bi bi-plus-lg" aria-hidden="true"></i> 添加列</button><button type="button" role="menuitem" @click="editor?.chain().focus().deleteColumn().run(); contextMenu.open = false">− 删除列</button><button type="button" role="menuitem" @click="editor?.chain().focus().addRowAfter().run(); contextMenu.open = false"><i class="bi bi-plus-lg" aria-hidden="true"></i> 添加行</button><button type="button" role="menuitem" @click="editor?.chain().focus().deleteRow().run(); contextMenu.open = false">− 删除行</button><button type="button" role="menuitem" @click="editor?.chain().focus().deleteTable().run(); contextMenu.open = false">删除表格</button></div></template>
               <template v-else-if="editor?.isActive('callout')"><div class="context-menu-heading">提醒卡片背景</div><div class="context-color-row"><button v-for="color in calloutColors" :key="color" type="button" :title="color" :aria-label="'提醒背景 ' + color" :style="{ backgroundColor: color }" @click="setCalloutColor(color); contextMenu.open = false"></button></div></template>
               <div class="context-menu-heading">文本格式</div>
               <div class="context-menu-actions">
@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
                 <button type="button" role="menuitem" @click="editor?.chain().focus().toggleUnderline().run(); contextMenu.open = false">U 下划线</button>
                 <button type="button" role="menuitem" @click="editor?.chain().focus().toggleStrike().run(); contextMenu.open = false">S 删除线</button>
                 <button type="button" role="menuitem" @click="editor?.chain().focus().toggleCode().run(); contextMenu.open = false">&lt;/&gt; 行内代码</button>
-                <button type="button" role="menuitem" @click="applyContextAction('link')">↗ 添加链接</button>
+                <button type="button" role="menuitem" @click="applyContextAction('link')"><i class="bi bi-link-45deg" aria-hidden="true"></i> 添加链接</button>
                 <button type="button" role="menuitem" @click="applyContextAction('clear')">Tx 清除格式</button>
               </div>
               <div class="context-menu-heading">背景色</div>
@@ -349,7 +349,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="content-editor-canvas" @contextmenu.prevent="openContextMenu" @click.capture="handleEditorClick" @click="contextMenu.open = false" @dblclick="handleEditorDoubleClick">
           <EditorContent :editor="editor" />
-          <div v-if="imageZoom" class="content-editor-image-zoom" role="dialog" aria-label="图片预览" @click.self="imageZoom = ''" @keydown.esc="imageZoom = ''"><button type="button" aria-label="关闭图片预览" @click="imageZoom = ''">×</button><img :src="imageZoom" alt="放大图片预览" /></div>
+          <div v-if="imageZoom" class="content-editor-image-zoom" role="dialog" aria-label="图片预览" @click.self="imageZoom = ''" @keydown.esc="imageZoom = ''"><button type="button" aria-label="关闭图片预览" @click="imageZoom = ''"><i class="bi bi-x-lg" aria-hidden="true"></i></button><img :src="imageZoom" alt="放大图片预览" /></div>
           <div v-if="imageMenuOpen && !disabled" class="content-editor-image-menu" :style="{ left: imagePosition.left + 'px', top: imagePosition.top + 'px' }" role="dialog" aria-label="插入图片"><strong>插入图片</strong><button type="button" @click="imageFileInput?.click()">上传本地文件</button><input ref="imageFileInput" name="imageFile" type="file" accept="image/*" hidden @change="onImageFileChange" /><div class="content-editor-image-url"><input v-model="imageUrl" name="imageUrl" type="url" placeholder="https:// 图片 URL" @keydown.enter.prevent="insertImageFromUrl" /><button type="button" @click="insertImageFromUrl">插入 URL</button></div><button type="button" class="content-editor-image-cancel" @click="imageMenuOpen = false">取消</button></div>
           <div v-if="contextMenu.open && !disabled" class="content-editor-context-menu" role="menu" aria-label="统一编辑快捷菜单" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @mousedown.prevent @click.stop>
             <div class="context-menu-heading">文本格式</div>
@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
               <button type="button" role="menuitem" @click="editor?.chain().focus().toggleUnderline().run(); contextMenu.open = false">U 下划线</button>
               <button type="button" role="menuitem" @click="editor?.chain().focus().toggleStrike().run(); contextMenu.open = false">S 删除线</button>
               <button type="button" role="menuitem" @click="editor?.chain().focus().toggleCode().run(); contextMenu.open = false">&lt;/&gt; 行内代码</button>
-              <button type="button" role="menuitem" @click="applyContextAction('link')">↗ 添加链接</button>
+              <button type="button" role="menuitem" @click="applyContextAction('link')"><i class="bi bi-link-45deg" aria-hidden="true"></i> 添加链接</button>
               <button type="button" role="menuitem" @click="applyContextAction('clear')">Tx 清除格式</button>
             </div>
             <div class="context-menu-heading">背景色</div>

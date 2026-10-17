@@ -26,13 +26,13 @@ onBeforeUnmount(() => { document.removeEventListener('mousedown', onOutside); do
 <template>
   <div ref="root" class="virtualized-select" :class="{ 'is-open': open, 'is-disabled': disabled }">
     <button type="button" class="virtualized-select-trigger" :aria-label="label" :aria-expanded="open" :disabled="disabled" @click="open = !open">
-      <span>{{ selected?.label || placeholder }}</span><span class="virtualized-select-chevron">⌄</span>
+      <span>{{ selected?.label || placeholder }}</span><i class="virtualized-select-chevron bi bi-chevron-down" aria-hidden="true"></i>
     </button>
     <div v-if="open" class="virtualized-select-popover" role="listbox" :aria-label="label">
       <input v-model="query" name="optionSearch" class="form-control virtualized-select-search" type="search" placeholder="搜索选项…" :aria-label="'搜索' + label" @keydown.stop />
       <div class="virtualized-select-viewport" :style="{ height: viewportHeight + 'px' }" @scroll="scrollTop = ($event.target as HTMLElement).scrollTop">
         <div :style="{ height: startIndex * rowHeight + 'px' }"></div>
-        <button v-for="option in visibleOptions" :key="option.value" type="button" role="option" :aria-selected="option.value === modelValue" :class="{ selected: option.value === modelValue }" :style="{ height: rowHeight + 'px' }" @click="choose(option.value)"><span>{{ option.label }}</span><span v-if="option.value === modelValue">✓</span></button>
+        <button v-for="option in visibleOptions" :key="option.value" type="button" role="option" :aria-selected="option.value === modelValue" :class="{ selected: option.value === modelValue }" :style="{ height: rowHeight + 'px' }" @click="choose(option.value)"><span>{{ option.label }}</span><i v-if="option.value === modelValue" class="bi bi-check2" aria-hidden="true"></i></button>
         <div :style="{ height: Math.max(0, (filtered.length - endIndex) * rowHeight) + 'px' }"></div>
         <p v-if="!filtered.length" class="virtualized-select-empty">没有匹配的选项</p>
       </div>

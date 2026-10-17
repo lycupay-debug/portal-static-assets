@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { dismissNotificationById, notificationState } from '../utils/notification'
-const icons = { success: '✓', error: '×', warning: '!', info: 'i' } as const
+const icons = { success: 'bi-check-lg', error: 'bi-x-lg', warning: 'bi-exclamation-lg', info: 'bi-info-lg' } as const
 </script>
 <template>
   <Teleport to="body">
   <div class="portal-notification-stack" aria-label="系统通知" aria-live="polite" aria-relevant="additions">
     <TransitionGroup name="portal-notification">
       <section v-for="item in notificationState" :key="item.id" class="portal-notification" :class="`is-${item.type}`" role="status">
-        <span class="portal-notification-icon" aria-hidden="true">{{ icons[item.type] }}</span>
+        <span class="portal-notification-icon" aria-hidden="true"><i :class="['bi', icons[item.type]]"></i></span>
         <div class="portal-notification-copy"><strong>{{ item.title }}</strong><p>{{ item.message }}</p></div>
-        <button type="button" class="portal-notification-close" aria-label="关闭通知" @click="dismissNotificationById(item.id)">×</button>
+        <button type="button" class="portal-notification-close" aria-label="关闭通知" @click="dismissNotificationById(item.id)"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
       </section>
     </TransitionGroup>
   </div>

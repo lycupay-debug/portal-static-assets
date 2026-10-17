@@ -353,3 +353,177 @@ body { -webkit-font-smoothing: antialiased; }
 .knowledge-category-button, .knowledge-subcategory-button { border-color: var(--portal-select-border) !important; border-radius: var(--portal-select-radius) !important; color: var(--portal-select-text) !important; background: var(--portal-select-surface) !important; }
 .knowledge-category-button:hover, .knowledge-subcategory-button:hover { border-color: var(--portal-select-border-hover) !important; background: var(--portal-select-hover) !important; }
 .knowledge-category-button.is-active, .knowledge-subcategory-button.is-active { border-color: var(--portal-select-border-hover) !important; color: var(--portal-select-text) !important; background: var(--portal-select-selected) !important; }
+
+/* Bootstrap Icons are bundled locally; these rules standardize icon alignment site-wide. */
+.bi { display: inline-block; line-height: 1; vertical-align: -0.08em; }
+.bi-button-icon { display: inline-flex; align-items: center; justify-content: center; }
+
+/* Global typography defaults, aligned with Bootstrap's local CSS variables. */
+:root {
+  --bs-body-font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --bs-body-font-size: 1rem;
+  --bs-body-font-weight: 400;
+  --bs-body-line-height: 1.6;
+  --bs-heading-color: #111111;
+  --bs-body-color: #191919;
+  --bs-link-color: #292929;
+  --bs-link-hover-color: #000000;
+  --portal-type-body: 1rem;
+  --portal-type-small: .875rem;
+  --portal-type-caption: .75rem;
+  --portal-type-line-height: 1.6;
+}
+html { font-size: 100%; }
+body { font-family: var(--bs-body-font-family); font-size: var(--portal-type-body); font-weight: var(--bs-body-font-weight); line-height: var(--portal-type-line-height); }
+#app, #app button, #app input, #app select, #app textarea { font-family: var(--bs-body-font-family); }
+h1, h2, h3, h4, h5, h6 { color: var(--bs-heading-color); font-weight: 600; line-height: 1.25; letter-spacing: -.025em; }
+p { line-height: var(--portal-type-line-height); }
+small, .small { font-size: var(--portal-type-small); }
+code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMono-Regular, Consolas, monospace); }
+
+/* Education resource cards: four columns on desktop, compact two-column tablet and one-column mobile. */
+.education-resource-results-section .knowledge-infinite-list {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 2px 0 14px;
+}
+.education-resource-list-item {
+  position: relative;
+  grid-template-columns: 42px minmax(0, 1fr) 14px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px 11px;
+  min-height: 176px;
+  padding: 17px 15px 13px;
+  border-color: rgba(0, 0, 0, .075);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .68);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .018);
+  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.education-resource-list-item:hover {
+  border-color: rgba(0, 0, 0, .16);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .045);
+}
+.education-resource-file-icon {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+  place-items: center;
+  width: 42px;
+  height: 48px;
+  border: 1px solid rgba(0, 0, 0, .07);
+  border-radius: 11px;
+  color: #252525;
+  background: rgba(0, 0, 0, .035);
+  font-size: 25px;
+}
+.education-resource-list-item .knowledge-list-copy {
+  grid-column: 2;
+  grid-row: 1;
+  gap: 6px;
+  padding-top: 1px;
+}
+.education-resource-list-item .knowledge-list-copy strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.education-resource-list-item .knowledge-list-copy > span:not(.education-resource-meta) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.education-resource-list-item .education-resource-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+.education-resource-list-item .education-resource-meta b {
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 1px solid rgba(0, 0, 0, .055);
+  border-radius: 5px;
+  color: #454545;
+  background: rgba(0, 0, 0, .035);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.education-resource-list-item .education-resource-meta .education-resource-filename {
+  display: block;
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: #858585;
+  font-size: 10px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.education-resource-list-item time {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+  align-self: end;
+  padding-top: 8px;
+  color: #888;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.education-resource-list-item .knowledge-list-arrow {
+  grid-column: 3;
+  grid-row: 1;
+  padding-top: 2px;
+  color: #777;
+  font-size: 13px;
+}
+.knowledge-list-status { grid-column: 1 / -1; }
+
+/* One persistent return-to-top control replaces footer/page-specific links. */
+.scroll-to-top {
+  position: fixed;
+  right: clamp(18px, 2.2vw, 32px);
+  bottom: clamp(18px, 2.2vw, 32px);
+  z-index: 9500;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, .09);
+  border-radius: 50%;
+  color: #111;
+  background: rgba(255, 255, 255, .76);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  backdrop-filter: blur(22px) saturate(145%);
+  font-size: 21px;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.scroll-to-top:hover { border-color: rgba(0, 0, 0, .18); background: rgba(255, 255, 255, .96); box-shadow: 0 10px 30px rgba(0, 0, 0, .16); }
+.scroll-to-top:active { transform: translateY(1px); }
+.scroll-to-top:focus-visible { outline: 2px solid rgba(0, 0, 0, .55); outline-offset: 3px; }
+@media (max-width: 1100px) {
+  .education-resource-results-section .knowledge-infinite-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .education-resource-results-section .knowledge-infinite-list { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .education-resource-list-item { min-height: 144px; padding: 15px; }
+  .scroll-to-top { right: 16px; bottom: 16px; width: 44px; height: 44px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .scroll-to-top { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

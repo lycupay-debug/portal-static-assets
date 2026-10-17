@@ -4,6 +4,7 @@ import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
 import { normalizeTaxonomyPair, portalTaxonomy, taxonomyChildOptions, taxonomyParentOptions } from './utils/taxonomy'
+import { resourceFileIcon } from './utils/resourceIcons'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const knowledgeTagOptions = portalTaxonomy.filter(category => !['年级', '教育人力资源'].includes(category.value))
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
@@ -22,6 +23,12 @@ type PortalContent = APIContent
 type ContentVersion = APIContentVersion
 type TeachingResource = APITeachingResource
 type PublicTeachingResource = Pick<TeachingResource, 'id' | 'title' | 'description' | 'type' | 'grade' | 'url' | 'filename' | 'fileSize' | 'createdAt' | 'updatedAt'> & { downloadUrl?: string | null }
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  document.querySelectorAll<HTMLElement>('.account-content, .account-sidebar, .virtual-table-scroll, .content-workspace-page, .content-outline-sidebar, .content-tools-sidebar, .content-editor-document').forEach((element) => {
+    element.scrollTo({ top: 0, behavior: 'smooth' })
+  })
+}
 type ContentForm = {
   title: string
   slug: string
@@ -125,10 +132,10 @@ function toggleAccountGroup(groupId: string) {
 }
 function accountGroupIcon(groupId: string): string {
   const icons: Record<string, string> = {
-    personal: '♙', publishing: '▤', housing: '⌂',
-    education: '▧', software: '⌘', workflows: '⑂',
+    personal: 'bi-person', publishing: 'bi-journal-text', housing: 'bi-house-door',
+    education: 'bi-mortarboard', software: 'bi-tools', workflows: 'bi-diagram-3',
   }
-  return icons[groupId] || '◇'
+  return icons[groupId] || 'bi-grid'
 }
 
 
@@ -1160,12 +1167,12 @@ onBeforeUnmount(() => {
       <header class="content-workspace-topbar">
         <a class="workspace-brand" href="/content-management" @click.prevent="returnToContentList"><span class="workspace-brand-mark">R.</span><span><strong>内容工作台</strong><small></small></span></a>
         <div class="workspace-document-name"><span class="workspace-status-dot"></span><span>{{ contentForm.title.trim() || '未命名内容' }}</span><em>草稿</em></div>
-        <button type="button" class="btn content-secondary-button workspace-return" :disabled="contentBusy" @click="cancelContentEditor">← 返回列表</button>
+        <button type="button" class="btn content-secondary-button workspace-return" :disabled="contentBusy" @click="cancelContentEditor"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回列表</button>
       </header>
       <ContentDocumentEditor v-model="contentForm.body" workspace :disabled="contentBusy">
         <template #workspace-actions>
           <details class="workspace-fold workspace-settings-fold" open>
-            <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron">⌄</span></summary>
+            <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron bi bi-chevron-down" aria-hidden="true"></span></summary>
             <section class="workspace-properties">
               <label><span>内容标题</span><input class="form-control" v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
               <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><div v-for="category in knowledgeTagOptions" :key="category.value" class="workspace-tag-group"><strong>{{ category.value }}</strong><div class="workspace-tag-options"><label v-for="tag in [category.value, ...category.children]" :key="tag" class="workspace-tag-option"><input v-model="contentForm.tags" type="checkbox" :value="tag" :disabled="contentBusy" /><span>{{ tag }}</span></label></div></div></fieldset>
@@ -1198,17 +1205,17 @@ onBeforeUnmount(() => {
           <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
           <div class="art-card card-back"><span class="art-card-label">FIELD NOTES</span><span class="art-lines"><i></i><i></i><i></i></span></div>
           <div class="art-card card-front"><span class="art-card-label">THOUGHT  ACTION</span><div class="art-symbol">P<span>.</span></div><div class="art-card-footer"><span>COLLECT</span><span>CONNECT</span><span>CREATE</span></div></div>
-          <span class="art-index">FIG. 001 — AN OPEN SYSTEM</span><span class="art-spark spark-one">✳</span><span class="art-spark spark-two">＋</span>
+          <span class="art-index">FIG. 001 — AN OPEN SYSTEM</span><span class="art-spark spark-one bi bi-stars" aria-hidden="true"></span><span class="art-spark spark-two bi bi-plus-lg" aria-hidden="true"></span>
         </div>
         <div class="hero-bottom"><span>独立构建的个人空间</span><span>01 / 04 <i></i> PUBLIC SECTIONS</span></div>
       </section>
       <section id="explore" class="explore-section">
         <div class="section-heading"><div><p class="eyebrow">EXPLORE THE PORTAL <span class="heading-rule"></span></p><h2>探索你需要的资源。</h2></div><p class="section-intro">从知识信息到实用工具，逐步拓展更多行业与服务。</p></div>
-        <label class="search-box"><span class="search-icon" aria-hidden="true">⌕</span><input class="form-control" v-model="query" name="portalSearch" type="search" placeholder="搜索资源、信息、工具或行业服务…" aria-label="搜索门户分类" /><kbd>⌘ K</kbd></label>
+        <label class="search-box"><span class="search-icon bi bi-search" aria-hidden="true"></span><input class="form-control" v-model="query" name="portalSearch" type="search" placeholder="搜索资源、信息、工具或行业服务…" aria-label="搜索门户分类" /><kbd>⌘ K</kbd></label>
         <div v-if="filteredSections.length" class="section-grid row g-3">
           <article v-for="section in filteredSections" :key="section.id" class="section-card col-12 md:col-6 xl:col-4">
-            <div class="card-topline"><span>{{ section.number }}</span><span class="card-arrow">↗</span></div><p class="card-kicker">{{ section.subtitle }}</p><h3>{{ section.title }}</h3><p class="card-description">{{ section.description }}</p>
-            <div class="tag-list"><span v-for="tag in section.tags" :key="tag">{{ tag }}</span></div><div class="card-bottom"><span>内容逐步整理中</span><span>↗</span></div>
+            <div class="card-topline"><span>{{ section.number }}</span><span class="card-arrow bi bi-arrow-up-right" aria-hidden="true"></span></div><p class="card-kicker">{{ section.subtitle }}</p><h3>{{ section.title }}</h3><p class="card-description">{{ section.description }}</p>
+            <div class="tag-list"><span v-for="tag in section.tags" :key="tag">{{ tag }}</span></div><div class="card-bottom"><span>内容逐步整理中</span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></div>
           </article>
         </div>
         <div v-else class="empty-search"><strong>没有匹配的分类</strong><p>试试“知识”“工具”“资源”或“项目”。</p><button type="button" @click="query = ''">清除搜索</button></div>
@@ -1218,7 +1225,7 @@ onBeforeUnmount(() => {
 
     <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge', 'education-resource-directory-page': route === '/education-resources' }">
       <section v-if="route !== '/knowledge' && route !== '/education-resources'" class="directory-hero">
-        <a class="directory-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
+        <a class="directory-back-link" href="/" @click.prevent="navigate('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回首页</a>
         <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
         <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
         <h2>{{ currentDirectoryPage.subtitle }}</h2>
@@ -1228,7 +1235,7 @@ onBeforeUnmount(() => {
         <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span></div>
         <div class="directory-tile-grid row g-3">
           <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile col-12 md:col-6 xl:col-3">
-            <div class="directory-tile-top"><span>{{ tile.number }}</span><span aria-hidden="true">↗</span></div>
+            <div class="directory-tile-top"><span>{{ tile.number }}</span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></div>
             <h3>{{ tile.title }}</h3>
             <p>{{ tile.description }}</p>
             <div class="tag-list"><span v-for="tag in tile.tags" :key="tag">{{ tag }}</span></div>
@@ -1247,15 +1254,15 @@ onBeforeUnmount(() => {
             </div>
             <div class="knowledge-search-wrap">
               <label class="knowledge-search-form knowledge-autocomplete">
-                <span class="knowledge-search-icon" aria-hidden="true">⌕</span>
+                <span class="knowledge-search-icon bi bi-search" aria-hidden="true"></span>
                 <input class="form-control" v-model="knowledgeSearchQuery" type="search" placeholder="搜索文章…" aria-label="模糊搜索知识文章" autocomplete="off" @input="knowledgeVisibleCount = knowledgePageSize; highlightedKnowledgeSuggestion = -1" @keydown="onKnowledgeSearchKeydown" />
-                <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeVisibleCount = knowledgePageSize; highlightedKnowledgeSuggestion = -1">×</button>
+                <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeVisibleCount = knowledgePageSize; highlightedKnowledgeSuggestion = -1"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
               </label>
               <div v-if="knowledgeSearchQuery.trim() && knowledgeSearchSuggestions.length" class="knowledge-autocomplete-popper" role="listbox" aria-label="搜索建议">
                 <button v-for="(item, index) in knowledgeSearchSuggestions" :key="item.kind + ':' + item.label" type="button" role="option" :aria-selected="highlightedKnowledgeSuggestion === index" class="knowledge-autocomplete-option" :class="{ highlighted: highlightedKnowledgeSuggestion === index }" @mouseenter="highlightedKnowledgeSuggestion = index" @click="handleKnowledgeAutocompleteSelect({ value: item.label, kind: item.kind })">
                   <span class="knowledge-suggestion-kind">{{ item.kind === 'theme' ? '主题' : '文章' }}</span>
                   <span class="knowledge-suggestion-copy"><strong>{{ item.label }}</strong><small v-if="'summary' in item && item.summary">{{ item.summary }}</small></span>
-                  <span class="knowledge-suggestion-arrow" aria-hidden="true">↗</span>
+                  <span class="knowledge-suggestion-arrow" aria-hidden="true"><i class="bi bi-arrow-up-right"></i></span>
                 </button>
               </div>
             </div>
@@ -1271,7 +1278,7 @@ onBeforeUnmount(() => {
             <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.summary">{{ item.summary }}</span></span>
             <time>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</time>
-            <span class="knowledge-list-arrow" aria-hidden="true">↗</span>
+            <span class="knowledge-list-arrow" aria-hidden="true"><i class="bi bi-arrow-up-right"></i></span>
           </a>
           <p class="knowledge-list-status">{{ visibleDirectoryContentItems.length < knowledgeFilteredItems.length ? '向下滚动加载更多' : `已显示全部 ${knowledgeFilteredItems.length} 篇文章` }}</p>
         </div>
@@ -1288,7 +1295,7 @@ onBeforeUnmount(() => {
           <nav class="knowledge-subcategory-nav" aria-label="适用年级">
             <button v-for="grade in educationResourceGrades" :key="grade" type="button" class="knowledge-subcategory-button" :class="{ 'is-active': educationResourceGrade === grade }" :aria-pressed="educationResourceGrade === grade" @click="educationResourceGrade = grade; knowledgeVisibleCount = knowledgePageSize">{{ grade }}</button>
           </nav>
-          <div class="knowledge-search-wrap"><label class="knowledge-search-form knowledge-autocomplete"><span class="knowledge-search-icon" aria-hidden="true">⌕</span><input class="form-control" v-model="educationResourceSearch" type="search" placeholder="搜索资源名称、说明或文件名…" aria-label="模糊搜索教育资源" autocomplete="off" @input="knowledgeVisibleCount = knowledgePageSize" /><button v-if="educationResourceSearch" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="educationResourceSearch = ''; knowledgeVisibleCount = knowledgePageSize">×</button></label></div>
+          <div class="knowledge-search-wrap"><label class="knowledge-search-form knowledge-autocomplete"><span class="knowledge-search-icon bi bi-search" aria-hidden="true"></span><input class="form-control" v-model="educationResourceSearch" type="search" placeholder="搜索资源名称、说明或文件名…" aria-label="模糊搜索教育资源" autocomplete="off" @input="knowledgeVisibleCount = knowledgePageSize" /><button v-if="educationResourceSearch" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="educationResourceSearch = ''; knowledgeVisibleCount = knowledgePageSize"><i class="bi bi-x-lg" aria-hidden="true"></i></button></label></div>
         </div></div>
       </section>
       <section v-if="route === '/education-resources'" class="directory-published-section knowledge-results-section education-resource-results-section">
@@ -1296,10 +1303,10 @@ onBeforeUnmount(() => {
         <p v-if="educationResourceLoading && !publicTeachingResources.length" class="directory-empty">正在读取公开教育资源…</p>
         <p v-else-if="educationResourceError" class="directory-empty">{{ educationResourceError }}</p>
         <div v-else-if="filteredEducationResources.length" class="knowledge-infinite-list">
-          <a v-for="(item, index) in visibleEducationResources" :key="item.id" class="knowledge-list-item education-resource-list-item" :href="item.url || item.downloadUrl || '#resource'" :target="item.url ? '_blank' : undefined" :rel="item.url ? 'noopener noreferrer' : undefined" :aria-label="`${item.title}，${item.url ? '打开外部链接' : '下载资源'}`">
-            <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
-            <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.description">{{ item.description }}</span><span class="education-resource-meta"><b>{{ item.type }}</b><b>{{ item.grade || '不限定年级' }}</b><span>{{ item.filename || (item.url ? '在线资源' : '学习资料') }}</span></span></span>
-            <time>{{ new Date(item.updatedAt || item.createdAt).toLocaleDateString('zh-CN') }}</time><span class="knowledge-list-arrow" aria-hidden="true">↗</span>
+          <a v-for="item in visibleEducationResources" :key="item.id" class="knowledge-list-item education-resource-list-item" :href="item.url || item.downloadUrl || '#resource'" :target="item.url ? '_blank' : undefined" :rel="item.url ? 'noopener noreferrer' : undefined" :aria-label="`${item.title}，${item.url ? '打开外部链接' : '下载资源'}`">
+            <span class="education-resource-file-icon" aria-hidden="true"><i :class="['bi', resourceFileIcon(item.filename, item.url)]"></i></span>
+            <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.description">{{ item.description }}</span><span class="education-resource-meta"><b>{{ item.type }}</b><b>{{ item.grade || '不限定年级' }}</b><span class="education-resource-filename">{{ item.filename || (item.url ? '在线资源' : '学习资料') }}</span></span></span>
+            <time>{{ new Date(item.updatedAt || item.createdAt).toLocaleDateString('zh-CN') }}</time><span class="knowledge-list-arrow" aria-hidden="true"><i class="bi bi-arrow-up-right"></i></span>
           </a>
           <p class="knowledge-list-status">{{ visibleEducationResources.length < filteredEducationResources.length ? '向下滚动加载更多' : `已显示全部 ${filteredEducationResources.length} 份资源` }}</p>
         </div>
@@ -1313,7 +1320,7 @@ onBeforeUnmount(() => {
         <div v-else-if="directoryContentItems.length" class="published-content-grid row g-3">
           <a v-for="(item, index) in directoryContentItems" :key="item.id" class="published-content-card col-12 md:col-6 xl:col-4" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
             <div class="published-content-meta"><span class="published-content-type">{{ (item.tags?.length ? item.tags.join(' · ') : contentTypeLabels[item.contentType]) }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
-            <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 ↗</span></div></div>
+            <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 <i class="bi bi-arrow-up-right" aria-hidden="true"></i></span></div></div>
           </a>
         </div>
         <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
@@ -1334,7 +1341,7 @@ onBeforeUnmount(() => {
           <button class="btn button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
         </form>
         <p class="auth-switch">{{ isRegister ? '已经有账户？' : '还没有账户？' }} <a :href="isRegister ? '/login' : '/register'" @click.prevent="navigate(isRegister ? '/login' : '/register')">{{ isRegister ? '立即登录' : '创建账户' }}</a></p>
-        <a class="back-home" href="/" @click.prevent="navigate('/')">← 返回首页</a>
+        <a class="back-home" href="/" @click.prevent="navigate('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回首页</a>
       </section>
     </main>
 
@@ -1358,9 +1365,9 @@ onBeforeUnmount(() => {
             <div class="public-author-meta">发布于 {{ publicArticle.publishedAt ? new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') : '近期' }}</div>
           </section>
           <section class="public-article-actions" aria-label="文章互动">
-            <button type="button" :class="['public-article-action', { active: publicArticle.viewerLiked }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerLiked" @click="togglePublicInteraction('like')"><span class="public-action-symbol" aria-hidden="true">♥</span><span>{{ publicArticle.viewerLiked ? '已点赞' : '点赞' }}</span><strong>{{ publicArticle.likeCount || 0 }}</strong></button>
-            <button type="button" :class="['public-article-action', { active: publicArticle.viewerFavorited }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerFavorited" @click="togglePublicInteraction('favorite')"><span class="public-action-symbol" aria-hidden="true">★</span><span>{{ publicArticle.viewerFavorited ? '已收藏' : '收藏' }}</span><strong>{{ publicArticle.favoriteCount || 0 }}</strong></button>
-            <button type="button" class="public-article-action" @click="sharePublicArticle"><span class="public-action-symbol" aria-hidden="true">↗</span><span>转发 / 分享</span></button>
+            <button type="button" :class="['public-article-action', { active: publicArticle.viewerLiked }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerLiked" @click="togglePublicInteraction('like')"><span class="public-action-symbol bi bi-heart-fill" aria-hidden="true"></span><span>{{ publicArticle.viewerLiked ? '已点赞' : '点赞' }}</span><strong>{{ publicArticle.likeCount || 0 }}</strong></button>
+            <button type="button" :class="['public-article-action', { active: publicArticle.viewerFavorited }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerFavorited" @click="togglePublicInteraction('favorite')"><span class="public-action-symbol bi bi-star-fill" aria-hidden="true"></span><span>{{ publicArticle.viewerFavorited ? '已收藏' : '收藏' }}</span><strong>{{ publicArticle.favoriteCount || 0 }}</strong></button>
+            <button type="button" class="public-article-action" @click="sharePublicArticle"><span class="public-action-symbol bi bi-share" aria-hidden="true"></span><span>转发 / 分享</span></button>
           </section>
           <p class="public-article-login-hint" v-if="!user">登录后可点赞和收藏文章。</p>
         </aside>
@@ -1368,7 +1375,7 @@ onBeforeUnmount(() => {
       <section v-else class="public-content-state"><h1>内容暂不可用</h1><p>{{ publicContentError || '内容不存在或尚未公开。' }}</p><a class="btn btn-dark button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section>
       <div v-if="shareDialogOpen" class="share-dialog-backdrop" @click.self="shareDialogOpen = false" @keydown.esc="shareDialogOpen = false">
         <section class="share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
-          <button type="button" class="share-dialog-close" aria-label="关闭分享窗口" @click="shareDialogOpen = false">×</button>
+          <button type="button" class="share-dialog-close" aria-label="关闭分享窗口" @click="shareDialogOpen = false"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
           <span class="share-dialog-eyebrow">SHARE ARTICLE</span>
           <h2 id="share-dialog-title">分享这篇文章</h2>
           <p>复制下方链接，发送给需要阅读的人。</p>
@@ -1393,7 +1400,7 @@ onBeforeUnmount(() => {
             :aria-expanded="expandedAccountGroups.includes(group.id)"
             @click="activeSidebarButton = group.id; toggleAccountGroup(group.id)"
           >
-            <span class="sidebar-group-icon" aria-hidden="true">{{ accountGroupIcon(group.id) }}</span>{{ group.label }}
+            <span :class="['sidebar-group-icon', 'bi', accountGroupIcon(group.id)]" aria-hidden="true"></span>{{ group.label }}
           </button>
           <div v-show="accountNavQuery.trim() || expandedAccountGroups.includes(group.id)" class="account-sidebar-collapse">
             <button
@@ -1449,7 +1456,7 @@ onBeforeUnmount(() => {
           <p class="auth-intro">账户登录状态和会话管理。</p>
           <div v-if="authLoading" class="account-loading">正在读取账户信息…</div>
           <div v-else-if="user" class="account-details">
-            <div class="security-info-row"><span class="security-info-icon">✓</span><div><strong>账户已验证登录</strong><p>当前浏览器持有安全会话。</p></div></div>
+            <div class="security-info-row"><span class="security-info-icon bi bi-shield-check" aria-hidden="true"></span><div><strong>账户已验证登录</strong><p>当前浏览器持有安全会话。</p></div></div>
             <div class="account-field"><span>登录邮箱</span><strong>{{ user.email }}</strong></div>
             <div class="account-field"><span>会话有效期</span><strong>系统自动管理</strong></div>
             <button class="btn button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出当前登录' }}</button>
@@ -1524,7 +1531,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="virtual-table-spacer" :style="{ height: virtualTableBottomSpace + 'px' }"></div>
               </div>
-              <div v-else class="virtual-table-empty"><span class="virtual-table-empty-icon">▤</span><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? (contentViewMode === 'trash' ? '回收站为空。已删除内容可以恢复，也可以永久删除。' : '创建第一篇内容，保存为草稿后再发布。') : activeAccountSection === 'teaching-resources' ? (resourceViewMode === 'trash' ? '资源回收站为空。' : '创建第一份教学资源，支持 PPT、MP3、PDF、Word 等文件。') : activeTableDefinition.note }}</p></div>
+              <div v-else class="virtual-table-empty"><i class="virtual-table-empty-icon bi bi-journal-text" aria-hidden="true"></i><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? (contentViewMode === 'trash' ? '回收站为空。已删除内容可以恢复，也可以永久删除。' : '创建第一篇内容，保存为草稿后再发布。') : activeAccountSection === 'teaching-resources' ? (resourceViewMode === 'trash' ? '资源回收站为空。' : '创建第一份教学资源，支持 PPT、MP3、PDF、Word 等文件。') : activeTableDefinition.note }}</p></div>
             </div>
           </section>
         </template>
@@ -1535,7 +1542,7 @@ onBeforeUnmount(() => {
 
     <div v-if="resourceDialogOpen" class="share-dialog-backdrop resource-upload-backdrop" @click.self="!resourceDialogLocked && (resourceDialogOpen = false)" @keydown.esc="!resourceDialogLocked && (resourceDialogOpen = false)">
       <section class="share-dialog resource-create-dialog" role="dialog" aria-modal="true" aria-labelledby="resource-create-title">
-        <button v-if="!resourceDialogLocked && !resourceUploadDone" type="button" class="share-dialog-close" aria-label="关闭" @click="resourceDialogOpen = false">×</button>
+        <button v-if="!resourceDialogLocked && !resourceUploadDone" type="button" class="share-dialog-close" aria-label="关闭" @click="resourceDialogOpen = false"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
         <span class="share-dialog-eyebrow">TEACHING LIBRARY</span>
         <h2 id="resource-create-title">{{ editingResourceId ? '编辑教学资源' : '创建教学资源' }}</h2>
         <p>{{ editingResourceId ? '可更新资源名称、类型、说明、分享链接；选择新文件才会替换原文件。' : '文件上传与 URL 分享二选一，也可以同时填写。' }}</p>
@@ -1573,7 +1580,7 @@ onBeforeUnmount(() => {
 
     <div v-if="selectedTableCell" class="table-cell-detail-backdrop" @click.self="selectedTableCell = null" @keydown.esc="selectedTableCell = null">
       <section class="table-cell-detail" role="dialog" aria-modal="true" :aria-label="selectedTableCell.label">
-        <div class="table-cell-detail-heading"><h2>{{ selectedTableCell.label }}</h2><button type="button" aria-label="关闭" @click="selectedTableCell = null">×</button></div>
+        <div class="table-cell-detail-heading"><h2>{{ selectedTableCell.label }}</h2><button type="button" aria-label="关闭" @click="selectedTableCell = null"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
         <p>{{ selectedTableCell.value }}</p>
         <button type="button" class="btn content-primary-button" @click="selectedTableCell = null">关闭</button>
       </section>
@@ -1581,7 +1588,8 @@ onBeforeUnmount(() => {
 
     <NotificationHost />
 
-    <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span><a href="/#top" @click.prevent="navigate('/#top')">返回顶部 ↑</a></footer>
+    <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span></footer>
+    <button type="button" class="scroll-to-top" aria-label="返回页面顶部" title="返回顶部" @click="scrollToTop"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>
   </div>
 </template>
 
