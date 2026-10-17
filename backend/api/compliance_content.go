@@ -56,7 +56,7 @@ func (a *portalAPI) syncContentComplianceAsset(ctx context.Context, db complianc
 		"source": "content_api_publish_gate", "rights_review_required": true,
 	})
 	assetPath := "db://portal.portal_content/" + id
-	_, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',notes=CASE WHEN notes='' THEN 'Superseded by a new content revision; retained for audit history.' ELSE notes || ' | Superseded by a new content revision; retained for audit history.' END,updated_at=now()-interval '1 second' WHERE asset_path=$1 AND sha256<>$2 AND discovered_by='database_scan'", assetPath, hash)
+	_, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',metadata=metadata || jsonb_build_object('superseded',true),notes=CASE WHEN notes='' THEN 'Superseded by a new content revision; retained for audit history.' ELSE notes || ' | Superseded by a new content revision; retained for audit history.' END,updated_at=now() WHERE asset_path=$1 AND sha256<>$2 AND discovered_by='database_scan'", assetPath, hash)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (a *portalAPI) syncResourceComplianceAsset(ctx context.Context, db complian
 	if strings.HasSuffix(lowerName, ".mp3") || strings.HasSuffix(lowerName, ".mp4") || strings.HasSuffix(lowerName, ".pdf") || strings.HasSuffix(lowerName, ".docx") {
 		risk = "high"
 	}
-	_, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',notes=CASE WHEN notes='' THEN 'Superseded by a new resource revision; retained for audit history.' ELSE notes || ' | Superseded by a new resource revision; retained for audit history.' END,updated_at=now()-interval '1 second' WHERE asset_path=$1 AND sha256<>$2 AND discovered_by='database_scan'", assetPath, hash)
+	_, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',metadata=metadata || jsonb_build_object('superseded',true),notes=CASE WHEN notes='' THEN 'Superseded by a new resource revision; retained for audit history.' ELSE notes || ' | Superseded by a new resource revision; retained for audit history.' END,updated_at=now() WHERE asset_path=$1 AND sha256<>$2 AND discovered_by='database_scan'", assetPath, hash)
 	if err != nil {
 		return err
 	}
