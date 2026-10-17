@@ -81,6 +81,34 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatal("login did not set the session cookie")
 	}
 	sessionCookie := &http.Cookie{Name: portalCookie, Value: cookie}
+
+	// Public policy routes only expose published documents. Complaint intake stays
+	// disabled while the complaint policy is still a draft, preventing collection
+	// of personal data before the required privacy notice is published.
+	requestJSON(t, api, http.MethodGet, "/public/legal", nil, nil, http.StatusOK)
+	requestJSON(t, api, http.MethodGet, "/public/legal/copyright-notice", nil, nil, http.StatusNotFound)
+	requestJSON(t, api, http.MethodPost, "/public/complaints", map[string]any{"name": "Rights Holder", "email": "rights@example.invalid", "workDescription": "Example protected work", "infringingUrls": []string{"https://example.invalid/work"}, "statementTruthful": true}, nil, http.StatusServiceUnavailable)
+	requestJSON(t, api, http.MethodGet, "/compliance/overview", nil, sessionCookie, http.StatusForbidden)
+
+	if _, err := db.ExecContext(ctx, `UPDATE portal.portal_users SET is_admin=TRUE WHERE user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/compliance/overview", "/compliance/assets?limit=5", "/compliance/licenses", "/compliance/documents", "/compliance/complaints", "/compliance/scans", "/compliance/audit"} {
+		requestJSON(t, api, http.MethodGet, path, nil, sessionCookie, http.StatusOK)
+	}
+	var testLicenseID string
+	if err := db.QueryRowContext(ctx, "INSERT INTO portal.compliance_license_catalog(spdx_id,license_name,license_version,license_family,canonical_url,full_text,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status) VALUES('MIT','MIT','', 'permissive','https://spdx.org/licenses/MIT.html','MIT test license text',TRUE,TRUE,TRUE,TRUE,FALSE,'unreviewed') RETURNING license_id::text").Scan(&testLicenseID); err != nil {
+		t.Fatal(err)
+	}
+	licenseDetail := requestJSON(t, api, http.MethodGet, "/compliance/licenses/"+testLicenseID, nil, sessionCookie, http.StatusOK)
+	if !bytes.Contains(licenseDetail.Body.Bytes(), []byte("MIT test license text")) {
+		t.Fatalf("license detail did not return the captured license text: %s", licenseDetail.Body.String())
+	}
+	requestJSON(t, api, http.MethodPatch, "/compliance/documents/copyright-notice", map[string]any{"status": "published", "approvedBy": "integration-test", "legalReviewAt": "2026-10-17T00:00:00Z", "missingInformation": []string{}}, sessionCookie, http.StatusConflict)
+	if _, err := db.ExecContext(ctx, `UPDATE portal.portal_users SET is_admin=FALSE WHERE user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+
 	me := requestJSON(t, api, http.MethodGet, "/auth/me", nil, &http.Cookie{Name: portalCookie, Value: cookie}, http.StatusOK)
 	if me.Body == nil || !bytes.Contains(me.Body.Bytes(), []byte(email)) {
 		t.Fatal("/auth/me did not return the authenticated user")
@@ -116,6 +144,25 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("version history contract mismatch: %s", versions.Body.String())
 	}
 
+	// A new article cannot be published until the matching revision has an
+	// approved rights record and verified author/license evidence.
+	requestJSON(t, api, http.MethodPatch, "/content/"+contentID, map[string]any{"visibility": "public"}, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
+	var contentAssetID string
+	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1 ORDER BY updated_at DESC LIMIT 1", "db://portal.portal_content/"+contentID).Scan(&contentAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='original',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", contentAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'author_declaration','test://integration','Test author rights declaration',TRUE,'integration-test')", contentAssetID); err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/unpublish", map[string]any{}, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodPatch, "/content/"+contentID, map[string]any{"body": "A changed revision that needs a fresh rights review."}, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
+
 	resource := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{"title": "URL-only resource", "description": "integration", "type": "电子书", "url": "https://example.com/material"}, sessionCookie, http.StatusCreated)
 	var resourceEnvelope struct {
 		Item map[string]any `json:"item"`
@@ -129,9 +176,27 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if bytes.Contains(privateList.Body.Bytes(), []byte(resourceID)) {
 		t.Fatalf("private resource leaked into public listing: %s", privateList.Body.String())
 	}
-	updated := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusOK)
-	if !bytes.Contains(updated.Body.Bytes(), []byte("URL-only resource edited")) || !bytes.Contains(updated.Body.Bytes(), []byte(`"isPublic":true`)) {
-		t.Fatalf("resource edit/publication failed: %s", updated.Body.String())
+	blockedPublish := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusConflict)
+	if !bytes.Contains(blockedPublish.Body.Bytes(), []byte("私有状态")) {
+		t.Fatalf("resource publish gate did not explain the rights requirement: %s", blockedPublish.Body.String())
+	}
+	updated := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": false}, sessionCookie, http.StatusOK)
+	if !bytes.Contains(updated.Body.Bytes(), []byte("URL-only resource edited")) || !bytes.Contains(updated.Body.Bytes(), []byte("\"isPublic\":false")) {
+		t.Fatalf("private resource edit failed: %s", updated.Body.String())
+	}
+	var resourceAssetID string
+	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1 ORDER BY updated_at DESC LIMIT 1", "db://portal.teaching_resources/"+resourceID).Scan(&resourceAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='third_party_permission',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", resourceAssetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'permission_email','test://integration','Test permission evidence',TRUE,'integration-test')", resourceAssetID); err != nil {
+		t.Fatal(err)
+	}
+	published := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusOK)
+	if !bytes.Contains(published.Body.Bytes(), []byte("\"isPublic\":true")) {
+		t.Fatalf("approved resource was not published: %s", published.Body.String())
 	}
 	publicList := requestJSON(t, api, http.MethodGet, "/public/resources", nil, nil, http.StatusOK)
 	if !bytes.Contains(publicList.Body.Bytes(), []byte(resourceID)) || !bytes.Contains(publicList.Body.Bytes(), []byte("https://example.com/edited")) {
@@ -141,7 +206,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	mp3Bytes := []byte("ID3sample-data-for-byte-range-preview")
 	mp3 := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{
 		"title": "MP3 range preview", "description": "integration", "type": "音频", "filename": "range-test.mp3",
-		"data": base64.StdEncoding.EncodeToString(mp3Bytes), "isPublic": true,
+		"data": base64.StdEncoding.EncodeToString(mp3Bytes), "isPublic": false,
 	}, sessionCookie, http.StatusCreated)
 	var mp3Envelope map[string]map[string]any
 	if err := json.Unmarshal(mp3.Body.Bytes(), &mp3Envelope); err != nil {
@@ -151,12 +216,12 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if mp3ID == "" {
 		t.Fatalf("MP3 resource ID missing: %s", mp3.Body.String())
 	}
+	requestJSON(t, api, http.MethodGet, "/public/resources/"+mp3ID+"/preview", nil, nil, http.StatusNotFound)
 	for _, target := range []struct {
 		path   string
 		cookie *http.Cookie
 	}{
 		{path: "/resources/" + mp3ID + "/preview", cookie: sessionCookie},
-		{path: "/public/resources/" + mp3ID + "/preview", cookie: nil},
 	} {
 		req := httptest.NewRequest(http.MethodGet, target.path, nil)
 		req.Header.Set("Range", "bytes=3-8")
@@ -172,6 +237,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 			t.Fatalf("MP3 preview headers incorrect: %#v", rec.Header())
 		}
 	}
+	requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": false}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/resources/"+resourceID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)

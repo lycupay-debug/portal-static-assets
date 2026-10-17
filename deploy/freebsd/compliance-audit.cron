@@ -1,0 +1,2 @@
+# Full copyright asset inventory daily at 03:30 server-local time.
+30 3 * * * /opt/personal-portal/scripts/compliance/run-audit.sh >> /var/log/personal-portal-compliance-audit.log 2>&1

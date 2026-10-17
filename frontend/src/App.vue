@@ -2,6 +2,8 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
+const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
+const CopyrightComplaintForm = defineAsyncComponent(() => import('./components/CopyrightComplaintForm.vue'))
 import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
@@ -32,7 +34,7 @@ type PortalSection = {
   description: string
   tags: string[]
 }
-type PortalUser = APIUser
+type PortalUser = APIUser & { isAdmin?: boolean }
 type PortalContent = APIContent
 type ContentVersion = APIContentVersion
 type TeachingResource = APITeachingResource
@@ -81,7 +83,7 @@ const authBusy = ref(false)
 const authError = ref('')
 const authNotice = ref('')
 const authForm = ref({ displayName: '', email: '', password: '' })
-const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows'])
+const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows', 'compliance'])
 const activeAccountSection = ref('overview')
 const sectionRoutes: Record<string, string> = {
   overview: '/account', profile: '/profile', security: '/security',
@@ -89,7 +91,7 @@ const sectionRoutes: Record<string, string> = {
   'room-status': '/housing/room-status', 'student-records': '/education/student-records',
   'course-calendar': '/education/course-calendar', 'teaching-resources': '/education/teaching-resources',
   'network-tools': '/tools/network', 'document-converters': '/tools/document-converters',
-  'add-tool': '/tools/add', 'workflow-overview': '/workflows',
+  'add-tool': '/tools/add', 'workflow-overview': '/workflows', 'copyright-compliance': '/account/compliance',
 }
 const routeSections = Object.fromEntries(Object.entries(sectionRoutes).map(([id, path]) => [path, id])) as Record<string, string>
 const routeAliases: Record<string, string> = {
@@ -99,6 +101,7 @@ const routeAliases: Record<string, string> = {
   '/学生档案': '/education/student-records', '/课程日历': '/education/course-calendar',
   '/教学资源': '/education/teaching-resources', '/网络工具': '/tools/network',
   '/文档转换': '/tools/document-converters', '/添加工具': '/tools/add', '/工作流管理': '/workflows',
+  '/版权合规中心': '/account/compliance',
 }
 const contentEditorRouteId = computed(() => route.value.match(/^\/content-management\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1] || null)
 const isContentEditorPage = computed(() => route.value === '/content-management/new' || contentEditorRouteId.value !== null)
@@ -144,12 +147,18 @@ const accountGroups = [
       { id: 'workflow-overview', label: '工作流总览', description: '集中查看和管理自动化工作流。' },
     ],
   },
+  {
+    id: 'compliance', label: '治理与合规', items: [
+      { id: 'copyright-compliance', label: '版权合规中心', description: '管理版权资产、开源许可证、审核证据和网站政策。' },
+    ],
+  },
 ]
 const accountItems = accountGroups.flatMap((group) => group.items)
 const filteredAccountGroups = computed(() => {
+  const visibleGroups = accountGroups.filter(group => group.id !== 'compliance' || user.value?.isAdmin === true)
   const keyword = accountNavQuery.value.trim().toLocaleLowerCase()
-  if (!keyword) return accountGroups
-  return accountGroups
+  if (!keyword) return visibleGroups
+  return visibleGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => `${group.label} ${item.label} ${item.description}`.toLocaleLowerCase().includes(keyword)) }))
     .filter((group) => group.label.toLocaleLowerCase().includes(keyword) || group.items.length > 0)
 })
@@ -162,7 +171,7 @@ function toggleAccountGroup(groupId: string) {
 function accountGroupIcon(groupId: string): string {
   const icons: Record<string, string> = {
     personal: 'bi-person', publishing: 'bi-journal-text', housing: 'bi-house-door',
-    education: 'bi-mortarboard', software: 'bi-tools', workflows: 'bi-diagram-3',
+    education: 'bi-mortarboard', software: 'bi-tools', workflows: 'bi-diagram-3', compliance: 'bi-shield-check',
   }
   return icons[groupId] || 'bi-grid'
 }
@@ -887,6 +896,14 @@ const filteredSections = computed(() => {
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
+const isLegalPage = computed(() => /^\/legal\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
+const legalSlug = computed(() => isLegalPage.value ? route.value.slice('/legal/'.length) : '')
+const publishedLegalDocuments = ref<Array<{ slug: string; title: string; documentType: string }>>([])
+const legalDocument = ref<{ slug: string; title: string; bodyMarkdown: string; effectiveAt?: string | null } | null>(null)
+const legalDocumentHtml = ref('')
+const legalDocumentLoading = ref(false)
+const legalDocumentError = ref('')
+let legalDocumentRequestSequence = 0
 const directoryPages: Record<string, { eyebrow: string; title: string; subtitle: string; description: string }> = {
   '/knowledge': { eyebrow: 'KNOWLEDGE & IDEAS', title: '知识广场', subtitle: '技术、经验、分析与教学', description: '汇集技术实践、经验分享、行业分析和教学文章，把值得留下的知识整理成可以持续查阅的内容。' },
   '/education-resources': { eyebrow: 'LEARNING LIBRARY', title: '教育资源', subtitle: '让学习资料更容易找到', description: '集中整理课件讲义、英语听力、网课视频链接和其他学习资料。' },
@@ -1019,6 +1036,35 @@ async function loadPublicArticle(slug: string) {
     if (requestId === publicArticleRequestSequence) publicContentLoading.value = false
   }
 }
+async function loadPublishedLegalDocuments() {
+  try {
+    const response = await fetch('/api/public/legal', { headers: { Accept: 'application/json' } })
+    if (!response.ok) return
+    const result = await response.json() as { items?: Array<{ slug: string; title: string; documentType: string }> }
+    publishedLegalDocuments.value = result.items || []
+  } catch { /* Footer policy links stay hidden until published documents are available. */ }
+}
+async function loadLegalDocument(slug: string) {
+  const requestId = ++legalDocumentRequestSequence
+  legalDocumentLoading.value = true
+  legalDocumentError.value = ''
+  legalDocument.value = null
+  legalDocumentHtml.value = ''
+  try {
+    const response = await fetch(`/api/public/legal/${encodeURIComponent(slug)}`, { headers: { Accept: 'application/json' } })
+    const result = await response.json() as { item?: { slug: string; title: string; bodyMarkdown: string; effectiveAt?: string | null }; error?: string }
+    if (!response.ok || !result.item) throw new Error(result.error || '政策文件不存在或尚未发布。')
+    if (requestId !== legalDocumentRequestSequence || route.value !== `/legal/${slug}`) return
+    const { renderMarkdown } = await import('./utils/markdown')
+    legalDocumentHtml.value = renderMarkdown(result.item.bodyMarkdown)
+    legalDocument.value = result.item
+  } catch (e) {
+    if (requestId === legalDocumentRequestSequence) legalDocumentError.value = e instanceof Error ? e.message : '读取政策文件失败。'
+  } finally {
+    if (requestId === legalDocumentRequestSequence) legalDocumentLoading.value = false
+  }
+}
+
 async function togglePublicInteraction(type: 'like' | 'favorite') {
   if (!publicArticle.value || publicInteractionBusy.value) return
   publicInteractionBusy.value = true
@@ -1072,6 +1118,7 @@ async function navigate(target: string) {
   closeMenu()
   history.pushState({}, '', target)
   setRouteFromLocation()
+  void loadPublishedLegalDocuments()
   authError.value = ''
   authNotice.value = ''
   if (isProtectedPage.value) {
@@ -1089,6 +1136,7 @@ async function navigate(target: string) {
   if (route.value === '/education/teaching-resources') await loadTeachingResources()
   if (isContentEditorPage.value) void initializeContentEditorRoute()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
+  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   if (route.value === '/' && window.location.hash) {
     await nextTick()
     document.querySelector(window.location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1158,6 +1206,7 @@ function onPopState() {
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
   if (route.value === '/education-resources') void loadPublicTeachingResources()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
+  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   if (route.value === '/content-management') void loadContentList()
   if (route.value === '/education/teaching-resources') void loadTeachingResources()
   if (isProtectedPage.value) void loadSession().then((valid) => { if (!valid) void navigate('/login') })
@@ -1173,6 +1222,8 @@ onMounted(() => {
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
   if (route.value === '/education-resources') void loadPublicTeachingResources()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
+  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
+  void loadPublishedLegalDocuments()
   void loadSession().then((valid) => {
     if (isProtectedPage.value && !valid) {
       history.replaceState({}, '', '/login')
@@ -1483,6 +1534,21 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
+    <main v-else-if="isLegalPage" class="legal-document-page">
+      <section class="legal-document-shell">
+        <a class="legal-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
+        <div v-if="legalDocumentLoading" class="legal-document-state">正在读取政策文件…</div>
+        <section v-else-if="legalDocument" class="legal-document-content">
+          <p class="eyebrow">POLICIES & NOTICES</p>
+          <h1>{{ legalDocument.title }}</h1>
+          <p v-if="legalDocument.effectiveAt" class="legal-document-effective">生效日期：{{ new Date(legalDocument.effectiveAt).toLocaleDateString('zh-CN') }}</p>
+          <div class="markdown-rendered legal-markdown" v-html="legalDocumentHtml"></div>
+          <CopyrightComplaintForm v-if="legalSlug === 'copyright-complaints'" />
+        </section>
+        <section v-else class="legal-document-state"><h1>政策文件暂不可用</h1><p>{{ legalDocumentError || '该政策尚未发布。' }}</p></section>
+      </section>
+    </main>
+
     <main v-else-if="isAccountPage" class="account-layout">
 
       <aside class="account-sidebar">
@@ -1555,6 +1621,10 @@ onBeforeUnmount(() => {
             <div class="account-field"><span>会话有效期</span><strong>系统自动管理</strong></div>
             <button class="btn button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出当前登录' }}</button>
           </div>
+        </template>
+
+        <template v-else-if="activeAccountSection === 'copyright-compliance'">
+          <ComplianceCenter />
         </template>
 
         <template v-else>
@@ -1647,7 +1717,7 @@ onBeforeUnmount(() => {
           <VirtualizedSelect v-model="resourceType" label="教学资源类型" :options="resourceTypeOptions.map(type => ({ label: type, value: type }))" />
           <label class="share-dialog-label" for="resource-grade">年级</label>
           <VirtualizedSelect v-model="resourceGrade" label="年级" :options="resourceGradeOptions.map(grade => ({ label: grade, value: grade === '不限定年级' ? '' : grade }))" placeholder="选择适用年级" />
-          <label class="resource-public-toggle"><input v-model="resourceIsPublic" type="checkbox" /><span><strong>公开展示在教育资源页</strong><small>勾选后任何访客都可以看到资源信息，并访问其链接或下载文件。</small></span></label>
+          <label class="resource-public-toggle"><input v-model="resourceIsPublic" type="checkbox" /><span><strong>公开展示在教育资源页</strong><small>公开后访客可查看并访问资源。新资源需先保存为私有，在版权合规中心完成授权证据审核后才能公开；修改已公开资源前应先取消公开。</small></span></label>
           <label class="share-dialog-label" for="resource-description">资源说明</label>
           <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
           <label class="share-dialog-label" for="resource-file">上传文件（选填）</label>
@@ -1682,7 +1752,7 @@ onBeforeUnmount(() => {
 
     <NotificationHost />
 
-    <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span></footer>
+    <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span><nav v-if="publishedLegalDocuments.length" class="site-footer-policies" aria-label="网站政策"> <a v-for="doc in publishedLegalDocuments" :key="doc.slug" :href="`/legal/${doc.slug}`" @click.prevent="navigate(`/legal/${doc.slug}`)">{{ doc.title }}</a></nav></footer>
     <button type="button" class="scroll-to-top" aria-label="返回页面顶部" title="返回顶部" @click="scrollToTop"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>
   </div>
 </template>
@@ -1807,6 +1877,20 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .footer-brand { color: #696969; font: var(--font-size-10px-min14-933cc7) var(--mono); letter-spacing: .08em; }
 .footer-brand span { margin-left: 5px; }
 .site-footer > a:last-child { color: #666666; }
+.site-footer-policies { display:flex; flex-wrap:wrap; gap:12px 18px; align-items:center; }
+.site-footer-policies a { color:#696969; text-decoration:none; font-size:12px; }
+.site-footer-policies a:hover { color:#191919; text-decoration:underline; text-underline-offset:3px; }
+.legal-document-page { min-height:55vh; padding:clamp(28px,6vw,80px) clamp(20px,7vw,112px); background:#fff; }
+.legal-document-shell { max-width:900px; margin:0 auto; }
+.legal-back-link { display:inline-block; color:#666; text-decoration:none; margin-bottom:36px; font-size:13px; }
+.legal-document-content h1 { font-size:clamp(28px,4vw,42px); letter-spacing:-.04em; line-height:1.2; margin:0 0 18px; }
+.legal-document-effective { color:#777; font-size:12px; margin:0 0 28px; }
+.legal-markdown { color:#333; font-size:15px; line-height:1.9; overflow-wrap:anywhere; }
+.legal-markdown h1,.legal-markdown h2,.legal-markdown h3 { margin:1.7em 0 .65em; line-height:1.4; }
+.legal-markdown p,.legal-markdown ul,.legal-markdown ol { margin:.8em 0; }
+.legal-markdown a { color:#333; text-underline-offset:3px; overflow-wrap:anywhere; }
+.legal-document-state { border:1px solid #e7e7e7; padding:28px; border-radius:10px; color:#666; }
+.legal-document-state h1 { color:#222; font-size:25px; }
 
 @media (min-width: 1400px) {
   .hero { min-height: 650px; }
