@@ -34,7 +34,6 @@
     "@tiptap/starter-kit": "^3.32.0",
     "@tiptap/vue-3": "^3.32.0",
     "bootstrap": "6.0.0-alpha.1",
-    "bootstrap-icons": "^1.13.2",
     "dompurify": "^3.4.17",
     "marked": "^18.1.1",
     "vue": "^3.5.42"

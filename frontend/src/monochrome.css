@@ -360,7 +360,7 @@ body { -webkit-font-smoothing: antialiased; }
 
 /* Global typography defaults, aligned with Bootstrap's local CSS variables. */
 :root {
-  --bs-body-font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --bs-body-font-family: var(--font-family-base);
   --bs-body-font-size: 1rem;
   --bs-body-font-weight: 400;
   --bs-body-line-height: 1.6;
@@ -369,11 +369,11 @@ body { -webkit-font-smoothing: antialiased; }
   --bs-link-color: #292929;
   --bs-link-hover-color: #000000;
   --portal-type-body: 1rem;
-  --portal-type-small: .875rem;
-  --portal-type-caption: .75rem;
+  --portal-type-small: var(--font-size-base);
+  --portal-type-caption: var(--font-size-base);
   --portal-type-line-height: 1.6;
 }
-html { font-size: 100%; }
+html { font-size: var(--font-size-100-fae31e); }
 body { font-family: var(--bs-body-font-family); font-size: var(--portal-type-body); font-weight: var(--bs-body-font-weight); line-height: var(--portal-type-line-height); }
 #app, #app button, #app input, #app select, #app textarea { font-family: var(--bs-body-font-family); }
 h1, h2, h3, h4, h5, h6 { color: var(--bs-heading-color); font-weight: 600; line-height: 1.25; letter-spacing: -.025em; }
@@ -417,7 +417,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   border-radius: 11px;
   color: #252525;
   background: rgba(0, 0, 0, .035);
-  font-size: 25px;
+  font-size: var(--font-size-25px-2e6593);
 }
 .education-resource-list-item .knowledge-list-copy {
   grid-column: 2;
@@ -430,7 +430,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-size: 14px;
+  font-size: var(--font-size-14px-d65225);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -440,7 +440,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: #666;
-  font-size: 12px;
+  font-size: var(--font-size-12px-min12-093900);
   line-height: 1.5;
 }
 .education-resource-list-item .education-resource-meta {
@@ -457,7 +457,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   border-radius: 5px;
   color: #454545;
   background: rgba(0, 0, 0, .035);
-  font-size: 10px;
+  font-size: var(--font-size-10px-min12-933cc7);
   font-weight: 500;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -468,7 +468,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   min-width: 0;
   overflow: hidden;
   color: #858585;
-  font-size: 10px;
+  font-size: var(--font-size-10px-min12-933cc7);
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -479,7 +479,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   align-self: end;
   padding-top: 8px;
   color: #888;
-  font-size: 11px;
+  font-size: var(--font-size-11px-min12-4bd46d);
   white-space: nowrap;
 }
 .education-resource-list-item .knowledge-list-arrow {
@@ -487,7 +487,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   grid-row: 1;
   padding-top: 2px;
   color: #777;
-  font-size: 13px;
+  font-size: var(--font-size-13px-min12-233710);
 }
 .knowledge-list-status { grid-column: 1 / -1; }
 
@@ -509,7 +509,7 @@ code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMon
   box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
   -webkit-backdrop-filter: blur(22px) saturate(145%);
   backdrop-filter: blur(22px) saturate(145%);
-  font-size: 21px;
+  font-size: var(--font-size-21px-dacf9d);
   cursor: pointer;
   transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
