@@ -1184,26 +1184,13 @@ html, body { color: #111111; background: #ffffff; }
 .education-resource-audio-preview label { display: block; margin-bottom: 10px; color: #555; font-size: 13px; }
 .education-resource-audio-preview audio { display: block; width: 100%; min-width: 0; }
 
-/* Keep education-resource scrolling functional while hiding visible scrollbars. */
-html:has(.education-resource-directory-page),
-body:has(.education-resource-directory-page) {
+/* Hide only the scrollbar inside the public education-resource detail dialog. */
+.education-resource-detail-dialog {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-html:has(.education-resource-directory-page)::-webkit-scrollbar,
-body:has(.education-resource-directory-page)::-webkit-scrollbar,
-.education-resource-directory-page::-webkit-scrollbar,
-.education-resource-results-section::-webkit-scrollbar,
-.education-resource-results-section .knowledge-infinite-list::-webkit-scrollbar,
 .education-resource-detail-dialog::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
-}
-.education-resource-directory-page,
-.education-resource-results-section,
-.education-resource-results-section .knowledge-infinite-list,
-.education-resource-detail-dialog {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
 }
