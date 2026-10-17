@@ -37,3 +37,7 @@ A recursive metadata scan across the installed n8n and portal-related Node.js de
 
 - `npm run build` and `npm test` are run as part of this change.
 - The FreeBSD host has Playwright libraries but no browser executable found in the scanned paths, so computed-style, screenshot, and viewport-overflow checks cannot be claimed as completed. HTTP checks verify server responses only, not rendered layout.
+
+## Detailed LGPL trace
+
+The four LGPL packages were traced separately; see [`lgpl-dependency-trace-2026-10-17.md`](lgpl-dependency-trace-2026-10-17.md) for their parent chain, portal build checks, isolated module-load test, workflow scan, and current distribution assessment.
