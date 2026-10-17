@@ -42,6 +42,7 @@ var (
 	portalTypes = map[string]bool{"article": true, "tool": true, "resource": true, "project": true}
 	portalTags  = map[string]bool{
 		"教育": true, "学前教育": true, "小学教育": true, "中学教育": true, "高等教育": true, "职业教育": true, "家庭教育": true, "教学资源": true,
+		"教育人力资源": true, "事业编": true, "国企": true, "省考": true, "国考": true,
 		"旅游": true, "住宿": true, "交通": true, "景点攻略": true, "旅行规划": true, "美食体验": true, "网络": true, "网络安全": true, "网络维护": true, "网络基础知识": true, "网络诊断": true, "云与服务器": true,
 		"系统": true, "操作系统": true, "系统配置": true, "系统维护": true, "部署运维": true, "故障排查": true, "编程": true, "前端开发": true, "后端开发": true, "Python": true, "JavaScript / TypeScript": true, "数据库": true, "API 与集成": true, "代码实践": true, "软件工具": true, "效率工具": true, "开发工具": true, "文档工具": true, "AI 工具": true, "自动化工具": true,
 	}

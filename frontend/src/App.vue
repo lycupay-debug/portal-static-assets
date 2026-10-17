@@ -3,10 +3,15 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, o
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
-import { normalizeTaxonomyPair, portalTaxonomy, taxonomyChildOptions, taxonomyParentOptions } from './utils/taxonomy'
+import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { resourceFileIcon } from './utils/resourceIcons'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
-const knowledgeTagOptions = portalTaxonomy.filter(category => !['年级', '教育人力资源'].includes(category.value))
+const removedGradeTags = new Set(['年级', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'])
+const knowledgeTagOptions = portalTaxonomy
+  .filter(category => category.value !== '年级')
+  .map(category => ({ ...category, children: category.children.filter(tag => !removedGradeTags.has(tag)) }))
+const mergeLegacyTaxonomyIntoTags = (tags: string[], parentCategory?: string | null, childCategory?: string | null) =>
+  [...new Set([...tags, parentCategory || '', childCategory || ''].filter(tag => tag && !removedGradeTags.has(tag)))]
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
@@ -34,8 +39,6 @@ type ContentForm = {
   slug: string
   contentType: PortalContent['contentType']
   tags: string[]
-  parentCategory: string | null
-  childCategory: string | null
   summary: string
   body: string
   visibility: PortalContent['visibility']
@@ -190,13 +193,9 @@ watch(authNotice, (message) => { if (message) portalNotify.info(message) }, { fl
 watch(contentError, (message) => { if (message) portalNotify.error(message, '内容操作失败') }, { flush: 'sync' })
 watch(contentNotice, (message) => { if (message) portalNotify.success(message) }, { flush: 'sync' })
 const emptyContentForm = (): ContentForm => ({
-  title: '', slug: '', contentType: 'article', tags: [], parentCategory: null, childCategory: null, summary: '', body: '', visibility: 'private',
+  title: '', slug: '', contentType: 'article', tags: [], summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
-const taxonomyChildOptionsForForm = computed(() => taxonomyChildOptions(contentForm.value.parentCategory || ''))
-watch(() => contentForm.value.parentCategory, (next, previous) => {
-  if (next !== previous && contentForm.value.childCategory && !taxonomyChildOptions(next || '').some(option => option.value === contentForm.value.childCategory)) contentForm.value.childCategory = null
-})
 const publicContents = ref<PublicContentCard[]>([])
 const publicTeachingResources = ref<PublicTeachingResource[]>([])
 const educationResourceLoading = ref(false)
@@ -222,7 +221,6 @@ const highlightedKnowledgeSuggestion = ref(-1)
 const knowledgeCategoryMenus = [
   { value: 'recent', label: '最近更新', children: [] },
   { value: 'education', label: '教育', children: ['学前教育', '小学教育', '中学教育', '高等教育', '职业教育', '家庭教育', '教学资源'] },
-  { value: 'grade', label: '年级', children: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'] },
   { value: 'education-jobs', label: '教育人力资源', children: ['事业编', '国企', '省考', '国考'] },
   { value: 'travel', label: '旅游', children: ['住宿', '交通', '景点攻略', '旅行规划', '美食体验'] },
   { value: 'network', label: '网络', children: ['网络安全', '网络维护', '网络基础知识', '网络诊断', '云与服务器'] },
@@ -408,7 +406,7 @@ const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
 const virtualTableOverscan = 6
 const tableDefinitions: Record<string, { title: string; columns: TableColumn[]; note: string }> = {
-  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'parentCategory', label: '父类' }, { key: 'childCategory', label: '子类' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
+  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
   'property-management': { title: '房源列表', columns: [{ key: 'property', label: '房源名称', width: 'minmax(180px, 1.6fr)' }, { key: 'address', label: '地址', width: 'minmax(180px, 2fr)' }, { key: 'roomCount', label: '房间数' }, { key: 'rent', label: '租金' }, { key: 'status', label: '房源状态' }, { key: 'updatedAt', label: '更新时间' }], note: '房源数据源尚未接入。' },
   'room-status': { title: '房态列表', columns: [{ key: 'room', label: '房间', width: 'minmax(140px, 1.3fr)' }, { key: 'property', label: '所属房源', width: 'minmax(180px, 1.7fr)' }, { key: 'status', label: '当前房态' }, { key: 'tenant', label: '租客' }, { key: 'checkIn', label: '入住日期' }, { key: 'checkOut', label: '退租日期' }], note: '房态数据源尚未接入。' },
   'student-records': { title: '学生档案', columns: [{ key: 'name', label: '学生姓名' }, { key: 'studentId', label: '学员编号' }, { key: 'course', label: '课程' }, { key: 'status', label: '学习状态' }, { key: 'updatedAt', label: '更新时间' }], note: '学生档案数据源尚未接入。' },
@@ -431,8 +429,6 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       id: item.id,
       title: item.title,
       type: item.tags?.length ? item.tags.join(' · ') : contentTypeLabels[item.contentType],
-      parentCategory: item.parentCategory || '—',
-      childCategory: item.childCategory || '—',
       status: contentStatusLabels[item.status],
       visibility: item.visibility === 'public' ? '公开' : '仅自己可见',
       updatedAt: new Date(contentViewMode.value === 'trash' && 'deletedAt' in item ? String(item.deletedAt) : item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),
@@ -624,7 +620,7 @@ async function initializeContentEditorRoute() {
     if (!response.ok || !result.item) throw new Error(result.error || '读取内容详情失败。')
     const item = result.item
     editingContentId.value = item.id
-    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [], parentCategory: item.parentCategory || null, childCategory: item.childCategory || null, summary: item.summary, body: item.body, visibility: item.visibility }
+    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, tags: mergeLegacyTaxonomyIntoTags(item.tags || [], item.parentCategory, item.childCategory), summary: item.summary, body: item.body, visibility: item.visibility }
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '读取内容详情失败。'
   } finally { contentBusy.value = false }
@@ -734,8 +730,7 @@ async function editContent(id: string) {
     const item = result.item
     editingContentId.value = item.id
     contentForm.value = {
-      title: item.title, slug: item.slug, contentType: item.contentType, tags: item.tags || [],
-      parentCategory: item.parentCategory || null, childCategory: item.childCategory || null,
+      title: item.title, slug: item.slug, contentType: item.contentType, tags: mergeLegacyTaxonomyIntoTags(item.tags || [], item.parentCategory, item.childCategory),
       summary: item.summary, body: item.body, visibility: item.visibility,
     }
     contentEditorOpen.value = false
@@ -756,11 +751,9 @@ async function saveContent() {
   contentNotice.value = ''
   try {
     const editing = editingContentId.value
-    const taxonomy = normalizeTaxonomyPair(contentForm.value.parentCategory, contentForm.value.childCategory)
-    if (!taxonomy) throw new Error('父类和子类必须同时填写，且子类必须属于所选父类。')
     const payload: ContentWrite | ContentPatch = {
       title: contentForm.value.title.trim(), slug: contentForm.value.slug.trim(), contentType: contentForm.value.contentType,
-      tags: [...contentForm.value.tags], ...taxonomy, summary: contentForm.value.summary, body: contentForm.value.body, visibility: contentForm.value.visibility,
+      tags: mergeLegacyTaxonomyIntoTags(contentForm.value.tags), parentCategory: null, childCategory: null, summary: contentForm.value.summary, body: contentForm.value.body, visibility: contentForm.value.visibility,
     }
     const response = await fetch(editing ? `/api/content/${encodeURIComponent(editing)}` : '/api/content', {
       method: editing ? 'PATCH' : 'POST',
@@ -1175,9 +1168,7 @@ onBeforeUnmount(() => {
             <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron bi bi-chevron-down" aria-hidden="true"></span></summary>
             <section class="workspace-properties">
               <label><span>内容标题</span><input class="form-control" v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
-              <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><div v-for="category in knowledgeTagOptions" :key="category.value" class="workspace-tag-group"><strong>{{ category.value }}</strong><div class="workspace-tag-options"><label v-for="tag in [category.value, ...category.children]" :key="tag" class="workspace-tag-option"><input v-model="contentForm.tags" type="checkbox" :value="tag" :disabled="contentBusy" /><span>{{ tag }}</span></label></div></div></fieldset>
-              <label><span>父类</span><VirtualizedSelect v-model="contentForm.parentCategory" label="父类分类" :options="taxonomyParentOptions" placeholder="选择父类" /></label>
-              <label><span>子类</span><VirtualizedSelect v-model="contentForm.childCategory" label="子类分类" :options="taxonomyChildOptionsForForm" :disabled="!contentForm.parentCategory" placeholder="先选择父类" /></label>
+              <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><div class="workspace-tag-options"> <label v-for="tag in knowledgeTagOptions.flatMap(category => [category.value, ...category.children])" :key="tag" class="workspace-tag-option"><input v-model="contentForm.tags" type="checkbox" :value="tag" :disabled="contentBusy" /><span>{{ tag }}</span></label></div></fieldset>
               <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
               <label><span>URL 别名</span><input class="form-control" v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               <label><span>摘要</span><textarea class="form-control" v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>

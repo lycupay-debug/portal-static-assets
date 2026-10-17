@@ -68,6 +68,22 @@ func TestValidateContentEventAcceptsPublishedContentPayloadWithTags(t *testing.T
 	}
 }
 
+func TestValidateContentEventAcceptsMergedEducationHumanResourceTags(t *testing.T) {
+	resultJSON, err := validateContentEvent(context.Background(), EventInput{
+		Payload: json.RawMessage(`{"title":"Career resources","slug":"career-resources","content_type":"article","tags":["教育人力资源","事业编","国考"],"visibility":"private","body":"Body"}`),
+	})
+	if err != nil {
+		t.Fatalf("merged taxonomy tags should produce a validation result: %v", err)
+	}
+	var result contentValidationResult
+	if err := json.Unmarshal(resultJSON, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || len(result.Errors) != 0 {
+		t.Fatalf("merged education human-resource tags must be accepted, got %#v", result)
+	}
+}
+
 func TestValidateContentEventRejectsUnapprovedTags(t *testing.T) {
 	resultJSON, err := validateContentEvent(context.Background(), EventInput{
 		Payload: json.RawMessage(`{"title":"Published article","slug":"published-article","content_type":"article","tags":["not-a-real-tag"],"visibility":"public","body":"Body"}`),
