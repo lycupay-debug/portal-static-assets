@@ -24,3 +24,17 @@ test('taxonomy payloads accept only valid parent-child pairs and support clearin
   assert.equal(normalizeTaxonomyPair('年级', '国考'), null);
   assert.equal(normalizeTaxonomyPair('教育人力资源', null), null);
 });
+
+import { matchesKnowledgeTaxonomy } from '../src/utils/knowledgeFilters.ts';
+
+test('parent category includes all child-tagged resources', () => {
+  assert.equal(matchesKnowledgeTaxonomy({ tags: ['编程', 'Python'] }, '编程', ['Python', '数据库']), true);
+  assert.equal(matchesKnowledgeTaxonomy({ childCategory: '数据库' }, '编程', ['Python', '数据库']), true);
+});
+
+test('child category filters do not match resources through the auto-associated parent tag', () => {
+  const children = ['Python', '数据库'];
+  assert.equal(matchesKnowledgeTaxonomy({ tags: ['编程', 'Python'] }, '编程', children, 'Python'), true);
+  assert.equal(matchesKnowledgeTaxonomy({ tags: ['编程', '数据库'] }, '编程', children, 'Python'), false);
+  assert.equal(matchesKnowledgeTaxonomy({ parentCategory: '编程' }, '编程', children, 'Python'), false);
+});

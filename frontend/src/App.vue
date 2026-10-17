@@ -4,6 +4,7 @@ import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
+import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
 import { resourceFileIcon } from './utils/resourceIcons'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const removedGradeTags = new Set(['年级', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'])
@@ -323,10 +324,10 @@ const knowledgeFilteredItems = computed(() => {
     }
     const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(terms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
     filtered = filtered.filter(item => {
-      const categoryLabel = knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.label || ''
-      if (item.parentCategory === categoryLabel && (!knowledgeSubcategory.value || item.childCategory === knowledgeSubcategory.value)) return true
-      if (knowledgeSubcategory.value && item.childCategory === knowledgeSubcategory.value) return true
-      if (item.tags?.length) return item.tags.some(tag => tag === selected || tag === categoryLabel || (!knowledgeSubcategory.value && knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)?.children.includes(tag)))
+      const category = knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)
+      const categoryLabel = category?.label || ''
+      if (matchesKnowledgeTaxonomy(item, categoryLabel, category?.children || [], knowledgeSubcategory.value)) return true
+      if (item.tags?.length || item.parentCategory || item.childCategory) return false
       return keywords.some(keyword => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, keyword))
     })
   }
