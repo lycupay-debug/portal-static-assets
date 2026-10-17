@@ -150,6 +150,9 @@ func (a *portalAPI) requireComplianceAdmin(w http.ResponseWriter, r *http.Reques
 }
 
 func (a *portalAPI) compliancePreview(w http.ResponseWriter, r *http.Request, u *portalUser, tail string) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Vary", "Cookie")
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
 	parts := strings.Split(strings.Trim(tail, "/"), "/")
 	if len(parts) < 2 || r.Method != http.MethodGet || !portalUUID.MatchString(parts[1]) {
 		writeError(w, http.StatusNotFound, "审核预览不存在。", nil)
