@@ -17,4 +17,4 @@
     sudo /opt/personal-portal/scripts/compliance/admin-access.sh grant <账户UUID> GRANT
     sudo /opt/personal-portal/scripts/compliance/admin-access.sh revoke <账户UUID> REVOKE
 
-当前实现不会自动把“最早注册的账户”或“内容作者账户”提升为管理员；账户归属不能仅凭显示名称推断。部署后应由站点所有者核实目标账户再授予权限。所有普通账户均默认无版权合规管理权限。
+当前实现不会自动把“最早注册的账户”或“内容作者账户”提升为管理员；账户归属不能仅凭显示名称推断。2026-10-17，站点所有者明确指定的账户已获授 `is_admin=true`，显示名称改为中性的“平台维护”。具体账户身份、授权前后状态及操作者依据记录在 `portal.compliance_audit_log` 中。显示名称仅用于界面展示，不隐藏数据库权限标记，也不替代审计记录。其他普通账户仍默认无版权合规管理权限。
