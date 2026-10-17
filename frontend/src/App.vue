@@ -1689,7 +1689,7 @@ onBeforeUnmount(() => {
 
 <style>
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-family-base);
   color: #191919;
   background: #f6f6f6;
   font-synthesis: none;
@@ -1718,7 +1718,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .brand { display: inline-flex; align-items: center; gap: 12px; }
 .brand-mark { display: grid; place-items: center; width: 40px; height: 40px; background: var(--green); color: #ffffff; font-size: 21px; font-weight: 700; letter-spacing: -2px; border-radius: 11px 11px 11px 3px; }
 .brand-copy { display: flex; flex-direction: column; gap: 3px; }
-.brand-copy strong { font: 500 11px var(--mono); letter-spacing: .12em; }
+.brand-copy strong { font: 500 var(--font-size-base) var(--font-family-mono); letter-spacing: .12em; }
 .brand-copy small { color: var(--muted); font-size: 14px; letter-spacing: .08em; }
 .main-nav { display: flex; align-items: center; gap: clamp(22px, 3.4vw, 52px); font-size: 14px; color: #5e5e5e; }
 .main-nav a { transition: color .2s, transform .22s ease; }
@@ -1730,7 +1730,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 
 .hero { position: relative; min-height: 585px; padding: 94px clamp(22px, 11vw, 176px) 38px; display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; column-gap: 6%; border-bottom: 1px solid var(--line); }
 .hero-copy { position: relative; z-index: 1; padding-bottom: 32px; }
-.eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 27px; font: 500 10px var(--mono); letter-spacing: .13em; color: #737373; }
+.eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 27px; font: 500 var(--font-size-base) var(--font-family-mono); letter-spacing: .13em; color: #737373; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #868686; box-shadow: 0 0 0 4px #ececec; }
 .hero h1 { margin: 0; font-size: clamp(37px, 4.3vw, 61px); line-height: 1.32; letter-spacing: -.055em; font-weight: 700; }
 .hero h1 span { color: var(--green); }
