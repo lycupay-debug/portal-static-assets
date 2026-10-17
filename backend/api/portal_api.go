@@ -907,14 +907,36 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		return
 	}
 	if action == "permanent" && r.Method == http.MethodDelete {
-		res, err := a.db.ExecContext(ctx, `DELETE FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL`, id, u.ID)
+		tx, err := a.db.BeginTx(ctx, nil)
 		if err != nil {
 			a.dbError(w, err, "永久删除失败。")
 			return
 		}
-		n, _ := res.RowsAffected()
-		if n == 0 {
-			writeError(w, 404, "回收站中不存在该内容。", nil)
+		defer tx.Rollback()
+		var deletedTitle, deletedSlug string
+		if err = tx.QueryRowContext(ctx, `SELECT title,slug FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL FOR UPDATE`, id, u.ID).Scan(&deletedTitle, &deletedSlug); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, 404, "回收站中不存在该内容。", nil)
+			} else {
+				a.dbError(w, err, "读取待永久删除内容失败。")
+			}
+			return
+		}
+		// Keep rights evidence and review history as audit records; remove the content row.
+		if _, err = tx.ExecContext(ctx, `UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',metadata=metadata || jsonb_build_object('deleted',true,'permanently_deleted',true,'permanently_deleted_at',now(),'content_title',$2),updated_at=now() WHERE asset_path=$1`, "db://portal.portal_content/"+id, deletedTitle); err != nil {
+			a.dbError(w, err, "同步版权台账失败，未执行永久删除。")
+			return
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,'content.permanently_deleted','portal_content',$2::uuid,jsonb_build_object('title',$3,'slug',$4,'deleted_at','recycle_bin'),jsonb_build_object('permanently_deleted',true,'rights_evidence_retained',true))`, u.ID, id, deletedTitle, deletedSlug); err != nil {
+			a.dbError(w, err, "记录永久删除审计失败，未执行永久删除。")
+			return
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL`, id, u.ID); err != nil {
+			a.dbError(w, err, "永久删除失败。")
+			return
+		}
+		if err = tx.Commit(); err != nil {
+			a.dbError(w, err, "永久删除事务提交失败。")
 			return
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
@@ -1688,14 +1710,44 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "permanent" && r.Method == http.MethodDelete {
-		var stored sql.NullString
-		err := a.db.QueryRowContext(r.Context(), `DELETE FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL RETURNING stored_filename`, id, u.ID).Scan(&stored)
+		tx, err := a.db.BeginTx(r.Context(), nil)
 		if err != nil {
-			writeError(w, 404, "资源不存在或不在回收站。", nil)
+			a.dbError(w, err, "资源永久删除失败。")
+			return
+		}
+		defer tx.Rollback()
+		var stored sql.NullString
+		var deletedTitle, deletedFilename string
+		if err = tx.QueryRowContext(r.Context(), `SELECT stored_filename,title,original_filename FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL FOR UPDATE`, id, u.ID).Scan(&stored, &deletedTitle, &deletedFilename); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, 404, "资源不存在或不在回收站。", nil)
+			} else {
+				a.dbError(w, err, "读取待永久删除资源失败。")
+			}
+			return
+		}
+		// Keep the compliance asset, evidence and reviews; make the asset explicitly unavailable.
+		if _, err = tx.ExecContext(r.Context(), `UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',metadata=metadata || jsonb_build_object('deleted',true,'permanently_deleted',true,'permanently_deleted_at',now(),'resource_title',$2),updated_at=now() WHERE asset_path=$1`, "db://portal.teaching_resources/"+id, deletedTitle); err != nil {
+			a.dbError(w, err, "同步版权台账失败，未执行资源永久删除。")
+			return
+		}
+		if _, err = tx.ExecContext(r.Context(), `INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,'resource.permanently_deleted','teaching_resource',$2::uuid,jsonb_build_object('title',$3,'filename',$4,'deleted_at','recycle_bin'),jsonb_build_object('permanently_deleted',true,'rights_evidence_retained',true))`, u.ID, id, deletedTitle, deletedFilename); err != nil {
+			a.dbError(w, err, "记录资源永久删除审计失败，未执行永久删除。")
+			return
+		}
+		if _, err = tx.ExecContext(r.Context(), `DELETE FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL`, id, u.ID); err != nil {
+			a.dbError(w, err, "资源永久删除失败。")
+			return
+		}
+		if err = tx.Commit(); err != nil {
+			a.dbError(w, err, "资源永久删除事务提交失败。")
 			return
 		}
 		if stored.Valid {
-			_ = os.Remove(filepath.Join(a.resourceDir, filepath.Base(stored.String)))
+			if removeErr := os.Remove(filepath.Join(a.resourceDir, filepath.Base(stored.String))); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				a.dbError(w, removeErr, "资源记录已永久删除，但文件清理失败，需要运维检查。")
+				return
+			}
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return

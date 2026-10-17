@@ -245,6 +245,48 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	requestJSON(t, api, http.MethodPost, "/resources/"+resourceID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID+"/permanent", nil, sessionCookie, http.StatusOK)
+	var resourceRetained, resourceUnavailable bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$1 AND metadata->>'permanently_deleted'='true'), EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$1 AND published_or_active=FALSE AND distribution_status='not_distributed')`, "db://portal.teaching_resources/"+resourceID).Scan(&resourceRetained, &resourceUnavailable); err != nil {
+		t.Fatal(err)
+	}
+	if !resourceRetained || !resourceUnavailable {
+		t.Fatalf("permanent resource deletion must retain and deactivate the rights ledger: retained=%v unavailable=%v", resourceRetained, resourceUnavailable)
+	}
+	var resourceAuditCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM portal.compliance_audit_log WHERE object_id=$1::uuid AND action='resource.permanently_deleted'`, resourceID).Scan(&resourceAuditCount); err != nil {
+		t.Fatal(err)
+	}
+	if resourceAuditCount != 1 {
+		t.Fatalf("expected one resource permanent-delete audit entry, got %d", resourceAuditCount)
+	}
+
+	deleteTest := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Permanent-delete audit test", "slug": "permanent-delete-" + randomUUID()[:8], "contentType": "article", "summary": "test", "body": "audit retention test", "visibility": "private"}, sessionCookie, http.StatusCreated)
+	var deleteTestEnvelope struct {
+		Item map[string]any `json:"item"`
+	}
+	if err := json.Unmarshal(deleteTest.Body.Bytes(), &deleteTestEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	deleteTestID, _ := deleteTestEnvelope.Item["id"].(string)
+	if deleteTestID == "" {
+		t.Fatal("permanent-delete test content was not created")
+	}
+	requestJSON(t, api, http.MethodDelete, "/content/"+deleteTestID, nil, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodDelete, "/content/"+deleteTestID+"/permanent", nil, sessionCookie, http.StatusOK)
+	var contentExists, contentAssetRetained bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE content_id=$1::uuid), EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$2 AND metadata->>'permanently_deleted'='true' AND published_or_active=FALSE AND distribution_status='not_distributed')`, deleteTestID, "db://portal.portal_content/"+deleteTestID).Scan(&contentExists, &contentAssetRetained); err != nil {
+		t.Fatal(err)
+	}
+	if contentExists || !contentAssetRetained {
+		t.Fatalf("permanent content deletion contract mismatch: content_exists=%v rights_asset_retained=%v", contentExists, contentAssetRetained)
+	}
+	var contentAuditCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM portal.compliance_audit_log WHERE object_id=$1::uuid AND action='content.permanently_deleted'`, deleteTestID).Scan(&contentAuditCount); err != nil {
+		t.Fatal(err)
+	}
+	if contentAuditCount != 1 {
+		t.Fatalf("expected one content permanent-delete audit entry, got %d", contentAuditCount)
+	}
 
 	imageBytes := []byte("\x89PNG\r\n\x1a\n")
 	image := requestJSON(t, api, http.MethodPost, "/uploads", map[string]any{"mime": "image/png", "data": base64.StdEncoding.EncodeToString(imageBytes)}, sessionCookie, http.StatusCreated)
