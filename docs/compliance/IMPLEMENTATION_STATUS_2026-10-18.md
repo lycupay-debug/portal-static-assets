@@ -1,40 +1,27 @@
-# Copyright compliance implementation status — 2026-10-18
+# 版权合规中心实现状态 — 2026-10-18
 
-This file records the deployed technical state. It does not replace legal advice or approve any asset's rights.
+本文记录个人门户自身开发与部署资源的合规盘点能力，不构成法律意见或对任何资产权利状态的法律认定。
 
-## Deployed controls
+## 保留范围
 
-- Production release: `20261017T171207Z-go-backend`; source commit `373dd1d`.
-- PostgreSQL migration 019 (`uploaded_image_rights_gate`) is applied.
-- Local uploads are registered with uploader, SHA-256, MIME type and size. New images default to unknown rights / pending review and are private.
-- Caddy proxies `/uploads/*` to the Go API instead of serving the upload directory directly. The API permits private preview for the uploader or admin; anonymous delivery requires an approved rights record, verified evidence, and a reference from at least one currently published public article.
-- The article publish/restore gate checks both local uploaded images and recognized external image URLs. External images require a matching compliance asset and verified rights evidence.
-- The compliance center can preview registered private uploaded images while an authorized reviewer is signed in.
-- Daily compliance audit now emits a report-only retention inventory and backup/upload filesystem counts. No deletion is performed.
-- Public health and readiness endpoints passed after deployment; Caddy, API and event-core services are running.
-- GitHub Actions for commit `373dd1d` passed: https://github.com/lycupay-debug/personal-portal/actions/runs/39052652465
+- `/account/compliance` 保留，继续管理个人门户自身的软件依赖许可证、静态资源台账、内部证据/审核记录和政策草稿。
+- 生产依赖许可证预检和门户自身资源扫描保留。
+- 管理员/内部审核专员权限、内部审计记录保留。
 
-## Latest observed production inventory
+## 已移除范围
 
-- 221 candidate assets in the latest scanner output; the merged database `portal.compliance_assets` ledger currently contains 237 rows, including records retained from prior scans and manual review.
-- Risk triage: 9 high, 2 medium, 171 low, 39 unknown, 0 critical. These are review priorities, not final legal conclusions.
-- 7 externally hosted image URLs remain recorded as high-priority review items.
-- 5 files remain in the upload directory but have no rows in the new uploaded-image registry; direct public requests return 404. They were not deleted.
-- 46 files exist in the backup directory at the latest report; oldest observed modification time is 2026-10-14T18:14:20Z. Automatic backup deletion is not configured by this project.
-- The latest retention dry-run found 0 expired sessions, 0 soft-deleted content records, 0 soft-deleted resources, 0 complaints with an expired retention deadline, and 0 complaints missing a deadline. This is a snapshot, not a retention-policy approval.
+- 文章管理、教育资源管理、文章图片上传不再创建外部版权资产记录，也不再因外部版权审核状态阻止保存、编辑、恢复或发布。
+- 发布表单中的权利类型、授权期限、证据链接、证据文本和证据附件提交入口已移除。
+- 文章和资源列表中的版权状态列、违规详情、受限内容预览页面和公开版权投诉提交入口已移除。
+- 自动扫描不再读取用户文章/教育资源数据库、不再登记文章中的外部图片，也不再扫描用户上传文件或教育资源目录。
+- 公开法律文档 API 不再提供版权通知、版权投诉和第三方声明页面；外部版权通知/投诉记录表被删除，软件许可证声明保留为内部开发合规材料。
 
-## Items intentionally left unresolved
+## 数据迁移
 
-- The public article titled “阿松大” remains published. The scanner reports that it contains text and page elements corresponding to a Snaper Digital CRM article, plus 7 externally hosted images. Authorization has not been verified. This remains a high-priority copyright risk, not a final infringement determination. No content was automatically removed or unpublished.
-- The four public legal documents remain drafts. Operator identity/contact details, actual provider data handling and retention, hosting/backup regions, applicable filing/licensing status and legal review remain to be confirmed.
-- The license catalog still contains six license-expression candidates marked unreviewed. Automated metadata and captured license text are not legal approval.
-- Complaint intake remains disabled until the complaint and privacy documents are approved and published, a retention period is configured, and retention/legal-hold execution is implemented.
-- No automatic purge is enabled for complaints, recycle-bin content, old uploads, or backups. The database does not yet provide a legal-hold model.
-- `docs/compliance/PUBLISH_GATE.md` contains an older pre-administrator statement. For the current operational workflow, use `docs/compliance/OPERATIONS.md` and the latest implementation status; do not rely on the stale administrator sentence as current state.
+迁移 022 将原图片登记元数据迁移至普通的 `portal.uploaded_images` 表，以继续支持上传者归属和访问控制；旧 `portal.uploaded_image_assets` 表随后删除。迁移同时清理与用户文章、教育资源、上传图片及外部链接有关的版权台账和对应的外部内容扫描记录。
 
-## Next engineering priorities
+门户自身软件依赖、静态资源、许可证目录和内部政策记录保留。既有用户文章、教育资源、图片文件、回收站内容和备份文件不会因本次迁移而被删除；与外部内容版权审查有关的台账、证据、审核记录、投诉表及对应审计记录按本次需求移除。
 
-1. Keep existing high-risk public content visible in the compliance register until the owner makes the rights/disposition decision; do not infer authorization from test intent or remote availability.
-2. Add legal-hold support before implementing destructive retention automation.
-3. Finish provider/hosting/logging fact verification and obtain legal review before publishing public policies.
-4. Conduct browser-based visual acceptance of the compliance center and verify authorized preview in a signed-in session.
+## 验证限制
+
+生产数据库端到端集成测试需要独立测试数据库配置；在配置缺失时，集成测试会跳过。部署前应完成 Go 测试、前端类型检查/构建、数据库迁移与服务健康检查，并单独验证生产迁移结果。

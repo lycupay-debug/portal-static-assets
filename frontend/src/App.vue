@@ -3,14 +3,10 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, o
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
-const ComplianceResourcePreview = defineAsyncComponent(() => import('./components/ComplianceResourcePreview.vue'))
-const CopyrightComplaintForm = defineAsyncComponent(() => import('./components/CopyrightComplaintForm.vue'))
-const PublisherRightsForm = defineAsyncComponent(() => import('./components/PublisherRightsForm.vue'))
 import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
 import { resourceFileIcon } from './utils/resourceIcons'
-import { copyrightReviewLabel, copyrightReviewIsViolation } from './utils/copyrightReview'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const removedGradeTags = new Set(['年级', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'])
 const knowledgeTagOptions = portalTaxonomy
@@ -38,9 +34,9 @@ type PortalSection = {
   tags: string[]
 }
 type PortalUser = APIUser & { isAdmin?: boolean }
-type PortalContent = APIContent & { copyrightStatus?: string | null; copyrightDetails?: string | null }
+type PortalContent = APIContent
 type ContentVersion = APIContentVersion
-type TeachingResource = APITeachingResource & { copyrightStatus?: string | null; copyrightDetails?: string | null }
+type TeachingResource = APITeachingResource
 type PublicTeachingResource = Pick<TeachingResource, 'id' | 'title' | 'description' | 'type' | 'grade' | 'url' | 'filename' | 'fileSize' | 'createdAt' | 'updatedAt'> & { downloadUrl?: string | null }
 const selectedEducationResource = ref<PublicTeachingResource | null>(null)
 let educationResourcePreviousBodyOverflow = ''
@@ -108,7 +104,7 @@ const routeAliases: Record<string, string> = {
 }
 const contentEditorRouteId = computed(() => route.value.match(/^\/content-management\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1] || null)
 const isContentEditorPage = computed(() => route.value === '/content-management/new' || contentEditorRouteId.value !== null)
-const isProtectedPage = computed(() => isContentEditorPage.value || isReviewContentPreviewPage.value || isReviewResourcePreviewPage.value || route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value))
+const isProtectedPage = computed(() => isContentEditorPage.value || route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value))
 const isAccountPage = computed(() => !isContentEditorPage.value && (route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value)))
 const activeSidebarButton = ref('overview')
 const accountNavQuery = ref('')
@@ -152,7 +148,7 @@ const accountGroups = [
   },
   {
     id: 'compliance', label: '治理与合规', items: [
-      { id: 'copyright-compliance', label: '版权合规中心', description: '管理版权资产、开源许可证、审核证据和网站政策。' },
+      { id: 'copyright-compliance', label: '门户开发资源合规中心', description: '管理门户自身的软件依赖许可证、静态资源和内部审核记录。' },
     ],
   },
 ]
@@ -220,8 +216,6 @@ const resourceType = ref('听力材料')
 const resourceGrade = ref('')
 const resourceIsPublic = ref(false)
 const resourceUrl = ref('')
-const emptyRightsForm = () => ({ ownershipBasis: 'original', rightsholder: '', sourceUrl: '', useScope: 'commercial_web', licenseName: '', licenseUrl: '', permissionExpiry: '', evidenceUri: '', evidenceText: '', evidenceFilename: '', evidenceData: '', statementAccepted: false })
-const rightsForm = ref(emptyRightsForm())
 const resourceUploadProgress = ref(0)
 const resourceUploadDone = ref(false)
 const resourceUploadResult = ref('')
@@ -481,12 +475,12 @@ const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
 const virtualTableOverscan = 6
 const tableDefinitions: Record<string, { title: string; columns: TableColumn[]; note: string }> = {
-  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'copyrightStatus', label: '版权审核' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
+  'content-management': { title: '内容列表', columns: [{ key: 'title', label: '内容标题', width: 'minmax(220px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'status', label: '状态' }, { key: 'visibility', label: '可见范围', width: 'minmax(120px, 1fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'likeCount', label: '点赞' }, { key: 'favoriteCount', label: '收藏' }, { key: 'actions', label: '操作', width: 'minmax(330px, 2.6fr)' }], note: '内容数据源尚未接入。' },
   'property-management': { title: '房源列表', columns: [{ key: 'property', label: '房源名称', width: 'minmax(180px, 1.6fr)' }, { key: 'address', label: '地址', width: 'minmax(180px, 2fr)' }, { key: 'roomCount', label: '房间数' }, { key: 'rent', label: '租金' }, { key: 'status', label: '房源状态' }, { key: 'updatedAt', label: '更新时间' }], note: '房源数据源尚未接入。' },
   'room-status': { title: '房态列表', columns: [{ key: 'room', label: '房间', width: 'minmax(140px, 1.3fr)' }, { key: 'property', label: '所属房源', width: 'minmax(180px, 1.7fr)' }, { key: 'status', label: '当前房态' }, { key: 'tenant', label: '租客' }, { key: 'checkIn', label: '入住日期' }, { key: 'checkOut', label: '退租日期' }], note: '房态数据源尚未接入。' },
   'student-records': { title: '学生档案', columns: [{ key: 'name', label: '学生姓名' }, { key: 'studentId', label: '学员编号' }, { key: 'course', label: '课程' }, { key: 'status', label: '学习状态' }, { key: 'updatedAt', label: '更新时间' }], note: '学生档案数据源尚未接入。' },
   'course-calendar': { title: '课程安排', columns: [{ key: 'course', label: '课程名称', width: 'minmax(180px, 1.6fr)' }, { key: 'class', label: '班级' }, { key: 'teacher', label: '教师' }, { key: 'startAt', label: '开始时间' }, { key: 'endAt', label: '结束时间' }, { key: 'status', label: '状态' }], note: '课程日历数据源尚未接入。' },
-  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'grade', label: '年级' }, { key: 'copyrightStatus', label: '版权审核' }, { key: 'visibility', label: '公开状态' }, { key: 'description', label: '资源说明', width: 'minmax(220px, 2fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源已接入数据库。' },
+  'teaching-resources': { title: '教学资源', columns: [{ key: 'title', label: '资源名称', width: 'minmax(200px, 2fr)' }, { key: 'type', label: '类型' }, { key: 'grade', label: '年级' }, { key: 'visibility', label: '公开状态' }, { key: 'description', label: '资源说明', width: 'minmax(220px, 2fr)' }, { key: 'updatedAt', label: '更新时间' }, { key: 'actions', label: '操作' }], note: '教学资源已接入数据库。' },
   'network-tools': { title: '网络工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'description', label: '功能说明', width: 'minmax(220px, 2fr)' }, { key: 'url', label: '入口地址' }, { key: 'status', label: '状态' }], note: '网络工具目录尚未接入。' },
   'document-converters': { title: '文档转换工具', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'sourceFormat', label: '源格式' }, { key: 'targetFormat', label: '目标格式' }, { key: 'status', label: '状态' }, { key: 'actions', label: '操作' }], note: '文档转换工具目录尚未接入。' },
   'add-tool': { title: '工具清单', columns: [{ key: 'name', label: '工具名称', width: 'minmax(180px, 1.5fr)' }, { key: 'category', label: '分类' }, { key: 'url', label: '入口地址', width: 'minmax(220px, 2fr)' }, { key: 'status', label: '状态' }, { key: 'createdAt', label: '添加时间' }], note: '当前还没有接入工具管理数据源。' },
@@ -509,13 +503,10 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       updatedAt: new Date(contentViewMode.value === 'trash' && 'deletedAt' in item ? String(item.deletedAt) : item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),
       likeCount: item.likeCount ?? 0,
       favoriteCount: item.favoriteCount ?? 0,
-      copyrightStatus: copyrightReviewLabel(item.copyrightStatus),
-      copyrightStatusRaw: item.copyrightStatus || 'pending',
-      copyrightDetails: item.copyrightDetails || '暂无详细审核意见。请进入版权合规中心查看该资产的审核记录。',
       actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
     }))
   : activeAccountSection.value === 'teaching-resources'
-    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.type || '其他', grade: item.grade || '不限定年级', copyrightStatus: copyrightReviewLabel(item.copyrightStatus), copyrightStatusRaw: item.copyrightStatus || 'pending', copyrightDetails: item.copyrightDetails || '暂无详细审核意见。请进入版权合规中心查看该资产的审核记录。', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
+    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, type: item.type || '其他', grade: item.grade || '不限定年级', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
     : [])
 // Build each record's normalized search text once per data change, rather than
 // converting every cell to lowercase on every keystroke. Action/status helper fields
@@ -630,16 +621,9 @@ async function loadTeachingResources() {
   } catch (error) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') }
   finally { resourceBusy.value = false }
 }
-function resetRightsForm() { rightsForm.value = emptyRightsForm() }
 function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
-function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetRightsForm(); resetResourceUpload(); resourceDialogOpen.value = true }
-function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceIsPublic.value = item.isPublic === true; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetRightsForm(); resetResourceUpload(); resourceDialogOpen.value = true }
-async function submitPublisherRights(endpoint: string) {
-  const response = await fetch(endpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(rightsForm.value) })
-  const result = await response.json() as { message?: string; error?: string }
-  if (!response.ok) throw new Error(result.error || '版权材料提交失败。')
-  return result.message || '版权材料已提交，等待审核。'
-}
+function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
+function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceIsPublic.value = item.isPublic === true; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
 function openResourceEditById(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item) openResourceEdit(item) }
 function requestWithUploadProgress(url: string, method: string, body: ResourceWrite): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
   return new Promise((resolve, reject) => {
@@ -664,11 +648,9 @@ async function createTeachingResource() {
     const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
     const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
     if (!result.item) throw new Error('服务器未返回已保存的资源。')
-    let rightsMessage = ''
-    if (rightsForm.value.statementAccepted) rightsMessage = await submitPublisherRights(`/api/resources/${encodeURIComponent(result.item.id)}/evidence`)
     if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
     else teachingResources.value = [result.item, ...teachingResources.value]
-    resourceUploadDone.value = true; resourceUploadResult.value = rightsMessage || '资源已保存。发布前请提交版权材料并通过审核。请点击下方“完成”关闭窗口。'
+    resourceUploadDone.value = true; resourceUploadResult.value = editingResourceId.value ? '资源已更新。请点击下方“完成”关闭窗口。' : '资源已保存。请点击下方“完成”关闭窗口。'
   } catch (error) { resourceError.value = error instanceof Error ? error.message : '保存资源失败。'; resourceUploadProgress.value = 0 }
   finally { resourceBusy.value = false }
 }
@@ -788,7 +770,6 @@ function selectAccountSection(id: string) {
 }
 function openNewContent() {
   editingContentId.value = null
-  resetRightsForm()
   contentForm.value = emptyContentForm()
   contentError.value = ''
   contentNotice.value = ''
@@ -852,13 +833,8 @@ async function saveContent() {
     const result = await response.json() as { item?: PortalContent; error?: string }
     if (!response.ok || !result.item) throw new Error(result.error || '保存内容失败。')
     if (!editing) editingContentId.value = result.item.id
-    let rightsNotice = ''
-    if (rightsForm.value.statementAccepted) {
-      try { rightsNotice = await submitPublisherRights(`/api/content/${encodeURIComponent(result.item.id)}/evidence`) }
-      catch (error) { throw new Error(`内容草稿已保存，但版权材料提交失败：${error instanceof Error ? error.message : '未知错误'}。请保留当前页面并重试。`) }
-    }
     contentEditorOpen.value = false
-    contentNotice.value = rightsNotice || (editing ? '内容已保存。发布前仍需提交版权材料并通过审核。' : '草稿已创建。发布前仍需提交版权材料并通过审核。')
+    contentNotice.value = editing ? '内容已保存。' : '草稿已创建。'
     await navigate('/content-management')
   } catch (error) {
     contentError.value = error instanceof Error ? error.message : '保存内容失败。'
@@ -918,13 +894,7 @@ const filteredSections = computed(() => {
 })
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
-const reviewContentPreviewId = computed(() => route.value.match(/^\/account\/compliance-preview\/content\/([0-9a-f-]{36})$/i)?.[1] || null)
-const reviewResourcePreviewId = computed(() => route.value.match(/^\/account\/compliance-preview\/resource\/([0-9a-f-]{36})$/i)?.[1] || null)
-const isReviewContentPreviewPage = computed(() => reviewContentPreviewId.value !== null)
-const isReviewResourcePreviewPage = computed(() => reviewResourcePreviewId.value !== null)
-const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value) || isReviewContentPreviewPage.value)
-const reviewResourcePreviewLoading = ref(false)
-const reviewResourcePreviewError = ref('')
+const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
 const isLegalPage = computed(() => /^\/legal\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
 const legalSlug = computed(() => isLegalPage.value ? route.value.slice('/legal/'.length) : '')
 const publishedLegalDocuments = ref<Array<{ slug: string; title: string; documentType: string }>>([])
@@ -1047,8 +1017,7 @@ async function loadPublicTeachingResources() {
 async function loadPublicArticle(slug: string) {
   const requestId = ++publicArticleRequestSequence
   const requestedRoute = route.value
-  const reviewPreview = isReviewContentPreviewPage.value
-  const apiPath = reviewPreview ? `/api/compliance/preview/content/${encodeURIComponent(slug)}` : `/api/public/content/${encodeURIComponent(slug)}`
+  const apiPath = `/api/public/content/${encodeURIComponent(slug)}`
   publicContentLoading.value = true
   publicContentError.value = ''
   publicArticle.value = null
@@ -1056,7 +1025,7 @@ async function loadPublicArticle(slug: string) {
   try {
     const response = await fetch(apiPath, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
     const result = await response.json() as { item?: PublicContent; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || (reviewPreview ? '无权预览该内容。' : '内容不存在或尚未公开。'))
+    if (!response.ok || !result.item) throw new Error(result.error || '内容不存在或尚未公开。')
     if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
     const { renderMarkdown } = await import('./utils/markdown')
     if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
@@ -1067,20 +1036,6 @@ async function loadPublicArticle(slug: string) {
   } finally {
     if (requestId === publicArticleRequestSequence) publicContentLoading.value = false
   }
-}
-async function loadComplianceResourcePreview(id: string) {
-  reviewResourcePreviewLoading.value = true
-  reviewResourcePreviewError.value = ''
-  selectedEducationResource.value = null
-  try {
-    const response = await fetch(`/api/compliance/preview/resource/${encodeURIComponent(id)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { item?: PublicTeachingResource; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '无权预览该资源。')
-    if (route.value !== `/account/compliance-preview/resource/${id}`) return
-    selectedEducationResource.value = result.item
-  } catch (error) {
-    reviewResourcePreviewError.value = error instanceof Error ? error.message : '读取资源预览失败。'
-  } finally { reviewResourcePreviewLoading.value = false }
 }
 async function loadPublishedLegalDocuments() {
   try {
@@ -1181,8 +1136,7 @@ async function navigate(target: string) {
   if (route.value === '/content-management') await loadContentList()
   if (route.value === '/education/teaching-resources') await loadTeachingResources()
   if (isContentEditorPage.value) void initializeContentEditorRoute()
-  if (isReviewResourcePreviewPage.value && reviewResourcePreviewId.value) void loadComplianceResourcePreview(reviewResourcePreviewId.value)
-  if (isPublicContentPage.value) void loadPublicArticle(reviewContentPreviewId.value || route.value.slice('/content/'.length))
+  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   if (route.value === '/' && window.location.hash) {
     await nextTick()
@@ -1252,8 +1206,7 @@ function onPopState() {
   authError.value = ''
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
   if (route.value === '/education-resources') void loadPublicTeachingResources()
-  if (isReviewResourcePreviewPage.value && reviewResourcePreviewId.value) void loadComplianceResourcePreview(reviewResourcePreviewId.value)
-  if (isPublicContentPage.value) void loadPublicArticle(reviewContentPreviewId.value || route.value.slice('/content/'.length))
+  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   if (route.value === '/content-management') void loadContentList()
   if (route.value === '/education/teaching-resources') void loadTeachingResources()
@@ -1269,8 +1222,7 @@ onMounted(() => {
   window.addEventListener('beforeunload', saveScrollPosition)
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
   if (route.value === '/education-resources') void loadPublicTeachingResources()
-  if (isReviewResourcePreviewPage.value && reviewResourcePreviewId.value) void loadComplianceResourcePreview(reviewResourcePreviewId.value)
-  if (isPublicContentPage.value) void loadPublicArticle(reviewContentPreviewId.value || route.value.slice('/content/'.length))
+  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
   if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
   void loadPublishedLegalDocuments()
   void loadSession().then((valid) => {
@@ -1335,8 +1287,8 @@ onBeforeUnmount(() => {
               <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
               <label><span>URL 别名</span><input class="form-control" v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               <label><span>摘要</span><textarea class="form-control" v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
-              <PublisherRightsForm v-model="rightsForm" />
-              <p class="workspace-privacy-note"><span>◈</span> 内容默认保存为草稿；保存后可在内容列表单独发布。未提交版权声明或未通过审核的内容不能发布。</p>
+
+              <p class="workspace-privacy-note"><span>◈</span> 内容默认保存为草稿；保存后可在内容列表单独发布。</p>
             </section>
           </details>
           <div class="workspace-create-actions">
@@ -1540,9 +1492,7 @@ onBeforeUnmount(() => {
       </section>
     </main>
 
-    <ComplianceResourcePreview v-else-if="isReviewResourcePreviewPage" :loading="reviewResourcePreviewLoading" :error="reviewResourcePreviewError" :resource="selectedEducationResource" @back="navigate('/account/compliance')" />
     <main v-else-if="isPublicContentPage" class="public-content-page">
-      <section v-if="isReviewContentPreviewPage" class="compliance-preview-banner"><strong>版权审核受限预览</strong><span>仅超管或版权审核专员可访问；当前内容尚未向普通访客公开。</span><a href="/account/compliance" @click.prevent="navigate('/account/compliance')">返回版权合规中心</a></section>
       <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
       <section v-else-if="publicArticle" class="public-article-layout">
         <article class="public-article">
@@ -1554,7 +1504,7 @@ onBeforeUnmount(() => {
           <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
           <div class="public-article-body markdown-rendered" v-html="publicArticleHtml"></div>
         </article>
-        <aside v-if="!isReviewContentPreviewPage" class="public-article-sidebar" aria-label="作者信息与文章操作">
+        <aside class="public-article-sidebar" aria-label="作者信息与文章操作">
           <section class="public-author-card">
             <div class="public-author-avatar" aria-hidden="true">{{ (publicArticle.authorName || '作者').slice(0, 1) }}</div>
             <div class="public-author-heading"><span>本文作者</span><strong>{{ publicArticle.authorName || '平台作者' }}</strong></div>
@@ -1595,7 +1545,6 @@ onBeforeUnmount(() => {
           <h1>{{ legalDocument.title }}</h1>
           <p v-if="legalDocument.effectiveAt" class="legal-document-effective">生效日期：{{ new Date(legalDocument.effectiveAt).toLocaleDateString('zh-CN') }}</p>
           <div class="markdown-rendered legal-markdown" v-html="legalDocumentHtml"></div>
-          <CopyrightComplaintForm v-if="legalSlug === 'copyright-complaints'" />
         </section>
         <section v-else class="legal-document-state"><h1>政策文件暂不可用</h1><p>{{ legalDocumentError || '该政策尚未发布。' }}</p></section>
       </section>
@@ -1742,10 +1691,6 @@ onBeforeUnmount(() => {
                         <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="contentBusy" @click="deleteContent(String(record.id))">删除</button>
                       </template>
                     </div>
-                    <div v-else-if="column.key === 'copyrightStatus'" class="copyright-status-cell" role="cell">
-                      <span class="copyright-status-label" :class="{ 'is-approved': record.copyrightStatus === '已通过', 'is-violation': record.copyrightStatus === '涉及违规' }">{{ record.copyrightStatus || '待审核' }}</span>
-                      <button v-if="copyrightReviewIsViolation(String(record.copyrightStatusRaw || 'pending'))" type="button" class="copyright-details-button" @click="openTableCell('版权审核详情', String(record.copyrightDetails || '暂无详细审核意见。请进入版权合规中心查看该资产的审核记录。'))">查看违规详情</button>
-                    </div>
                     <span v-else role="cell"><button type="button" class="table-cell-preview" :title="Array.from(tableCellValue(record, column.key)).length > 10 ? '点击查看完整内容' : undefined" @click="openTableCell(column.label, tableCellValue(record, column.key))">{{ tableCellPreview(tableCellValue(record, column.key)) }}</button></span>
                   </template>
                 </div>
@@ -1773,7 +1718,7 @@ onBeforeUnmount(() => {
           <VirtualizedSelect v-model="resourceType" label="教学资源类型" :options="resourceTypeOptions.map(type => ({ label: type, value: type }))" />
           <label class="share-dialog-label" for="resource-grade">年级</label>
           <VirtualizedSelect v-model="resourceGrade" label="年级" :options="resourceGradeOptions.map(grade => ({ label: grade, value: grade === '不限定年级' ? '' : grade }))" placeholder="选择适用年级" />
-          <label class="resource-public-toggle"><input v-model="resourceIsPublic" type="checkbox" /><span><strong>公开展示在教育资源页</strong><small>公开后访客可查看并访问资源。新资源需先保存为私有，在版权合规中心完成授权证据审核后才能公开；修改已公开资源前应先取消公开。</small></span></label>
+          <label class="resource-public-toggle"><input v-model="resourceIsPublic" type="checkbox" /><span><strong>公开展示在教育资源页</strong><small>公开后访客可查看并访问资源。请确保你有权分享所提供的内容。</small></span></label>
           <label class="share-dialog-label" for="resource-description">资源说明</label>
           <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
           <label class="share-dialog-label" for="resource-file">上传文件（选填）</label>
@@ -1782,7 +1727,6 @@ onBeforeUnmount(() => {
           <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}{{ editingResourceId ? ' · 上传后替换原文件' : '' }}</p>
           <label class="share-dialog-label" for="resource-url">URL 链接（选填）</label>
           <input id="resource-url" v-model="resourceUrl" type="url" class="form-control share-dialog-url" placeholder="粘贴可分享的 https:// 链接" />
-          <PublisherRightsForm v-model="rightsForm" compact />
           <div v-if="resourceBusy" class="resource-upload-live-progress">
             <div class="resource-upload-progress-track" role="progressbar" :aria-valuenow="resourceUploadProgress" aria-valuemin="0" aria-valuemax="100"><div class="resource-upload-progress-bar" :style="{ width: resourceUploadProgress + '%' }"></div></div>
             <div class="resource-upload-progress-label"><span>{{ resourceUploadProgress >= 100 ? '正在等待服务器确认保存' : '正在上传并保存，请勿关闭窗口' }}</span><strong>{{ resourceUploadProgress }}%</strong></div>
@@ -2212,11 +2156,6 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .virtual-table-search { width: min(260px, 42%); min-width: 140px; height: 38px; padding: 0 12px; border: 1px solid rgba(147, 147, 147, .2); border-radius: 10px; color: #484848; background: rgba(255, 255, 255, .56); font-size: var(--font-size-14px-d65225); outline: none; }
 .virtual-table-search:focus { border-color: rgba(116, 116, 116, .5); box-shadow: 0 0 0 3px rgba(116, 116, 116, .08); }
 .virtual-table-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; max-height: none; overflow-x: scroll; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.copyright-status-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
-.copyright-status-label { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; background: #f1f1f1; color: #333; font-size: 12px; white-space: nowrap; }
-.copyright-status-label.is-approved { background: #e8f4ea; color: #1c6630; }
-.copyright-status-label.is-violation { background: #fbe9e8; color: #9c2924; }
-.copyright-details-button { border: 0; padding: 0; color: #a02b25; background: transparent; text-decoration: underline; cursor: pointer; font-size: 12px; }
 .virtual-table-header, .virtual-table-row { display: grid; grid-template-columns: var(--table-columns); width: 100%; min-width: 100%; align-items: center; box-sizing: border-box; }
 .virtual-table-header { position: sticky; top: 0; z-index: 1; min-height: 44px; color: #828282; background: rgba(246, 246, 246, .96); border-bottom: 1px solid rgba(154, 154, 154, .16); font-size: var(--font-size-14px-d65225); font-weight: 600; }
 .virtual-table-header span, .virtual-table-row span { overflow: hidden; padding: 0 16px; text-overflow: ellipsis; white-space: nowrap; }

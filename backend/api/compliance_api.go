@@ -8,9 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -48,88 +45,6 @@ func (a *portalAPI) publicLegal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})
-}
-
-func (a *portalAPI) submitCopyrightComplaint(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "不支持的请求方式。", nil)
-		return
-	}
-	if a.rateLimited(w, r) {
-		return
-	}
-	var enabled bool
-	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM portal.compliance_legal_documents c WHERE c.slug='copyright-complaints' AND c.status='published' AND EXISTS (SELECT 1 FROM portal.compliance_legal_documents p WHERE p.slug='privacy-policy' AND p.status='published'))`).Scan(&enabled); err != nil {
-		a.dbError(w, err, "投诉入口暂时不可用。")
-		return
-	}
-	if !enabled {
-		writeError(w, http.StatusServiceUnavailable, "版权投诉入口尚未正式启用。", nil)
-		return
-	}
-	retentionDays, retentionErr := strconv.Atoi(strings.TrimSpace(os.Getenv("PERSONAL_PORTAL_COMPLAINT_RETENTION_DAYS")))
-	if retentionErr != nil || retentionDays < 30 || retentionDays > 3650 {
-		writeError(w, http.StatusServiceUnavailable, "版权投诉入口尚未配置经确认的材料保留期限。", nil)
-		return
-	}
-	var b struct {
-		Name              string   `json:"name"`
-		Email             string   `json:"email"`
-		Role              string   `json:"role"`
-		WorkDescription   string   `json:"workDescription"`
-		ProofOfRights     string   `json:"proofOfRights"`
-		InfringingURLs    []string `json:"infringingUrls"`
-		RequestedAction   string   `json:"requestedAction"`
-		StatementTruthful bool     `json:"statementTruthful"`
-	}
-	if err := decodeJSON(w, r, 32*1024, &b); err != nil {
-		writeError(w, http.StatusBadRequest, "请求格式不正确。", nil)
-		return
-	}
-	b.Name = strings.TrimSpace(b.Name)
-	b.Email = strings.TrimSpace(b.Email)
-	b.WorkDescription = strings.TrimSpace(b.WorkDescription)
-	b.ProofOfRights = strings.TrimSpace(b.ProofOfRights)
-	if runeLen(b.Name) < 1 || runeLen(b.Name) > 100 || !portalEmail.MatchString(b.Email) || len(b.Email) > 254 || runeLen(b.WorkDescription) < 5 || runeLen(b.WorkDescription) > 3000 || runeLen(b.ProofOfRights) > 5000 {
-		writeError(w, http.StatusBadRequest, "请检查姓名、邮箱、作品说明和权利证明字段。", nil)
-		return
-	}
-	if b.Role == "" {
-		b.Role = "rightsholder"
-	}
-	if b.Role != "rightsholder" && b.Role != "authorized_agent" && b.Role != "other" {
-		writeError(w, http.StatusBadRequest, "投诉人身份类型不正确。", nil)
-		return
-	}
-	if b.RequestedAction == "" {
-		b.RequestedAction = "review_and_remove"
-	}
-	if b.RequestedAction != "review_and_remove" && b.RequestedAction != "disable_access" && b.RequestedAction != "credit_or_license" && b.RequestedAction != "other" {
-		writeError(w, http.StatusBadRequest, "诉求类型不正确。", nil)
-		return
-	}
-	if len(b.InfringingURLs) < 1 || len(b.InfringingURLs) > 10 || !b.StatementTruthful {
-		writeError(w, http.StatusBadRequest, "至少提供一个涉嫌侵权链接，并确认所提交信息真实。", nil)
-		return
-	}
-	cleanURLs := make([]string, 0, len(b.InfringingURLs))
-	for _, raw := range b.InfringingURLs {
-		raw = strings.TrimSpace(raw)
-		u, err := url.Parse(raw)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(raw) > 2048 {
-			writeError(w, http.StatusBadRequest, "每个涉嫌侵权链接都必须是有效的 HTTP 或 HTTPS URL。", nil)
-			return
-		}
-		cleanURLs = append(cleanURLs, raw)
-	}
-	urlsJSON, _ := json.Marshal(cleanURLs)
-	var id string
-	err := a.db.QueryRowContext(r.Context(), `INSERT INTO portal.compliance_copyright_complaints (complainant_name,complainant_email,complainant_role,work_description,proof_of_rights,infringing_urls,requested_action,statement_truthful,privacy_retention_until) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,now()+($9 * interval '1 day')) RETURNING complaint_id::text`, b.Name, b.Email, b.Role, b.WorkDescription, b.ProofOfRights, string(urlsJSON), b.RequestedAction, b.StatementTruthful, retentionDays).Scan(&id)
-	if err != nil {
-		a.dbError(w, err, "无法登记投诉，请稍后重试。")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"complaintId": id, "status": "received", "message": "投诉已登记；请保存投诉编号以便后续查询。"})
 }
 
 func (a *portalAPI) requireComplianceAdmin(w http.ResponseWriter, r *http.Request) (*portalUser, bool) {
@@ -177,7 +92,7 @@ func (a *portalAPI) complianceReviewerUsers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.portal_users SET is_copyright_reviewer=$1,updated_at=now() WHERE user_id=$2::uuid`, *body.IsCopyrightReviewer, id); err != nil {
-		a.dbError(w, err, "无法更新版权审核专员权限。")
+		a.dbError(w, err, "无法更新内部审核专员权限。")
 		return
 	}
 	a.logComplianceChange(r, u, "update", "portal_user", id, before)
@@ -189,81 +104,6 @@ func (a *portalAPI) complianceReviewerUsers(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})
 }
 
-func (a *portalAPI) compliancePreview(w http.ResponseWriter, r *http.Request, u *portalUser, tail string) {
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("Vary", "Cookie")
-	w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
-	parts := strings.Split(strings.Trim(tail, "/"), "/")
-	if len(parts) < 2 || r.Method != http.MethodGet || !portalUUID.MatchString(parts[1]) {
-		writeError(w, http.StatusNotFound, "审核预览不存在。", nil)
-		return
-	}
-	id := parts[1]
-	switch parts[0] {
-	case "content":
-		if len(parts) != 2 {
-			break
-		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT c.content_id::text AS "id",c.title,c.slug,c.content_type AS "contentType",c.tags,c.parent_category AS "parentCategory",c.child_category AS "childCategory",c.summary,c.body,c.visibility,c.status,c.created_at AS "createdAt",c.updated_at AS "updatedAt",c.published_at AS "publishedAt",u.display_name AS "authorName",u.created_at AS "authorJoinedAt",(SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='like') AS "likeCount",(SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='favorite') AS "favoriteCount" FROM portal.portal_content c JOIN portal.portal_users u ON u.user_id=c.author_id WHERE c.content_id=$1::uuid AND c.deleted_at IS NULL) x`, id)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "内容不存在或已删除。", nil)
-			return
-		}
-		item["viewerLiked"] = false
-		item["viewerFavorited"] = false
-		writeJSON(w, http.StatusOK, map[string]any{"item": item, "previewOnly": true})
-		return
-	case "resource":
-		if len(parts) == 3 && parts[2] == "download" {
-			var stored, filename, mimeType sql.NullString
-			err := a.db.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename,mime_type FROM portal.teaching_resources WHERE resource_id=$1::uuid AND deleted_at IS NULL`, id).Scan(&stored, &filename, &mimeType)
-			if err != nil || !stored.Valid {
-				writeError(w, http.StatusNotFound, "资源不存在或已删除。", nil)
-				return
-			}
-			f, err := os.Open(filepath.Join(a.resourceDir, filepath.Base(stored.String)))
-			if err != nil {
-				writeError(w, http.StatusNotFound, "资源文件缺失。", nil)
-				return
-			}
-			defer f.Close()
-			w.Header().Set("Content-Type", mimeType.String)
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(filename.String)))
-			w.Header().Set("X-Content-Type-Options", "nosniff")
-			w.Header().Set("Cache-Control", "private, no-store")
-			_, _ = io.Copy(w, f)
-			return
-		}
-		if len(parts) == 3 && parts[2] == "preview" {
-			var stored, filename sql.NullString
-			if err := a.db.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename FROM portal.teaching_resources WHERE resource_id=$1::uuid AND deleted_at IS NULL AND lower(original_filename) LIKE '%.mp3'`, id).Scan(&stored, &filename); err != nil || !stored.Valid || !filename.Valid {
-				writeError(w, http.StatusNotFound, "MP3 资源不存在或已删除。", nil)
-				return
-			}
-			f, err := os.Open(filepath.Join(a.resourceDir, filepath.Base(stored.String)))
-			if err != nil {
-				writeError(w, http.StatusNotFound, "资源文件缺失。", nil)
-				return
-			}
-			defer f.Close()
-			w.Header().Set("Cache-Control", "private, no-store")
-			serveMP3Preview(w, r, f, filename.String)
-			return
-		}
-		if len(parts) != 2 {
-			break
-		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade,is_public AS "isPublic",resource_url AS "url",'/api/compliance/preview/resource/' || resource_id::text || '/download' AS "downloadUrl",original_filename AS filename,mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1::uuid AND deleted_at IS NULL) x`, id)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "资源不存在或已删除。", nil)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"item": item, "previewOnly": true})
-		return
-	}
-	writeError(w, http.StatusNotFound, "审核预览不存在。", nil)
-}
-
 func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireComplianceAdmin(w, r)
 	if !ok {
@@ -273,14 +113,10 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 	if path == "/reviewers" || strings.HasPrefix(path, "/reviewers/") {
 		var superAdmin bool
 		if err := a.db.QueryRowContext(r.Context(), `SELECT is_admin FROM portal.portal_users WHERE user_id=$1`, u.ID).Scan(&superAdmin); err != nil || !superAdmin {
-			writeError(w, http.StatusForbidden, "只有超管可以分配版权审核专员权限。", nil)
+			writeError(w, http.StatusForbidden, "只有超管可以分配内部审核专员权限。", nil)
 			return
 		}
 		a.complianceReviewerUsers(w, r, u, strings.TrimPrefix(path, "/reviewers"))
-		return
-	}
-	if strings.HasPrefix(path, "/preview/") {
-		a.compliancePreview(w, r, u, strings.TrimPrefix(path, "/preview/"))
 		return
 	}
 	if strings.HasPrefix(path, "/licenses/") && r.Method == http.MethodGet {
@@ -320,7 +156,6 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 			"unknownPermissionCount": `SELECT count(*) FROM portal.compliance_assets WHERE permission_status='unknown'`,
 			"licenseCount":           `SELECT count(*) FROM portal.compliance_license_catalog`,
 			"unreviewedLicenseCount": `SELECT count(*) FROM portal.compliance_license_catalog WHERE review_status='unreviewed'`,
-			"openComplaintCount":     `SELECT count(*) FROM portal.compliance_copyright_complaints WHERE status NOT IN ('closed','rejected')`,
 			"draftDocumentCount":     `SELECT count(*) FROM portal.compliance_legal_documents WHERE status IN ('draft','in_review')`,
 		}
 		for key, query := range queries {
@@ -370,20 +205,6 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, map[string]any{"items": items})
 			return
 		}
-	case "/complaints":
-		if !u.IsAdmin {
-			writeError(w, http.StatusForbidden, "版权审核专员无权查看投诉人的个人信息。", nil)
-			return
-		}
-		if r.Method == http.MethodGet {
-			items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT complaint_id::text AS id,complainant_name AS name,complainant_email AS email,complainant_role AS role,work_description AS "workDescription",proof_of_rights AS "proofOfRights",infringing_urls AS "infringingUrls",requested_action AS "requestedAction",statement_truthful AS "statementTruthful",status,resolution_notes AS "resolutionNotes",assigned_to AS "assignedTo",received_at AS "receivedAt",updated_at AS "updatedAt",resolved_at AS "resolvedAt" FROM portal.compliance_copyright_complaints ORDER BY received_at DESC LIMIT 500) x`)
-			if err != nil {
-				a.dbError(w, err, "无法读取版权投诉。")
-				return
-			}
-			writeJSON(w, 200, map[string]any{"items": items})
-			return
-		}
 	case "/audit":
 		if r.Method == http.MethodGet {
 			items, err := queryJSONRows(r.Context(), a.db, "SELECT to_jsonb(x) FROM (SELECT audit_id::text AS id,actor,action,object_type AS \"objectType\",object_id::text AS \"objectId\",before_state AS \"beforeState\",after_state AS \"afterState\",created_at AS \"createdAt\" FROM portal.compliance_audit_log ORDER BY created_at DESC LIMIT 200) x")
@@ -422,10 +243,6 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 		a.complianceDocumentBySlug(w, r, u, strings.TrimPrefix(path, "/documents/"))
 		return
 	}
-	if strings.HasPrefix(path, "/complaints/") {
-		a.complianceComplaintByID(w, r, u, strings.TrimPrefix(path, "/complaints/"))
-		return
-	}
 	writeError(w, http.StatusMethodNotAllowed, "该合规接口不存在或不支持此请求方式。", nil)
 }
 
@@ -435,7 +252,7 @@ func (a *portalAPI) listComplianceAssets(w http.ResponseWriter, r *http.Request)
 	status := q.Get("status")
 	risk := q.Get("risk")
 	search := strings.TrimSpace(q.Get("q"))
-	if typ != "" && !oneOf(typ, "image", "icon", "font", "audio", "video", "article", "education_resource", "software_dependency", "source_file", "policy_document", "external_link", "other") {
+	if typ != "" && !oneOf(typ, "image", "icon", "font", "audio", "video", "software_dependency", "source_file", "policy_document", "other") {
 		writeError(w, 400, "资产类型筛选不正确。", nil)
 		return
 	}
@@ -494,10 +311,6 @@ func (a *portalAPI) complianceAssetByID(w http.ResponseWriter, r *http.Request, 
 	}
 	if len(parts) == 2 && parts[1] == "reviews" && r.Method == http.MethodPost {
 		a.addComplianceReview(w, r, u, id)
-		return
-	}
-	if len(parts) == 4 && parts[1] == "evidence" && parts[3] == "download" && r.Method == http.MethodGet {
-		a.downloadComplianceEvidence(w, r, id, parts[2])
 		return
 	}
 	if len(parts) != 1 {
@@ -947,69 +760,6 @@ func (a *portalAPI) complianceDocumentBySlug(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, 200, map[string]any{"id": docID, "version": version, "status": status})
 }
 
-func (a *portalAPI) complianceComplaintByID(w http.ResponseWriter, r *http.Request, u *portalUser, tail string) {
-	id := strings.Trim(tail, "/")
-	if !portalUUID.MatchString(id) {
-		writeError(w, 404, "投诉记录不存在。", nil)
-		return
-	}
-	if r.Method != http.MethodPatch && r.Method != http.MethodPut {
-		writeError(w, 405, "不支持的请求方式。", nil)
-		return
-	}
-	var b struct {
-		Status          *string `json:"status"`
-		ResolutionNotes *string `json:"resolutionNotes"`
-		AssignedTo      *string `json:"assignedTo"`
-	}
-	if err := decodeJSON(w, r, 32*1024, &b); err != nil {
-		writeError(w, 400, "请求格式不正确。", nil)
-		return
-	}
-	if b.Status != nil && !oneOf(*b.Status, "received", "under_review", "need_more_information", "action_taken", "rejected", "closed") {
-		writeError(w, 400, "投诉状态不正确。", nil)
-		return
-	}
-	before, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_copyright_complaints WHERE complaint_id=$1) x`, id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			writeError(w, 404, "投诉记录不存在。", nil)
-		} else {
-			a.dbError(w, err, "无法读取投诉记录。")
-		}
-		return
-	}
-	sets := []string{"updated_at=now()"}
-	args := []any{}
-	add := func(c string, v any) {
-		args = append(args, v)
-		sets = append(sets, fmt.Sprintf("%s=$%d", c, len(args)))
-	}
-	if b.Status != nil {
-		add("status", *b.Status)
-		if *b.Status == "closed" || *b.Status == "rejected" || *b.Status == "action_taken" {
-			sets = append(sets, "resolved_at=now()")
-		}
-	}
-	if b.ResolutionNotes != nil {
-		add("resolution_notes", *b.ResolutionNotes)
-	}
-	if b.AssignedTo != nil {
-		add("assigned_to", *b.AssignedTo)
-	}
-	if len(args) == 0 {
-		writeError(w, 400, "没有可更新的字段。", nil)
-		return
-	}
-	args = append(args, id)
-	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.compliance_copyright_complaints SET `+strings.Join(sets, ",")+fmt.Sprintf(" WHERE complaint_id=$%d", len(args)), args...); err != nil {
-		a.dbError(w, err, "无法更新投诉记录。")
-		return
-	}
-	a.logComplianceChange(r, u, "update", "copyright_complaint", id, before)
-	writeJSON(w, 200, map[string]any{"ok": true})
-}
-
 func (a *portalAPI) exportAssetsCSV(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.QueryContext(r.Context(), `SELECT asset_id::text,asset_type,asset_name,asset_path,source_url,creator_or_rightsholder,ownership_basis,coalesce(l.spdx_id,''),permission_status,use_scope,distribution_status,review_status,risk_level,sha256,coalesce(file_size_bytes,0),published_or_active,notes FROM portal.compliance_assets a LEFT JOIN portal.compliance_license_catalog l ON l.license_id=a.license_id ORDER BY risk_level,asset_type,asset_name`)
 	if err != nil {
@@ -1041,21 +791,17 @@ func (a *portalAPI) logComplianceChange(r *http.Request, u *portalUser, action, 
 	redact := func(state map[string]any) map[string]any {
 		copyState := map[string]any{}
 		for key, value := range state {
-			if objectType == "copyright_complaint" && (key == "complainant_name" || key == "complainant_email" || key == "proof_of_rights" || key == "infringing_urls") {
-				continue
-			}
 			copyState[key] = value
 		}
 		return copyState
 	}
 	beforeJSON, _ := json.Marshal(redact(before))
 	queries := map[string]string{
-		"asset":               "SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x",
-		"license":             "SELECT to_jsonb(x) FROM (SELECT license_id,spdx_id,license_name,license_version,license_family,canonical_url,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status,reviewed_at,notes,updated_at FROM portal.compliance_license_catalog WHERE license_id=$1) x",
-		"legal_document":      "SELECT to_jsonb(x) FROM (SELECT document_id,slug,title,document_type,jurisdiction,status,version,effective_at,last_legal_review_at,missing_information,approved_by,updated_at FROM portal.compliance_legal_documents WHERE document_id=$1) x",
-		"copyright_complaint": "SELECT to_jsonb(x) FROM (SELECT complaint_id,status,requested_action,resolution_notes,assigned_to,received_at,updated_at,resolved_at FROM portal.compliance_copyright_complaints WHERE complaint_id=$1) x",
-		"asset_evidence":      "SELECT to_jsonb(x) FROM (SELECT evidence_id,asset_id,evidence_type,evidence_uri,sha256,verified,verified_by,verified_at,captured_at,notes FROM portal.compliance_asset_evidence WHERE evidence_id=$1) x",
-		"portal_user":         "SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS displayName,is_admin AS isAdmin,is_copyright_reviewer AS isCopyrightReviewer FROM portal.portal_users WHERE user_id=$1::uuid) x",
+		"asset":          "SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x",
+		"license":        "SELECT to_jsonb(x) FROM (SELECT license_id,spdx_id,license_name,license_version,license_family,canonical_url,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status,reviewed_at,notes,updated_at FROM portal.compliance_license_catalog WHERE license_id=$1) x",
+		"legal_document": "SELECT to_jsonb(x) FROM (SELECT document_id,slug,title,document_type,jurisdiction,status,version,effective_at,last_legal_review_at,missing_information,approved_by,updated_at FROM portal.compliance_legal_documents WHERE document_id=$1) x",
+		"asset_evidence": "SELECT to_jsonb(x) FROM (SELECT evidence_id,asset_id,evidence_type,evidence_uri,sha256,verified,verified_by,verified_at,captured_at,notes FROM portal.compliance_asset_evidence WHERE evidence_id=$1) x",
+		"portal_user":    "SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS displayName,is_admin AS isAdmin,is_copyright_reviewer AS isCopyrightReviewer FROM portal.portal_users WHERE user_id=$1::uuid) x",
 	}
 	after := map[string]any{}
 	var readErr error

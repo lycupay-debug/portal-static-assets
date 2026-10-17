@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a reproducible first-party portal copyright/license inventory.
+"""Build a reproducible first-party portal software-license inventory.
 
 This is an evidence collector, not an automated legal clearance tool. Unknown
 ownership and permission are deliberately retained as unknown.
@@ -14,7 +14,6 @@ EXT_TYPES = {
     '.woff': 'font', '.woff2': 'font', '.ttf': 'font', '.otf': 'font', '.eot': 'font',
     '.mp3': 'audio', '.wav': 'audio', '.ogg': 'audio', '.mp4': 'video', '.webm': 'video',
     '.css': 'source_file', '.js': 'source_file', '.mjs': 'source_file', '.ts': 'source_file', '.vue': 'source_file', '.html': 'source_file', '.json': 'source_file', '.txt': 'policy_document',
-    '.docx': 'education_resource', '.pdf': 'education_resource', '.pptx': 'education_resource', '.xlsx': 'education_resource',
 }
 LICENSE_NAMES = {'license','license.md','license.txt','license.rst','copying','copying.md','notice','notice.md','notice.txt','license-mit','license-apache'}
 
@@ -24,24 +23,6 @@ def sha_file(p: Path) -> str:
     with p.open('rb') as f:
         for chunk in iter(lambda:f.read(1024*1024), b''): h.update(chunk)
     return h.hexdigest()
-def read_id3_tags(p: Path):
-    try: data=p.read_bytes()
-    except OSError: return {}
-    if len(data)<10 or data[:3] != b'ID3': return {}
-    size=sum((data[6+i]&0x7f) << (7*(3-i)) for i in range(4))
-    end=min(len(data),10+size); pos=10; tags={}
-    while pos+10 <= end:
-        frame_id=data[pos:pos+4].decode('ascii','replace')
-        frame_size=sum((data[pos+4+i]&0x7f) << (7*(3-i)) for i in range(4))
-        if not frame_id.strip(chr(0)) or frame_size <= 0 or pos+10+frame_size > end: break
-        raw=data[pos+10:pos+10+frame_size]
-        if frame_id in ('TIT2','TPE1','TALB','TSSE','TXXX') and raw:
-            enc=raw[0]; payload=raw[1:]
-            codec={0:'latin1',1:'utf-16',2:'utf-16be',3:'utf-8'}.get(enc,'utf-8')
-            tags[frame_id]=payload.decode(codec,errors='replace').replace(chr(0),' ').strip()[:800]
-        pos += 10+frame_size
-    return tags
-
 def sqlq(v):
     if v is None: return 'NULL'
     if isinstance(v, bool): return 'TRUE' if v else 'FALSE'
@@ -100,13 +81,13 @@ def make_asset(**kw):
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument('--repo',default='/opt/personal-portal'); ap.add_argument('--db-json',default='/tmp/personal-portal-compliance-db.json')
-    ap.add_argument('--release',default='/usr/local/www/personal-portal/current'); ap.add_argument('--uploads',default='/usr/local/www/personal-portal/uploads')
-    ap.add_argument('--resources',default='/var/db/personal-portal/resources'); ap.add_argument('--out',default='docs/compliance'); ap.add_argument('--strict-licenses',action='store_true')
+    ap.add_argument('--repo',default='/opt/personal-portal')
+    ap.add_argument('--release',default='/usr/local/www/personal-portal/current')
+    ap.add_argument('--out',default='docs/compliance'); ap.add_argument('--strict-licenses',action='store_true')
     args=ap.parse_args(); repo=Path(args.repo); out=repo/args.out; out.mkdir(parents=True,exist_ok=True)
     try: report_path=str((out/'asset-inventory.json').relative_to(repo))
     except ValueError: report_path=str(out/'asset-inventory.json')
-    now=datetime.now(timezone.utc).isoformat(); dbdata=json.loads(Path(args.db_json).read_text()) if Path(args.db_json).exists() else {'content':[],'resources':[]}
+    now=datetime.now(timezone.utc).isoformat()
     assets=[]; licenses={}; evidence=[]; prod_rows=[]
     def add_license(expr, version='', name=None, text='', notes=''):
         expr=(expr or '').strip()
@@ -141,7 +122,7 @@ def main():
         if p.is_file() and '.bak-' not in p.name and not p.name.endswith('.bak') and p.suffix.lower() in {'.svg','.png','.jpg','.jpeg','.webp','.gif','.ico','.woff','.woff2','.ttf','.otf','.css','.js','.mjs','.ts','.vue','.html','.json'}:
             add_file(p, str(p.relative_to(repo)), 'unknown', False)
     # Public source assets and currently deployed assets.
-    for base, label, dist, active in [(repo/'frontend/public','frontend/public','bundled_in_frontend',True),(Path(args.release),'deployed/current','served_publicly',True),(Path(args.uploads),'uploads','served_publicly',True),(Path(args.resources),'resources','served_publicly',True)]:
+    for base, label, dist, active in [(repo/'frontend/public','frontend/public','bundled_in_frontend',True),(Path(args.release),'deployed/current','served_publicly',True)]:
         if not base.exists(): continue
         for p in sorted(base.rglob('*')):
             if p.is_file():
@@ -185,37 +166,6 @@ def main():
         for a in assets:
             if a['asset_type']=='icon' and a.get('metadata',{}).get('upstream')=='twbs/icons':
                 evidence.append({'asset_path':a['asset_path'],'evidence_type':'license_text','evidence_uri':'frontend/public/THIRD_PARTY_NOTICES.txt','evidence_text':icon_notice,'sha256':icon_hash,'verified':False,'notes':'Exact upstream notice captured from the current public third-party notice file; license compliance still requires review.'})
-    # Live public database content: do not assume user-submitted content is licensed.
-    external_image_urls=set()
-    for c in dbdata.get('content',[]):
-        body=c.get('body') or ''; summary=c.get('summary') or ''
-        urls=set(re.findall(r'https?://[^\s)\]<>"\']+',body+' '+summary))
-        image_urls={u.rstrip('.,') for u in urls if '/_next/image' in u or 'cdn.sanity.io/images/' in u or re.search(r'\.(?:png|jpe?g|webp|gif|svg|avif)(?:\?|$)',u,re.I)}
-        external_image_urls.update(image_urls)
-        high=c.get('id')=='168d654e-2fec-4133-bfa0-87f50581d7e2'
-        assets.append(make_asset(asset_type='article',asset_name=c.get('title') or '(untitled article)',asset_path=f"db://portal.portal_content/{c.get('id')}",source_url='https://www.snaperdigital.com/blog/what-is-a-crm' if high else '',creator_or_rightsholder='',ownership_basis='unknown',permission_status='unknown',use_scope='commercial_web',distribution_status='served_publicly' if c.get('status')=='published' and c.get('visibility')=='public' else 'not_distributed',review_status='pending',risk_level='high' if high else 'low' if len(body.strip()) < 100 and len(urls) == 0 else 'medium',sha256=sha_bytes(body.encode()),discovered_by='database_scan',published_or_active=c.get('status')=='published' and c.get('visibility')=='public',metadata={'record_id':c.get('id'),'slug':c.get('slug'),'content_type':c.get('type'),'status':c.get('status'),'visibility':c.get('visibility'),'body_chars':len(body),'summary_chars':len(summary),'external_image_count':len(image_urls),'external_urls_count':len(urls),'copyright_review_finding':'Public body contains translated Snaper Digital navigation, author information, CRM article text and external image URLs; authorization has not been verified.' if high else 'Public content has no recorded source or authorization evidence in the content schema.'},notes='Rights holder, originality and permission are not recorded in the existing content model. Review before making any legal conclusion.'))
-        if high:
-            evidence.append({'asset_path':f"db://portal.portal_content/{c.get('id')}",'evidence_type':'source_page','evidence_uri':'https://www.snaperdigital.com/blog/what-is-a-crm','evidence_text':f"Automated content review: {len(body)} characters; source-domain links and CDN image URLs are present. This is a risk indicator, not a final infringement determination.",'sha256':sha_bytes(body.encode()),'verified':False,'notes':'Requires original-vs-copy comparison and proof of authorization.'})
-    for url in sorted(external_image_urls):
-        parent=';'.join(c.get('title','') for c in dbdata.get('content',[]) if url in (c.get('body') or '') or url in (c.get('summary') or ''))
-        assets.append(make_asset(asset_type='external_link',asset_name='Externally hosted image: '+url.split('?')[0][-180:],asset_path='external-url://'+sha_bytes(url.encode()),source_url=url,ownership_basis='unknown',permission_status='unknown',use_scope='commercial_web',distribution_status='served_publicly',review_status='pending',risk_level='high' if 'snaperdigital.com' in url or 'cdn.sanity.io' in url else 'unknown',discovered_by='database_scan',published_or_active=True,metadata={'embedded_in_public_content':True,'parent_content_titles':parent,'remote_hosting':True,'authorization_verified':False},notes='Public article embeds an externally hosted image. Verify image rights and hotlink/embedding permission; no authorization inferred from URL availability.'))
-    # Publicly exposed education resources, including their stored bytes and metadata.
-    for r in dbdata.get('resources',[]):
-        stored=r.get('stored_filename') or ''
-        resource_path=Path(args.resources)/stored
-        exists=resource_path.is_file(); sha=sha_file(resource_path) if exists else ''
-        docx='docx' in (r.get('mime_type') or '').lower() or stored.lower().endswith('.docx')
-        mp3='audio' in (r.get('mime_type') or '').lower() or stored.lower().endswith('.mp3')
-        risk='high' if r.get('is_public') and mp3 else 'medium' if r.get('is_public') and docx else 'unknown'
-        audio_tags=read_id3_tags(resource_path) if mp3 and exists else {}
-        metadata={'record_id':r.get('id'),'title':r.get('title'),'description':r.get('description'),'original_filename':stored,'display_filename':r.get('original_filename'),'mime_type':r.get('mime_type'),'file_exists':exists,'file_hash_verified':bool(sha),'resource_type':r.get('resource_type'),'external_url':r.get('resource_url'),'source_url_mismatch_suspected':bool(docx and r.get('resource_url') and 'bootstrap' in r.get('resource_url')),'stored_path':str(resource_path)}
-        if audio_tags:
-            metadata['id3_tags']=audio_tags
-            metadata['aigc_marker_present']=('AIGC' in audio_tags.get('TXXX',''))
-        assets.append(make_asset(asset_type='education_resource',asset_name=r.get('original_filename') or r.get('title') or 'resource',asset_path=f"db://portal.teaching_resources/{r.get('id')}",source_url=r.get('resource_url') or '',ownership_basis='unknown',permission_status='unknown',use_scope='commercial_web',distribution_status='served_publicly' if r.get('is_public') else 'not_distributed',review_status='pending',risk_level=risk,sha256=sha,file_size_bytes=r.get('file_size'),discovered_by='database_scan',published_or_active=bool(r.get('is_public')),metadata=metadata,notes='Public education file has no recorded author/license/permission evidence. High-priority review is precautionary, not a finding of infringement.'))
-        if exists:
-            evidence.append({'asset_path':f"db://portal.teaching_resources/{r.get('id')}",'evidence_type':'hash_record','evidence_uri':str(resource_path),'evidence_text':f"Stored file SHA-256: {sha}; byte size: {resource_path.stat().st_size}. File content/provenance still requires human review.",'sha256':sha,'verified':False,'notes':'Read-only inventory; no file content changed.'})
-        if mp3 and audio_tags: evidence.append({'asset_path':f"db://portal.teaching_resources/{r.get('id')}",'evidence_type':'other','evidence_uri':str(resource_path)+'#ID3v2.4','evidence_text':'ID3 metadata captured: '+json.dumps(audio_tags,ensure_ascii=False),'sha256':sha,'verified':False,'notes':'AIGC/audio-synthesis markers are provenance clues only; they do not establish rights in the underlying script, voice or source material.'})
     # Existing third-party notices file is itself a compliance artifact.
     notice_path=repo/'frontend/public/THIRD_PARTY_NOTICES.txt'
     if notice_path.is_file():
@@ -246,7 +196,7 @@ def main():
     sql.append(scan_sql)
     # Retain old hashes as history, but mark records no longer present in the
     # current scan as inactive instead of silently deleting their evidence.
-    sql.append("UPDATE portal.compliance_assets old SET published_or_active=FALSE,distribution_status='not_distributed',notes=CASE WHEN old.notes='' THEN 'Superseded or absent from latest inventory scan; retained for history.' ELSE old.notes || ' | Superseded or absent from latest inventory scan; retained for history.' END,updated_at=now() WHERE old.discovered_by IN ('filesystem_scan','package_lock_scan','database_scan') AND old.published_or_active=TRUE AND NOT EXISTS (SELECT 1 FROM (VALUES "+current_pairs+") AS current_asset(asset_path,sha256) WHERE current_asset.asset_path=old.asset_path AND current_asset.sha256=old.sha256);")
+    sql.append("UPDATE portal.compliance_assets old SET published_or_active=FALSE,distribution_status='not_distributed',notes=CASE WHEN old.notes='' THEN 'Superseded or absent from latest inventory scan; retained for history.' ELSE old.notes || ' | Superseded or absent from latest inventory scan; retained for history.' END,updated_at=now() WHERE old.discovered_by IN ('filesystem_scan','package_lock_scan') AND old.published_or_active=TRUE AND NOT EXISTS (SELECT 1 FROM (VALUES "+current_pairs+") AS current_asset(asset_path,sha256) WHERE current_asset.asset_path=old.asset_path AND current_asset.sha256=old.sha256);")
     for a in assets:
         lic=a.get('license_key'); lic_expr='(SELECT license_id FROM portal.compliance_license_catalog WHERE spdx_id='+sqlq(lic[0])+' AND license_version='+sqlq(lic[1])+')' if lic else 'NULL'
         vals=[sqlq(a['asset_type']),sqlq(a['asset_name']),sqlq(a['asset_path']),sqlq(a['source_url']),sqlq(a['creator_or_rightsholder']),sqlq(a['ownership_basis']),lic_expr,sqlq(a['permission_status']),sqlq(a['use_scope']),sqlq(a['distribution_status']),sqlq(a['review_status']),sqlq(a['risk_level']),sqlq(a['sha256']),sqlq(a['file_size_bytes']),sqlq(a['discovered_by']),sqlq(a['published_or_active']),sqljson(a['metadata']),sqlq(a['notes'])]
@@ -256,14 +206,48 @@ def main():
     for a in assets:
         if a['risk_level'] in ('high','critical'):
             decision='pending_evidence'; findings=a['notes']
-            sql.append('INSERT INTO portal.compliance_asset_reviews(asset_id,reviewer,review_type,decision,risk_level,findings,required_actions,evidence_snapshot) SELECT a.asset_id,\'automated-inventory\',\'copyright\',\'pending_evidence\','+sqlq(a['risk_level'])+','+sqlq(findings)+','+sqljson(['verify rightsholder and source','obtain written permission or valid license','if authorization cannot be confirmed, replace or unpublish after owner review'])+','+sqljson(a['metadata'])+' FROM portal.compliance_assets a WHERE a.asset_path='+sqlq(a['asset_path'])+' AND NOT EXISTS (SELECT 1 FROM portal.compliance_asset_reviews old WHERE old.asset_id=a.asset_id AND old.reviewer=\'automated-inventory\' AND old.review_type=\'copyright\' AND old.decision=\'pending_evidence\' AND old.findings='+sqlq(findings)+') LIMIT 1;')
+            sql.append('INSERT INTO portal.compliance_asset_reviews(asset_id,reviewer,review_type,decision,risk_level,findings,required_actions,evidence_snapshot) SELECT a.asset_id,\'automated-inventory\',\'license\',\'pending_evidence\','+sqlq(a['risk_level'])+','+sqlq(findings)+','+sqljson(['verify the package license and source','confirm applicable license conditions and notices','complete a manual license review before redistribution'])+','+sqljson(a['metadata'])+' FROM portal.compliance_assets a WHERE a.asset_path='+sqlq(a['asset_path'])+' AND NOT EXISTS (SELECT 1 FROM portal.compliance_asset_reviews old WHERE old.asset_id=a.asset_id AND old.reviewer=\'automated-inventory\' AND old.review_type=\'license\' AND old.decision=\'pending_evidence\' AND old.findings='+sqlq(findings)+') LIMIT 1;')
     sql.append('COMMIT;')
     (out/'seed-compliance-inventory.sql').write_text('\n'.join(sql)+'\n')
     counts={k:sum(1 for a in assets if a['asset_type']==k) for k in sorted({a['asset_type'] for a in assets})}
     risk_counts={k:sum(1 for a in assets if a['risk_level']==k) for k in ('critical','high','medium','low','unknown')}
-    report=f'''# 版权资产首轮盘点记录\n\n- 生成时间：{now}\n- 扫描范围：活动前端源文件、公开静态文件、当前发布版本、上传图片、教育资源文件、生产依赖闭包、公开文章/资源数据库记录及文章内远程图片链接。\n- 生产依赖闭包：{len(prod)} 个 package instance（不是唯一软件项目数量）。\n- 许可证目录候选：{len(licenses)} 条；所有记录均保持 `unreviewed`，自动扫描不代表法律批准。\n- 资产记录：{len(assets)} 条。\n- 风险分布：{json.dumps(risk_counts,ensure_ascii=False)}。\n- 资产类型分布：{json.dumps(counts,ensure_ascii=False)}。\n- 缺少许可证 metadata 的生产依赖：{len(missing_metadata)} 个。\n- 找不到本地许可证文件的生产依赖：{len(missing_license_file)} 个。\n- 未在当前第三方声明文件中找到同名版本章节的依赖：{len(missing_notice)} 个。\n\n## 高优先级人工核验项\n\n1. 公开文章“阿松大”：已定位对应原文 https://www.snaperdigital.com/blog/what-is-a-crm（标题为 What Is a CRM? Why Growing Businesses Need One，页面标注作者 Zivojin Sreckovic，发布日期 2026-10-09）。网站正文包含对应的中文文章内容、作者资料、导航和外部图片链接；授权未证实，属于高优先级版权风险，尚非最终法律结论。\n2. 公开 DOCX“第一个月（第1-4周）每日落地执行指南”：约 12.7 MB。文档内容呈现为详细的课程执行计划，当前未发现整本教材扫描内容；但数据库未记录作者/许可/授权证据，关联 URL 指向 Bootstrap opacity 文档，来源对应关系需核实。列为中风险待核实，不等于认定侵权。\n3. 公开 MP3“Unit 5 Part B.mp3”：数据库未记录来源、版权方或授权证据。ID3v2.4 中存在 AIGC / audio_synthesis 标记，提示音频可能经过合成，但不能证明底稿、文本、声音或来源素材已获授权。仍应核实后再决定继续公开。\n4. 公开文章中发现的远程图片 URL 已作为单独资产登记；浏览器可以访问图片不等于获得商业展示授权。\n\n## 许可证声明现状\n\n- 当前 `frontend/public/THIRD_PARTY_NOTICES.txt` 存在，已收录 Bootstrap Icons MIT 声明及生产依赖许可证文本；本次会将依赖闭包、具体本地许可证文件路径和 SHA-256 记录到台账。\n- 许可证 metadata、文件存在、MIT 等常见宽松许可证并不自动等于实际分发义务已满足；每个资产仍需结合构建产物和许可证条款复核。\n- 本轮未删除或修改任何公开内容、资源文件或第三方依赖。\n\n## 机器生成文件\n\n- `asset-inventory.csv`：资产台账导出。\n- `asset-inventory.json`：完整扫描结果。\n- `third-party-license-register.csv`：生产依赖许可证登记。\n- `seed-compliance-inventory.sql`：将资产、许可证候选、证据和高风险待审记录导入专有数据库表。\n\n**限制：** 自动扫描无法证明创作人身份、授权链、合同有效性、版权例外适用性或实际分发的完整法律结论。所有未知项继续标记为待核实。\n'''
-    (out/'copyright-asset-inventory-2026-10-17.md').write_text(report)
-    summary={'assets':len(assets),'asset_types':counts,'risk_counts':risk_counts,'production_dependencies':len(prod),'license_catalog_candidates':len(licenses),'missing_license_metadata':missing_metadata,'missing_license_files':missing_license_file,'missing_notice_sections':missing_notice,'external_images':len(external_image_urls),'seed_sql':str(out/'seed-compliance-inventory.sql'),'report':str(out/'copyright-asset-inventory-2026-10-17.md')}
+    report=f'''# 个人门户自身软件与静态资源许可证盘点
+
+- 生成时间：{now}
+- 扫描范围：个人门户自身源代码、公开静态文件、当前发布版本、第三方依赖闭包及其许可证文件/声明。
+- 明确排除：用户发布的文章、教育资源、上传图片和外部链接；这些业务内容不进入本合规扫描台账。
+- 生产依赖闭包：{len(prod)} 个 package instance（不是唯一软件项目数量）。
+- 许可证目录候选：{len(licenses)} 条；所有记录均保持 `unreviewed`，自动扫描不代表法律批准。
+- 门户自身资产记录：{len(assets)} 条。
+- 风险分布：{json.dumps(risk_counts,ensure_ascii=False)}。
+- 资产类型分布：{json.dumps(counts,ensure_ascii=False)}。
+- 缺少许可证 metadata 的生产依赖：{len(missing_metadata)} 个。
+- 找不到本地许可证文件的生产依赖：{len(missing_license_file)} 个。
+- 未在当前第三方声明文件中找到同名版本章节的依赖：{len(missing_notice)} 个。
+
+## 人工核验重点
+
+1. 对标记为高风险或未知的生产依赖，核对其实际打包情况、许可证全文、通知文件覆盖范围和分发义务。
+2. 对门户自身静态资源和源码记录，确认贡献者/权利归属及部署产物与当前源码版本的一致性。
+3. 自动扫描仅收集门户开发与部署所用的软件/资源证据，不对用户发布内容作版权判断。
+
+## 许可证声明现状
+
+- 当前 `frontend/public/THIRD_PARTY_NOTICES.txt` 存在，已收录 Bootstrap Icons MIT 声明及生产依赖许可证文本。
+- 许可证 metadata、文件存在、MIT 等常见宽松许可证并不自动等于实际分发义务已满足；每个资产仍需结合构建产物和许可证条款复核。
+- 本轮仅盘点门户自身开发/部署所用资源；不会扫描、登记或修改用户发布的文章、教育资源和上传图片。
+
+## 机器生成文件
+
+- `asset-inventory.csv`：门户自身资产台账导出。
+- `asset-inventory.json`：完整扫描结果。
+- `third-party-license-register.csv`：生产依赖许可证登记。
+- `seed-compliance-inventory.sql`：将门户自身资产、许可证候选和依赖证据导入专有数据库表。
+
+**限制：** 自动扫描无法证明贡献者身份、授权链、合同有效性或实际分发的完整法律结论。所有未知项继续标记为待核实。
+'''
+    (out/'portal-development-asset-inventory.md').write_text(report)
+    summary={'assets':len(assets),'asset_types':counts,'risk_counts':risk_counts,'production_dependencies':len(prod),'license_catalog_candidates':len(licenses),'missing_license_metadata':missing_metadata,'missing_license_files':missing_license_file,'missing_notice_sections':missing_notice,'seed_sql':str(out/'seed-compliance-inventory.sql'),'report':str(out/'portal-development-asset-inventory.md')}
     print(json.dumps(summary,ensure_ascii=False,indent=2))
     if args.strict_licenses and (missing_metadata or missing_license_file or missing_notice):
         raise SystemExit('Strict license preflight failed: missing metadata/files/notices are listed in the generated reports.')

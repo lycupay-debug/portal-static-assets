@@ -1297,15 +1297,3 @@ body, #app { font-family: var(--font-family-base); font-size: var(--font-size-ba
 #app :where(small, .small, .form-text, .form-control-sm, .form-select-sm, .btn-sm, .badge, .breadcrumb, .pagination-sm, .pagination-sm .page-link, .form-label, .form-check-label, .invalid-feedback, .valid-feedback, .text-muted, .text-body-secondary) { font-size: max(var(--font-size-base), 1em); }
 /* In cards, these compact utility labels may use 12px but never smaller. */
 #app :where(.card, [class*="-card"], [class*="-tile"], .section-card, .public-author-card, .knowledge-list-item, .education-resource-card, .virtual-table-panel) :where(small, .small, .form-text, .form-control-sm, .form-select-sm, .btn-sm, .badge, .breadcrumb, .pagination-sm, .pagination-sm .page-link, .form-label, .form-check-label, .invalid-feedback, .valid-feedback, .text-muted, .text-body-secondary) { font-size: max(var(--font-size-card-xs), 1em); }
-
-/* Restricted copyright-review previews */
-.compliance-preview-banner { display:flex; flex-wrap:wrap; align-items:center; gap:10px 18px; margin:0 auto 24px; padding:14px 18px; border:1px solid rgba(0,0,0,.12); border-radius:14px; background:rgba(255,255,255,.88); color:#222; }
-.compliance-preview-banner strong { font-weight:650; }
-.compliance-preview-banner span { color:#666; }
-.compliance-preview-banner a { color:#111; text-decoration:underline; text-underline-offset:3px; }
-.compliance-preview-badge { display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; background:#f1f1f1; color:#333; font-size:12px; }
-.compliance-resource-preview-page { min-height:65vh; }
-.compliance-resource-preview-page .education-resource-detail-backdrop { position:relative; min-height:60vh; padding:24px; background:transparent; backdrop-filter:none; }
-.compliance-resource-preview-page .education-resource-detail-dialog { width:min(100%,720px); padding:30px; border-radius:20px; background:rgba(255,255,255,.96); box-shadow:0 20px 70px rgba(0,0,0,.12); }
-.compliance-resource-preview-page .education-resource-detail-header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:18px; }
-@media (max-width:640px) { .compliance-preview-banner { align-items:flex-start; flex-direction:column; } .compliance-resource-preview-page .education-resource-detail-backdrop { padding:10px; } .compliance-resource-preview-page .education-resource-detail-dialog { padding:20px; } }

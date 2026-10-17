@@ -160,10 +160,6 @@ func (a *portalAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.publicLegal(w, r)
 		return
 	}
-	if r.URL.Path == "/public/complaints" {
-		a.submitCopyrightComplaint(w, r)
-		return
-	}
 	if strings.HasPrefix(r.URL.Path, "/compliance/") {
 		a.compliance(w, r)
 		return
@@ -519,29 +515,13 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
-	metadata, _ := json.Marshal(map[string]any{"uploader_id": u.ID, "mime_type": mime, "filename": name, "rights_review_required": true, "publication_default": "blocked_pending_review"})
-	tx, err := a.db.BeginTx(r.Context(), nil)
+	_, err = a.db.ExecContext(r.Context(), `INSERT INTO portal.uploaded_images(filename,uploader_id,mime_type,sha256,file_size_bytes) VALUES($1,$2::uuid,$3,$4,$5)`, name, u.ID, mime, hex.EncodeToString(sum[:]), len(data))
 	if err != nil {
 		_ = os.Remove(fullPath)
-		writeError(w, 500, "图片版权登记失败。", nil)
+		a.dbError(w, err, "图片登记失败。")
 		return
 	}
-	defer tx.Rollback()
-	var complianceID string
-	err = tx.QueryRowContext(r.Context(), "INSERT INTO portal.compliance_assets (asset_type,asset_name,asset_path,ownership_basis,permission_status,use_scope,distribution_status,review_status,risk_level,sha256,file_size_bytes,discovered_by,published_or_active,metadata,notes) VALUES ('image',$1,$2,'unknown','unknown','commercial_web','not_distributed','pending','unknown',$3,$4,'manual',FALSE,$5::jsonb,'Uploaded image is private until rights evidence is reviewed and publication is approved.') RETURNING asset_id::text", name, "/uploads/"+name, hash, len(data), string(metadata)).Scan(&complianceID)
-	if err == nil {
-		_, err = tx.ExecContext(r.Context(), "INSERT INTO portal.uploaded_image_assets(filename,uploader_id,compliance_asset_id,mime_type,sha256,file_size_bytes) VALUES($1,$2::uuid,$3::uuid,$4,$5,$6)", name, u.ID, complianceID, mime, hash, len(data))
-	}
-	if err == nil {
-		err = tx.Commit()
-	}
-	if err != nil {
-		_ = os.Remove(fullPath)
-		writeError(w, 500, "图片已拒绝公开：版权资产登记未完成。", nil)
-		return
-	}
-	writeJSON(w, 201, map[string]any{"url": "/uploads/" + name, "mime": mime, "size": len(data), "rightsStatus": "pending_review", "public": false})
+	writeJSON(w, 201, map[string]any{"url": "/uploads/" + name, "mime": mime, "size": len(data), "public": false})
 }
 
 func (a *portalAPI) serveUploadedImage(w http.ResponseWriter, r *http.Request) {
@@ -550,26 +530,19 @@ func (a *portalAPI) serveUploadedImage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var uploaderID, mime, hash string
-	err := a.db.QueryRowContext(r.Context(), "SELECT uploader_id::text,mime_type,sha256 FROM portal.uploaded_image_assets WHERE filename=$1", name).Scan(&uploaderID, &mime, &hash)
-	if err != nil {
+	var uploaderID, mime string
+	if err := a.db.QueryRowContext(r.Context(), `SELECT uploader_id::text,mime_type FROM portal.uploaded_images WHERE filename=$1`, name).Scan(&uploaderID, &mime); err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	var referenced bool
-	err = a.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE status='published' AND visibility='public' AND deleted_at IS NULL AND position($1 in body)>0)", "/uploads/"+name).Scan(&referenced)
-	if err != nil {
+	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE status='published' AND visibility='public' AND deleted_at IS NULL AND position($1 in body)>0)`, "/uploads/"+name).Scan(&referenced); err != nil {
 		writeError(w, 503, "图片访问状态暂时无法核验。", nil)
 		return
 	}
-	publicAllowed := false
-	if referenced {
-		_, gateErr := a.canPublishComplianceAsset(r.Context(), a.db, "/uploads/"+name, hash)
-		publicAllowed = gateErr == nil
-	}
-	if !publicAllowed {
-		u, sessionErr := a.session(r)
-		if sessionErr != nil {
+	if !referenced {
+		u, err := a.session(r)
+		if err != nil {
 			writeError(w, 503, "图片访问状态暂时无法核验。", nil)
 			return
 		}
@@ -624,9 +597,7 @@ func randomUUID() string {
 	return s[:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:]
 }
 
-const contentSelect = `content_id::text AS "id",author_id::text AS "authorId",title,slug,content_type AS "contentType",tags,parent_category AS "parentCategory",child_category AS "childCategory",summary,body,visibility,status,created_at AS "createdAt",updated_at AS "updatedAt",published_at AS "publishedAt",deleted_at AS "deletedAt",
-(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.portal_content/'||c.content_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
-(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.portal_content/'||c.content_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails"`
+const contentSelect = `content_id::text AS "id",author_id::text AS "authorId",title,slug,content_type AS "contentType",tags,parent_category AS "parentCategory",child_category AS "childCategory",summary,body,visibility,status,created_at AS "createdAt",updated_at AS "updatedAt",published_at AS "publishedAt",deleted_at AS "deletedAt"`
 
 func queryJSON(ctx context.Context, db interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
@@ -722,10 +693,6 @@ func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
 		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, newID)
 		if err != nil {
 			a.dbError(w, err, "内容已保存，但读取结果失败。")
-			return
-		}
-		if err := a.syncContentComplianceAsset(r.Context(), a.db, item); err != nil {
-			a.dbError(w, err, "内容已保存，但版权台账同步失败；发布审核将被阻止。")
 			return
 		}
 		writeJSON(w, 201, map[string]any{"item": item})
@@ -845,10 +812,6 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		action = strings.Join(parts[2:], "/")
 	}
 	ctx := r.Context()
-	if action == "evidence" && r.Method == http.MethodPost {
-		a.submitPublisherRights(w, r, u, "content", id)
-		return
-	}
 	if action == "versions" && r.Method == http.MethodGet {
 		items, err := queryJSONRows(ctx, a.db, `SELECT to_jsonb(x) FROM (SELECT version_id::text AS "versionId",version_number AS "versionNumber",snapshot->>'title' AS title,snapshot->>'slug' AS slug,snapshot->>'status' AS status,created_at AS "createdAt" FROM portal.portal_content_versions WHERE content_id=$1 AND author_id=$2 ORDER BY version_number DESC LIMIT 100) x`, id, u.ID)
 		if err != nil {
@@ -864,25 +827,6 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		return
 	}
 	if action == "restore" && r.Method == http.MethodPost {
-		var restoredStatus, restoredVisibility, restoredBody string
-		statusErr := a.db.QueryRowContext(ctx, "SELECT status,visibility,body FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL", id, u.ID).Scan(&restoredStatus, &restoredVisibility, &restoredBody)
-		var restoredAssetID string
-		if statusErr == nil && restoredStatus == "published" && restoredVisibility == "public" {
-			var gateErr error
-			restoredAssetID, gateErr = a.canPublishComplianceAsset(ctx, a.db, "db://portal.portal_content/"+id, contentBodyHash(restoredBody))
-			if gateErr != nil {
-				var rightsErr rightsGateError
-				if errors.As(gateErr, &rightsErr) {
-					writeError(w, http.StatusConflict, "恢复公开内容的版权审核未通过："+rightsErr.Error(), nil)
-				} else {
-					a.dbError(w, gateErr, "恢复内容版权审核状态检查失败。")
-				}
-				return
-			}
-		} else if statusErr != nil && !errors.Is(statusErr, sql.ErrNoRows) {
-			a.dbError(w, statusErr, "检查待恢复内容失败。")
-			return
-		}
 		res, err := a.db.ExecContext(ctx, `UPDATE portal.portal_content SET deleted_at=NULL,updated_at=now() WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL`, id, u.ID)
 		if err != nil {
 			a.dbError(w, err, "恢复失败。")
@@ -896,15 +840,6 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		item, err := oneJSON(ctx, a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, id)
 		if err != nil {
 			a.dbError(w, err, "恢复失败。")
-			return
-		}
-		if restoredAssetID != "" {
-			if _, err := a.db.ExecContext(ctx, "UPDATE portal.compliance_assets SET published_or_active=TRUE,distribution_status='served_publicly',metadata=metadata || jsonb_build_object('status','published','visibility','public'),updated_at=now() WHERE asset_id=$1::uuid", restoredAssetID); err != nil {
-				a.dbError(w, err, "内容已恢复，但版权台账同步失败。")
-				return
-			}
-		} else if err := a.syncContentComplianceAsset(ctx, a.db, item); err != nil {
-			a.dbError(w, err, "内容已恢复，但版权台账同步失败。")
 			return
 		}
 		writeJSON(w, 200, map[string]any{"item": item})
@@ -927,14 +862,6 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 			return
 		}
 		// Keep rights evidence and review history as audit records; remove the content row.
-		if _, err = tx.ExecContext(ctx, `UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',metadata=metadata || jsonb_build_object('deleted',true,'permanently_deleted',true,'permanently_deleted_at',now(),'content_title',$2),updated_at=now() WHERE asset_path=$1`, "db://portal.portal_content/"+id, deletedTitle); err != nil {
-			a.dbError(w, err, "同步版权台账失败，未执行永久删除。")
-			return
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,'content.permanently_deleted','portal_content',$2::uuid,jsonb_build_object('title',$3,'slug',$4,'deleted_at','recycle_bin'),jsonb_build_object('permanently_deleted',true,'rights_evidence_retained',true))`, u.ID, id, deletedTitle, deletedSlug); err != nil {
-			a.dbError(w, err, "记录永久删除审计失败，未执行永久删除。")
-			return
-		}
 		if _, err = tx.ExecContext(ctx, `DELETE FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL`, id, u.ID); err != nil {
 			a.dbError(w, err, "永久删除失败。")
 			return
@@ -972,10 +899,6 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 				a.dbError(w, err, "取消发布失败。")
 				return
 			}
-			if err := a.syncContentComplianceAsset(ctx, a.db, item); err != nil {
-				a.dbError(w, err, "内容已取消发布，但版权台账同步失败。")
-				return
-			}
 			writeJSON(w, 200, map[string]any{"item": item})
 			return
 		}
@@ -1008,10 +931,6 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		n, _ := res.RowsAffected()
 		if n == 0 {
 			writeError(w, 404, "内容不存在或无权访问。", nil)
-			return
-		}
-		if _, err := a.db.ExecContext(ctx, "UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',metadata=metadata || jsonb_build_object('deleted',true),updated_at=now() WHERE asset_path=$1", "db://portal.portal_content/"+id); err != nil {
-			a.dbError(w, err, "内容已移入回收站，但版权台账同步失败。")
 			return
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
@@ -1103,16 +1022,7 @@ func (a *portalAPI) patchContent(w http.ResponseWriter, r *http.Request, u *port
 		writeJSON(w, 200, map[string]any{"item": cur, "versionCreated": false})
 		return
 	}
-	if cur["status"] == "published" {
-		finalVisibility := cur["visibility"]
-		if value, ok := v["visibility"]; ok {
-			finalVisibility = value
-		}
-		if finalVisibility == "public" {
-			writeError(w, http.StatusConflict, "已发布内容需先取消发布，再修改并重新完成版权审核；这可避免未经复核的修改继续公开。", nil)
-			return
-		}
-	}
+
 	if err = saveContentVersion(r.Context(), tx, cur, u.ID); err != nil {
 		a.dbError(w, err, "保存历史版本失败。")
 		return
@@ -1139,10 +1049,6 @@ func (a *portalAPI) patchContent(w http.ResponseWriter, r *http.Request, u *port
 		a.dbError(w, err, "保存失败。")
 		return
 	}
-	if err = a.syncContentComplianceAsset(r.Context(), tx, item); err != nil {
-		a.dbError(w, err, "内容已更新，但版权台账同步失败；事务已回滚。")
-		return
-	}
 	if err = tx.Commit(); err != nil {
 		a.dbError(w, err, "保存失败。")
 		return
@@ -1166,10 +1072,7 @@ func (a *portalAPI) restoreVersion(w http.ResponseWriter, r *http.Request, u *po
 		writeError(w, 404, "内容不存在或无权访问。", nil)
 		return
 	}
-	if cur["status"] == "published" {
-		writeError(w, http.StatusConflict, "请先取消发布，再恢复历史版本并重新完成版权审核。", nil)
-		return
-	}
+
 	var snapshotRaw []byte
 	err = tx.QueryRowContext(r.Context(), `SELECT snapshot FROM portal.portal_content_versions WHERE version_id=$1 AND content_id=$2 AND author_id=$3`, versionID, id, u.ID).Scan(&snapshotRaw)
 	if err != nil {
@@ -1193,15 +1096,6 @@ func (a *portalAPI) restoreVersion(w http.ResponseWriter, r *http.Request, u *po
 	_, err = tx.ExecContext(r.Context(), `UPDATE portal.portal_content SET title=$3,slug=$4,content_type=$5,tags=$6,parent_category=$7,child_category=$8,summary=$9,body=$10,visibility=$11,updated_at=now() WHERE content_id=$1 AND author_id=$2`, id, u.ID, snap["title"], snap["slug"], snap["contentType"], tags, snap["parentCategory"], snap["childCategory"], snap["summary"], snap["body"], vis)
 	if err != nil {
 		a.dbError(w, err, "恢复版本失败。")
-		return
-	}
-	restoredItem, err := oneJSON(r.Context(), tx, "SELECT to_jsonb(x) FROM (SELECT "+contentSelect+" FROM portal.portal_content c WHERE c.content_id=$1) x", id)
-	if err != nil {
-		a.dbError(w, err, "恢复版本后读取内容失败。")
-		return
-	}
-	if err = a.syncContentComplianceAsset(r.Context(), tx, restoredItem); err != nil {
-		a.dbError(w, err, "恢复版本后同步版权台账失败。")
 		return
 	}
 	var eventID any
@@ -1271,23 +1165,9 @@ func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *po
 		writeError(w, 400, errs[0], errs)
 		return
 	}
-	assetID, gateErr := a.canPublishComplianceAsset(r.Context(), tx, "db://portal.portal_content/"+id, contentBodyHash(fmt.Sprint(item["body"])))
-	if gateErr != nil {
-		var rightsErr rightsGateError
-		if errors.As(gateErr, &rightsErr) {
-			writeError(w, http.StatusConflict, "版权发布审核未通过："+rightsErr.Error(), nil)
-		} else {
-			a.dbError(w, gateErr, "版权审核状态检查失败。")
-		}
-		return
-	}
 	_, err = tx.ExecContext(r.Context(), `UPDATE portal.portal_content SET status='published',published_at=now(),updated_at=now() WHERE content_id=$1 AND author_id=$2`, id, u.ID)
 	if err != nil {
 		a.dbError(w, err, "发布失败。")
-		return
-	}
-	if _, err = tx.ExecContext(r.Context(), "UPDATE portal.compliance_assets SET published_or_active=TRUE,distribution_status='served_publicly',metadata=metadata || jsonb_build_object('status','published','visibility','public'),updated_at=now() WHERE asset_id=$1::uuid", assetID); err != nil {
-		a.dbError(w, err, "发布成功前更新版权台账失败。")
 		return
 	}
 	eid := randomUUID()
@@ -1527,9 +1407,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.Trim(r.URL.Path, "/")
 	if path == "resources" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
-(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
-(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`, u.ID)
+		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`, u.ID)
 		if err != nil {
 			a.dbError(w, err, "读取资源失败。")
 			return
@@ -1550,10 +1428,6 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		var b resourceInput
 		if err := decodeJSON(w, r, maxResourceBody, &b); err != nil {
 			writeError(w, 400, "请求格式不正确。", nil)
-			return
-		}
-		if b.IsPublic != nil && *b.IsPublic {
-			writeError(w, http.StatusConflict, "新资源必须先以私有状态保存；补齐来源/授权证据并通过版权审核后，才能公开。", nil)
 			return
 		}
 		data, filename, mimeType, err := validateResourceFile(b)
@@ -1599,19 +1473,9 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			a.dbError(w, err, "资源保存失败。")
 			return
 		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
-(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
-(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
 		if err != nil {
 			a.dbError(w, err, "资源已保存，但读取结果失败。")
-			return
-		}
-		if err := a.syncResourceComplianceAsset(r.Context(), a.db, resourceID, strings.TrimSpace(b.Title), strings.TrimSpace(b.Description), resourceType(b.Type), filename, mimeType, stored, strings.TrimSpace(b.URL), false, int64(len(data))); err != nil {
-			_, _ = a.db.ExecContext(r.Context(), "DELETE FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2", resourceID, u.ID)
-			if stored != "" {
-				_ = os.Remove(filepath.Join(a.resourceDir, stored))
-			}
-			a.dbError(w, err, "资源已保存但版权台账同步失败，已回滚该次新增。")
 			return
 		}
 		writeJSON(w, 201, map[string]any{"item": item})
@@ -1626,10 +1490,6 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	action := ""
 	if len(parts) > 2 {
 		action = parts[2]
-	}
-	if action == "evidence" && r.Method == http.MethodPost {
-		a.submitPublisherRights(w, r, u, "resource", id)
-		return
 	}
 	if action == "preview" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 		a.serveResourceMP3Preview(w, r, id, false, u.ID)
@@ -1661,33 +1521,6 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "restore" && r.Method == http.MethodPost {
-		var resourceTitle, resourceDescription, resourceTypeValue string
-		var resourceFilename, resourceMime, resourceStored, resourceURL sql.NullString
-		var resourcePublic bool
-		var resourceSize int64
-		statusErr := a.db.QueryRowContext(r.Context(), "SELECT title,description,resource_type,original_filename,mime_type,stored_filename,resource_url,is_public,coalesce(file_size,0) FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL", id, u.ID).Scan(&resourceTitle, &resourceDescription, &resourceTypeValue, &resourceFilename, &resourceMime, &resourceStored, &resourceURL, &resourcePublic, &resourceSize)
-		var restoredResourceAssetID string
-		if statusErr == nil && resourcePublic {
-			var gateErr error
-			expectedHash, hashErr := a.resourceAssetHash(resourceStored.String, resourceTitle, resourceDescription, resourceURL.String)
-			if hashErr != nil {
-				a.dbError(w, hashErr, "读取待恢复资源的版权哈希失败。")
-				return
-			}
-			restoredResourceAssetID, gateErr = a.canPublishComplianceAsset(r.Context(), a.db, "db://portal.teaching_resources/"+id, expectedHash)
-			if gateErr != nil {
-				var rightsErr rightsGateError
-				if errors.As(gateErr, &rightsErr) {
-					writeError(w, http.StatusConflict, "恢复公开资源的版权审核未通过："+rightsErr.Error(), nil)
-				} else {
-					a.dbError(w, gateErr, "恢复资源版权审核状态检查失败。")
-				}
-				return
-			}
-		} else if statusErr != nil && !errors.Is(statusErr, sql.ErrNoRows) {
-			a.dbError(w, statusErr, "检查待恢复资源失败。")
-			return
-		}
 		res, err := a.db.ExecContext(r.Context(), `UPDATE portal.teaching_resources SET deleted_at=NULL,updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL`, id, u.ID)
 		if err != nil {
 			a.dbError(w, err, "资源恢复失败。")
@@ -1698,20 +1531,9 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "资源不存在或无权恢复。", nil)
 			return
 		}
-		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
-(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
-(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
+		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 		if err != nil {
 			a.dbError(w, err, "读取恢复结果失败。")
-			return
-		}
-		if restoredResourceAssetID != "" {
-			if _, err := a.db.ExecContext(r.Context(), "UPDATE portal.compliance_assets SET published_or_active=TRUE,distribution_status='served_publicly',metadata=metadata || jsonb_build_object('is_public',true),updated_at=now() WHERE asset_id=$1::uuid", restoredResourceAssetID); err != nil {
-				a.dbError(w, err, "资源已恢复，但版权台账同步失败。")
-				return
-			}
-		} else if err := a.syncResourceComplianceAsset(r.Context(), a.db, id, resourceTitle, resourceDescription, resourceTypeValue, resourceFilename.String, resourceMime.String, resourceStored.String, resourceURL.String, false, resourceSize); err != nil {
-			a.dbError(w, err, "资源已恢复，但版权台账同步失败。")
 			return
 		}
 		writeJSON(w, 200, map[string]any{"item": item})
@@ -1735,14 +1557,6 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Keep the compliance asset, evidence and reviews; make the asset explicitly unavailable.
-		if _, err = tx.ExecContext(r.Context(), `UPDATE portal.compliance_assets SET published_or_active=FALSE,distribution_status='not_distributed',metadata=metadata || jsonb_build_object('deleted',true,'permanently_deleted',true,'permanently_deleted_at',now(),'resource_title',$2),updated_at=now() WHERE asset_path=$1`, "db://portal.teaching_resources/"+id, deletedTitle); err != nil {
-			a.dbError(w, err, "同步版权台账失败，未执行资源永久删除。")
-			return
-		}
-		if _, err = tx.ExecContext(r.Context(), `INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,'resource.permanently_deleted','teaching_resource',$2::uuid,jsonb_build_object('title',$3,'filename',$4,'deleted_at','recycle_bin'),jsonb_build_object('permanently_deleted',true,'rights_evidence_retained',true))`, u.ID, id, deletedTitle, deletedFilename); err != nil {
-			a.dbError(w, err, "记录资源永久删除审计失败，未执行永久删除。")
-			return
-		}
 		if _, err = tx.ExecContext(r.Context(), `DELETE FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NOT NULL`, id, u.ID); err != nil {
 			a.dbError(w, err, "资源永久删除失败。")
 			return
@@ -1774,12 +1588,6 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		if n == 0 {
 			writeError(w, 404, "资源不存在或已在回收站。", nil)
 			return
-		}
-		var deletedTitle, deletedDescription, deletedType, deletedFilename, deletedMime string
-		var deletedStored, deletedURL sql.NullString
-		var deletedSize int64
-		if err := a.db.QueryRowContext(r.Context(), "SELECT title,description,resource_type,original_filename,mime_type,stored_filename,resource_url,coalesce(file_size,0) FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2", id, u.ID).Scan(&deletedTitle, &deletedDescription, &deletedType, &deletedFilename, &deletedMime, &deletedStored, &deletedURL, &deletedSize); err == nil {
-			_ = a.syncResourceComplianceAsset(r.Context(), a.db, id, deletedTitle, deletedDescription, deletedType, deletedFilename, deletedMime, deletedStored.String, deletedURL.String, false, deletedSize)
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return
@@ -1928,9 +1736,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		writeError(w, 413, "单个文件大小不能超过 25 MB。", nil)
 		return
 	}
-	fileChanged := false
 	if len(data) > 0 {
-		fileChanged = true
 		if old.Valid && old.String != "" && name == currentFilename.String {
 			currentData, readErr := os.ReadFile(filepath.Join(a.resourceDir, filepath.Base(old.String)))
 			if readErr != nil {
@@ -1939,40 +1745,9 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 			}
 			oldHash, newHash := sha256.Sum256(currentData), sha256.Sum256(data)
 			if oldHash == newHash {
-				fileChanged = false
 				data = nil
 				name, mt = "", ""
 			}
-		}
-	}
-	contentChanged := fileChanged || b.Title != currentTitle || b.Description != currentDescription || b.Type != currentType || b.Grade != currentGrade.String || strings.TrimSpace(b.URL) != currentURL.String
-	publishTransition := b.IsPublic != nil && *b.IsPublic && !currentPublic
-	unpublishTransition := b.IsPublic != nil && !*b.IsPublic && currentPublic
-	var publishAssetID string
-	if currentPublic && contentChanged && !unpublishTransition {
-		writeError(w, http.StatusConflict, "公开资源需先取消公开，再修改文件/来源/说明并重新完成版权审核。", nil)
-		return
-	}
-	if publishTransition {
-		if contentChanged {
-			writeError(w, http.StatusConflict, "资源内容或来源发生变化时，请先以私有状态保存，再重新审核后公开。", nil)
-			return
-		}
-		var gateErr error
-		expectedHash, hashErr := a.resourceAssetHash(old.String, currentTitle, currentDescription, currentURL.String)
-		if hashErr != nil {
-			a.dbError(w, hashErr, "读取资源版权哈希失败。")
-			return
-		}
-		publishAssetID, gateErr = a.canPublishComplianceAsset(r.Context(), a.db, "db://portal.teaching_resources/"+id, expectedHash)
-		if gateErr != nil {
-			var rightsErr rightsGateError
-			if errors.As(gateErr, &rightsErr) {
-				writeError(w, http.StatusConflict, "资源公开审核未通过："+rightsErr.Error(), nil)
-			} else {
-				a.dbError(w, gateErr, "资源版权审核状态检查失败。")
-			}
-			return
 		}
 	}
 	stored := old.String
@@ -2015,24 +1790,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 	if newStored != "" && old.Valid {
 		_ = os.Remove(filepath.Join(a.resourceDir, filepath.Base(old.String)))
 	}
-	if publishTransition {
-		if _, err = a.db.ExecContext(r.Context(), "UPDATE portal.compliance_assets SET published_or_active=TRUE,distribution_status='served_publicly',metadata=metadata || jsonb_build_object('is_public',true),updated_at=now() WHERE asset_id=$1::uuid", publishAssetID); err != nil {
-			a.dbError(w, err, "资源状态已更新，但版权台账同步失败。")
-			return
-		}
-	} else if contentChanged || unpublishTransition {
-		nextFilename, nextMime, nextSize := currentFilename.String, currentMime.String, currentSize
-		if len(data) > 0 {
-			nextFilename, nextMime, nextSize = name, mt, int64(len(data))
-		}
-		if err = a.syncResourceComplianceAsset(r.Context(), a.db, id, b.Title, b.Description, b.Type, nextFilename, nextMime, stored, strings.TrimSpace(b.URL), b.IsPublic != nil && *b.IsPublic, nextSize); err != nil {
-			a.dbError(w, err, "资源已更新，但版权台账同步失败。")
-			return
-		}
-	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt",
-(SELECT ca.review_status FROM portal.compliance_assets ca WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightStatus",
-(SELECT concat_ws(E'\n',NULLIF(cr.findings,''),NULLIF((SELECT string_agg(action,E'\n') FROM jsonb_array_elements_text(cr.required_actions) AS actions(action)),''),NULLIF(ca.notes,'')) FROM portal.compliance_assets ca LEFT JOIN LATERAL (SELECT findings,required_actions FROM portal.compliance_asset_reviews WHERE asset_id=ca.asset_id ORDER BY reviewed_at DESC LIMIT 1) cr ON TRUE WHERE ca.asset_path='db://portal.teaching_resources/'||resource_id::text ORDER BY ca.updated_at DESC LIMIT 1) AS "copyrightDetails" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
+	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 	if err != nil {
 		a.dbError(w, err, "资源已更新，但读取结果失败。")
 		return

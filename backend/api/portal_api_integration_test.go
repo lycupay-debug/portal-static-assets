@@ -56,9 +56,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		defer cleanCancel()
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_content_interactions WHERE user_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_content_versions WHERE author_id=$1`, userID)
-		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.uploaded_image_assets WHERE uploader_id=$1`, userID)
-		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.compliance_assets WHERE metadata->>'uploader_id'=$1`, userID)
-		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.compliance_assets a USING portal.portal_content c WHERE a.asset_path='db://portal.portal_content/' || c.content_id::text AND c.author_id=$1`, userID)
+		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.uploaded_images WHERE uploader_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_content WHERE author_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.teaching_resources WHERE owner_id=$1`, userID)
 		_, _ = db.ExecContext(cleanCtx, `DELETE FROM portal.portal_auth_sessions WHERE user_id=$1`, userID)
@@ -85,18 +83,17 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	}
 	sessionCookie := &http.Cookie{Name: portalCookie, Value: cookie}
 
-	// Public policy routes only expose published documents. Complaint intake stays
-	// disabled while the complaint policy is still a draft, preventing collection
-	// of personal data before the required privacy notice is published.
+	// Public policy routes expose only the non-copyright policies retained outside
+	// the internal compliance center. Public copyright complaint intake is removed.
 	requestJSON(t, api, http.MethodGet, "/public/legal", nil, nil, http.StatusOK)
 	requestJSON(t, api, http.MethodGet, "/public/legal/copyright-notice", nil, nil, http.StatusNotFound)
-	requestJSON(t, api, http.MethodPost, "/public/complaints", map[string]any{"name": "Rights Holder", "email": "rights@example.invalid", "workDescription": "Example protected work", "infringingUrls": []string{"https://example.invalid/work"}, "statementTruthful": true}, nil, http.StatusServiceUnavailable)
+	requestJSON(t, api, http.MethodPost, "/public/complaints", map[string]any{"name": "Rights Holder", "email": "rights@example.invalid", "workDescription": "Example protected work", "infringingUrls": []string{"https://example.invalid/work"}, "statementTruthful": true}, nil, http.StatusNotFound)
 	requestJSON(t, api, http.MethodGet, "/compliance/overview", nil, sessionCookie, http.StatusForbidden)
 
 	if _, err := db.ExecContext(ctx, `UPDATE portal.portal_users SET is_admin=TRUE WHERE user_id=$1`, userID); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/compliance/overview", "/compliance/assets?limit=5", "/compliance/licenses", "/compliance/documents", "/compliance/complaints", "/compliance/scans", "/compliance/audit"} {
+	for _, path := range []string{"/compliance/overview", "/compliance/assets?limit=5", "/compliance/licenses", "/compliance/documents", "/compliance/scans", "/compliance/audit"} {
 		requestJSON(t, api, http.MethodGet, path, nil, sessionCookie, http.StatusOK)
 	}
 	var testLicenseID string
@@ -147,24 +144,12 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("version history contract mismatch: %s", versions.Body.String())
 	}
 
-	// A new article cannot be published until the matching revision has an
-	// approved rights record and verified author/license evidence.
+	// User content publication is no longer coupled to the independent compliance center.
 	requestJSON(t, api, http.MethodPatch, "/content/"+contentID, map[string]any{"visibility": "public"}, sessionCookie, http.StatusOK)
-	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
-	var contentAssetID string
-	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1 ORDER BY updated_at DESC LIMIT 1", "db://portal.portal_content/"+contentID).Scan(&contentAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='original',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", contentAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'author_declaration','test://integration','Test author rights declaration',TRUE,'integration-test')", contentAssetID); err != nil {
-		t.Fatal(err)
-	}
 	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/unpublish", map[string]any{}, sessionCookie, http.StatusOK)
-	requestJSON(t, api, http.MethodPatch, "/content/"+contentID, map[string]any{"body": "A changed revision that needs a fresh rights review."}, sessionCookie, http.StatusOK)
-	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
+	requestJSON(t, api, http.MethodPatch, "/content/"+contentID, map[string]any{"body": "A changed revision after publication."}, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
 
 	resource := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{"title": "URL-only resource", "description": "integration", "type": "电子书", "url": "https://example.com/material"}, sessionCookie, http.StatusCreated)
 	var resourceEnvelope struct {
@@ -179,27 +164,9 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if bytes.Contains(privateList.Body.Bytes(), []byte(resourceID)) {
 		t.Fatalf("private resource leaked into public listing: %s", privateList.Body.String())
 	}
-	blockedPublish := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusConflict)
-	if !bytes.Contains(blockedPublish.Body.Bytes(), []byte("私有状态")) {
-		t.Fatalf("resource publish gate did not explain the rights requirement: %s", blockedPublish.Body.String())
-	}
-	updated := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": false}, sessionCookie, http.StatusOK)
-	if !bytes.Contains(updated.Body.Bytes(), []byte("URL-only resource edited")) || !bytes.Contains(updated.Body.Bytes(), []byte("\"isPublic\":false")) {
-		t.Fatalf("private resource edit failed: %s", updated.Body.String())
-	}
-	var resourceAssetID string
-	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1 ORDER BY updated_at DESC LIMIT 1", "db://portal.teaching_resources/"+resourceID).Scan(&resourceAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='third_party_permission',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", resourceAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'permission_email','test://integration','Test permission evidence',TRUE,'integration-test')", resourceAssetID); err != nil {
-		t.Fatal(err)
-	}
 	published := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusOK)
 	if !bytes.Contains(published.Body.Bytes(), []byte("\"isPublic\":true")) {
-		t.Fatalf("approved resource was not published: %s", published.Body.String())
+		t.Fatalf("resource publication was not accepted: %s", published.Body.String())
 	}
 	publicList := requestJSON(t, api, http.MethodGet, "/public/resources", nil, nil, http.StatusOK)
 	if !bytes.Contains(publicList.Body.Bytes(), []byte(resourceID)) || !bytes.Contains(publicList.Body.Bytes(), []byte("https://example.com/edited")) {
@@ -245,19 +212,12 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	requestJSON(t, api, http.MethodPost, "/resources/"+resourceID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID+"/permanent", nil, sessionCookie, http.StatusOK)
-	var resourceRetained, resourceUnavailable bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$1 AND metadata->>'permanently_deleted'='true'), EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$1 AND published_or_active=FALSE AND distribution_status='not_distributed')`, "db://portal.teaching_resources/"+resourceID).Scan(&resourceRetained, &resourceUnavailable); err != nil {
+	var resourceExists, resourceAssetExists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.teaching_resources WHERE resource_id=$1::uuid), EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$2)`, resourceID, "db://portal.teaching_resources/"+resourceID).Scan(&resourceExists, &resourceAssetExists); err != nil {
 		t.Fatal(err)
 	}
-	if !resourceRetained || !resourceUnavailable {
-		t.Fatalf("permanent resource deletion must retain and deactivate the rights ledger: retained=%v unavailable=%v", resourceRetained, resourceUnavailable)
-	}
-	var resourceAuditCount int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM portal.compliance_audit_log WHERE object_id=$1::uuid AND action='resource.permanently_deleted'`, resourceID).Scan(&resourceAuditCount); err != nil {
-		t.Fatal(err)
-	}
-	if resourceAuditCount != 1 {
-		t.Fatalf("expected one resource permanent-delete audit entry, got %d", resourceAuditCount)
+	if resourceExists || resourceAssetExists {
+		t.Fatalf("permanently deleted resource must not leave a compliance record: resource=%v asset=%v", resourceExists, resourceAssetExists)
 	}
 
 	deleteTest := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Permanent-delete audit test", "slug": "permanent-delete-" + randomUUID()[:8], "contentType": "article", "summary": "test", "body": "audit retention test", "visibility": "private"}, sessionCookie, http.StatusCreated)
@@ -273,19 +233,12 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	}
 	requestJSON(t, api, http.MethodDelete, "/content/"+deleteTestID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/content/"+deleteTestID+"/permanent", nil, sessionCookie, http.StatusOK)
-	var contentExists, contentAssetRetained bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE content_id=$1::uuid), EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$2 AND metadata->>'permanently_deleted'='true' AND published_or_active=FALSE AND distribution_status='not_distributed')`, deleteTestID, "db://portal.portal_content/"+deleteTestID).Scan(&contentExists, &contentAssetRetained); err != nil {
+	var contentExists, contentAssetExists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE content_id=$1::uuid), EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_path=$2)`, deleteTestID, "db://portal.portal_content/"+deleteTestID).Scan(&contentExists, &contentAssetExists); err != nil {
 		t.Fatal(err)
 	}
-	if contentExists || !contentAssetRetained {
-		t.Fatalf("permanent content deletion contract mismatch: content_exists=%v rights_asset_retained=%v", contentExists, contentAssetRetained)
-	}
-	var contentAuditCount int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM portal.compliance_audit_log WHERE object_id=$1::uuid AND action='content.permanently_deleted'`, deleteTestID).Scan(&contentAuditCount); err != nil {
-		t.Fatal(err)
-	}
-	if contentAuditCount != 1 {
-		t.Fatalf("expected one content permanent-delete audit entry, got %d", contentAuditCount)
+	if contentExists || contentAssetExists {
+		t.Fatalf("permanently deleted content must not leave a compliance record: content=%v asset=%v", contentExists, contentAssetExists)
 	}
 
 	imageBytes := []byte("\x89PNG\r\n\x1a\n")
@@ -297,15 +250,14 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	var uploaded struct {
-		URL          string `json:"url"`
-		RightsStatus string `json:"rightsStatus"`
-		Public       bool   `json:"public"`
+		URL    string `json:"url"`
+		Public bool   `json:"public"`
 	}
 	if err := json.Unmarshal(image.Body.Bytes(), &uploaded); err != nil {
 		t.Fatal(err)
 	}
-	if uploaded.RightsStatus != "pending_review" || uploaded.Public {
-		t.Fatalf("new image must default to private pending review: %#v", uploaded)
+	if uploaded.Public {
+		t.Fatalf("new image must default to private access: %#v", uploaded)
 	}
 	publicRequest := httptest.NewRequest(http.MethodGet, uploaded.URL, nil)
 	publicResponse := httptest.NewRecorder()
@@ -321,72 +273,6 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("owner preview should work for pending image: status=%d body=%v", ownerResponse.Code, ownerResponse.Body.Bytes())
 	}
 
-	externalImageURL := "https://cdn.example.invalid/test.png"
-	externalImageAssetPath := "external-url://" + contentBodyHash(externalImageURL)
-	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_assets (asset_type,asset_name,asset_path,source_url,ownership_basis,permission_status,use_scope,distribution_status,review_status,risk_level,discovered_by,published_or_active,metadata,notes) VALUES ('external_link','Integration remote image',$1,$2,'unknown','unknown','commercial_web','not_distributed','pending','unknown','manual',FALSE,jsonb_build_object('uploader_id',$3::text),'External image requires rights review.')", externalImageAssetPath, externalImageURL, userID); err != nil {
-		t.Fatal(err)
-	}
-	body := "<p>Image rights gate integration test</p><img src=" + uploaded.URL + " alt=test><img src=" + externalImageURL + " alt=remote>"
-	createdContent := requestJSON(t, api, http.MethodPost, "/content", map[string]any{
-		"title": "Image rights gate test", "slug": "image-rights-gate-test", "contentType": "article",
-		"tags": []string{"编程"}, "summary": "Integration test", "body": body, "visibility": "public",
-	}, sessionCookie, http.StatusCreated)
-	var contentResult struct {
-		Item struct {
-			ID string `json:"id"`
-		} `json:"item"`
-	}
-	if err := json.Unmarshal(createdContent.Body.Bytes(), &contentResult); err != nil {
-		t.Fatal(err)
-	}
-	if contentResult.Item.ID == "" {
-		t.Fatalf("created content response missing id: %s", createdContent.Body.String())
-	}
-	var imageGateContentAssetID string
-	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1 AND sha256=$2", "db://portal.portal_content/"+contentResult.Item.ID, contentBodyHash(body)).Scan(&imageGateContentAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='original',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", imageGateContentAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'author_declaration','test://image-gate','Test article ownership',TRUE,'integration-test')", imageGateContentAssetID); err != nil {
-		t.Fatal(err)
-	}
-	blocked := requestJSON(t, api, http.MethodPost, "/content/"+contentResult.Item.ID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
-	if !bytes.Contains(blocked.Body.Bytes(), []byte("文章图片尚未通过独立版权审核")) {
-		t.Fatalf("pending image should block article publication: %s", blocked.Body.String())
-	}
-
-	var imageAssetID string
-	if err := db.QueryRowContext(ctx, "SELECT compliance_asset_id::text FROM portal.uploaded_image_assets WHERE filename=$1", strings.TrimPrefix(uploaded.URL, "/uploads/")).Scan(&imageAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='original',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", imageAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'author_declaration','test://image-gate','Test image ownership',TRUE,'integration-test')", imageAssetID); err != nil {
-		t.Fatal(err)
-	}
-	externalBlocked := requestJSON(t, api, http.MethodPost, "/content/"+contentResult.Item.ID+"/publish", map[string]any{}, sessionCookie, http.StatusConflict)
-	if !bytes.Contains(externalBlocked.Body.Bytes(), []byte("文章外部图片尚未通过独立版权审核")) {
-		t.Fatalf("unreviewed external image should block article publication: %s", externalBlocked.Body.String())
-	}
-	var externalImageAssetID string
-	if err := db.QueryRowContext(ctx, "SELECT asset_id::text FROM portal.compliance_assets WHERE asset_path=$1", externalImageAssetPath).Scan(&externalImageAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "UPDATE portal.compliance_assets SET ownership_basis='third_party_permission',permission_status='confirmed',review_status='approved',risk_level='low' WHERE asset_id=$1::uuid", externalImageAssetID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,verified,verified_by) VALUES($1::uuid,'permission_email','test://image-gate','Test external image permission',TRUE,'integration-test')", externalImageAssetID); err != nil {
-		t.Fatal(err)
-	}
-	requestJSON(t, api, http.MethodPost, "/content/"+contentResult.Item.ID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
-	publicAfterApproval := httptest.NewRecorder()
-	api.ServeHTTP(publicAfterApproval, httptest.NewRequest(http.MethodGet, uploaded.URL, nil))
-	if publicAfterApproval.Code != http.StatusOK || !bytes.Equal(publicAfterApproval.Body.Bytes(), imageBytes) {
-		t.Fatalf("approved image referenced by published content should be public: status=%d body=%v", publicAfterApproval.Code, publicAfterApproval.Body.Bytes())
-	}
 }
 
 func requestJSON(t *testing.T, handler http.Handler, method, path string, payload any, cookie *http.Cookie, expected int) *httptest.ResponseRecorder {

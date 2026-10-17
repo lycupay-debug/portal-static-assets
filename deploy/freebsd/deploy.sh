@@ -65,7 +65,7 @@ sh "$repo/deploy/freebsd/test-caddy-security-headers.sh"
 
 cd "$repo/frontend"
 npm ci
-python3.14 "$repo/scripts/compliance/scan_assets.py" --repo "$repo" --db-json "$work/no-database-snapshot.json" --release "$www_base/current" --uploads "$www_base/uploads" --resources /var/db/personal-portal/resources --out "$work/compliance-preflight" --strict-licenses
+python3.14 "$repo/scripts/compliance/scan_assets.py" --repo "$repo" --release "$www_base/current" --out "$work/compliance-preflight" --strict-licenses
 npm run api:lint
 npm run api:check
 npm run type-check
