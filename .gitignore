@@ -24,3 +24,7 @@ Thumbs.db
 *.old
 *.orig
 /event-core/event-core
+
+# Python bytecode and cache directories
+__pycache__/
+*.py[cod]
