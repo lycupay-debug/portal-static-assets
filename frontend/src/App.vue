@@ -189,9 +189,18 @@ type TableRecord = Record<string, string | number>
 const tableQuery = ref('')
 const debouncedTableQuery = ref('')
 let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
+let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
+let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
+let publicContentListSequence = 0
+let publicResourceListSequence = 0
+let contentListRequestSequence = 0
+let teachingResourceListRequestSequence = 0
 watch(tableQuery, (query) => {
-  if (tableSearchDebounceTimer) clearTimeout(tableSearchDebounceTimer)
   tableSearchDebounceTimer = setTimeout(() => { debouncedTableQuery.value = query }, 150)
+})
+watch(debouncedTableQuery, (query) => {
+  if (activeAccountSection.value === 'content-management') void loadContentList(query)
+  else if (activeAccountSection.value === 'teaching-resources') void loadTeachingResources(query)
 })
 const tableScrollTop = ref(0)
 const virtualTableScrollElement = ref<HTMLElement | null>(null)
@@ -515,9 +524,10 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
       likeCount: item.likeCount ?? 0,
       favoriteCount: item.favoriteCount ?? 0,
       actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
+      searchText: [item.title, item.slug, item.summary, item.body, ...(item.tags || []), item.parentCategory, item.childCategory].filter(Boolean).join(' '),
     }))
   : activeAccountSection.value === 'teaching-resources'
-    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, filename: item.filename || '—', type: item.type || '其他', grade: item.grade || '不限定年级', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用' }))
+    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, filename: item.filename || '—', type: item.type || '其他', grade: item.grade || '不限定年级', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用', searchText: [item.title, item.filename, item.description, item.type, item.grade, item.url].filter(Boolean).join(' ') }))
     : [])
 // Build each record's normalized search text once per data change, rather than
 // converting every cell to lowercase on every keystroke. Action/status helper fields
@@ -612,20 +622,25 @@ const virtualTableBottomSpace = computed(() => Math.max(0, (filteredTableRecords
 function onVirtualTableScroll(event: Event) {
   tableScrollTop.value = (event.target as HTMLElement).scrollTop
 }
-async function loadContentList() {
+async function loadContentList(searchTerm = tableQuery.value) {
+  const requestId = ++contentListRequestSequence
   contentLoading.value = true
   contentError.value = ''
   try {
     const isTrash = contentViewMode.value === 'trash'
-    const response = await fetch(isTrash ? '/api/content/trash' : '/api/content', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const params = new URLSearchParams()
+    if (searchTerm.trim()) params.set('q', searchTerm.trim())
+    const endpoint = isTrash ? '/api/content/trash' : '/api/content'
+    const response = await fetch(`${endpoint}${params.size ? `?${params}` : ''}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
     const result = await response.json() as { items?: PortalContent[]; error?: string }
     if (!response.ok) throw new Error(result.error || '读取内容列表失败。')
+    if (requestId !== contentListRequestSequence) return
     if (isTrash) contentTrashItems.value = result.items || []
     else contentItems.value = result.items || []
   } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '网络连接失败，无法读取内容。'
+    if (requestId === contentListRequestSequence) contentError.value = error instanceof Error ? error.message : '网络连接失败，无法读取内容。'
   } finally {
-    contentLoading.value = false
+    if (requestId === contentListRequestSequence) contentLoading.value = false
   }
 }
 function switchContentView(mode: 'active' | 'trash') {
@@ -634,16 +649,21 @@ function switchContentView(mode: 'active' | 'trash') {
   tableQuery.value = ''
   void loadContentList()
 }
-async function loadTeachingResources() {
+async function loadTeachingResources(searchTerm = tableQuery.value) {
+  const requestId = ++teachingResourceListRequestSequence
   resourceBusy.value = true; resourceError.value = ''
   try {
     const trash = resourceViewMode.value === 'trash'
-    const response = await fetch(trash ? '/api/resources/trash' : '/api/resources', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const params = new URLSearchParams()
+    if (searchTerm.trim()) params.set('q', searchTerm.trim())
+    const endpoint = trash ? '/api/resources/trash' : '/api/resources'
+    const response = await fetch(`${endpoint}${params.size ? `?${params}` : ''}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
     const result = await response.json() as { items?: TeachingResource[]; error?: string }
     if (!response.ok) throw new Error(result.error || '读取教学资源失败。')
+    if (requestId !== teachingResourceListRequestSequence) return
     if (trash) teachingResourceTrash.value = result.items || []; else teachingResources.value = result.items || []
-  } catch (error) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') }
-  finally { resourceBusy.value = false }
+  } catch (error) { if (requestId === teachingResourceListRequestSequence) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') } }
+  finally { if (requestId === teachingResourceListRequestSequence) resourceBusy.value = false }
 }
 function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
 function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceFiles.value = []; resourceBatchMode.value = false; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
@@ -1054,35 +1074,54 @@ async function restoreScrollPosition() {
   } catch { /* Ignore malformed state. */ }
 }
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
-async function loadPublicContents() {
-  publicArticleRequestSequence += 1
+async function loadPublicContents(searchTerm = '') {
+  const requestId = ++publicContentListSequence
   publicContentLoading.value = true
   publicContentError.value = ''
   try {
-    const response = await fetch('/api/public/content', { headers: { Accept: 'application/json' } })
+    const params = new URLSearchParams()
+    if (searchTerm.trim()) params.set('q', searchTerm.trim())
+    const response = await fetch(`/api/public/content${params.size ? `?${params}` : ''}`, { headers: { Accept: 'application/json' } })
     const result = await response.json() as { items?: PublicContentCard[]; error?: string }
     if (!response.ok) throw new Error(result.error || '读取公开内容失败。')
+    if (requestId !== publicContentListSequence) return
     publicContents.value = result.items || []
     knowledgeVisibleCount.value = knowledgePageSize
   } catch (error) {
-    publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
+    if (requestId === publicContentListSequence) publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
   } finally {
-    publicContentLoading.value = false
+    if (requestId === publicContentListSequence) publicContentLoading.value = false
   }
 }
-async function loadPublicTeachingResources() {
+async function loadPublicTeachingResources(searchTerm = '') {
+  const requestId = ++publicResourceListSequence
   educationResourceLoading.value = true
   educationResourceError.value = ''
   try {
-    const response = await fetch('/api/public/resources', { headers: { Accept: 'application/json' } })
+    const params = new URLSearchParams()
+    if (searchTerm.trim()) params.set('q', searchTerm.trim())
+    const response = await fetch(`/api/public/resources${params.size ? `?${params}` : ''}`, { headers: { Accept: 'application/json' } })
     const result = await response.json() as { items?: PublicTeachingResource[]; error?: string }
     if (!response.ok) throw new Error(result.error || '读取公开教育资源失败。')
+    if (requestId !== publicResourceListSequence) return
     publicTeachingResources.value = result.items || []
     knowledgeVisibleCount.value = knowledgePageSize
   } catch (error) {
-    educationResourceError.value = error instanceof Error ? error.message : '读取公开教育资源失败。'
-  } finally { educationResourceLoading.value = false }
+    if (requestId === publicResourceListSequence) educationResourceError.value = error instanceof Error ? error.message : '读取公开教育资源失败。'
+  } finally {
+    if (requestId === publicResourceListSequence) educationResourceLoading.value = false
+  }
 }
+watch(knowledgeSearchQuery, (query) => {
+  if (route.value !== '/knowledge') return
+  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
+  publicContentSearchTimer = setTimeout(() => { void loadPublicContents(query) }, 220)
+})
+watch(educationResourceSearch, (query) => {
+  if (route.value !== '/education-resources') return
+  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
+  publicResourceSearchTimer = setTimeout(() => { void loadPublicTeachingResources(query) }, 220)
+})
 async function loadPublicArticle(slug: string) {
   const requestId = ++publicArticleRequestSequence
   const requestedRoute = route.value
@@ -1307,10 +1346,11 @@ onMounted(() => {
   void restoreScrollPosition()
 })
 onBeforeUnmount(() => {
+  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
+  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
   educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
-  if (tableSearchDebounceTimer) clearTimeout(tableSearchDebounceTimer)
   tableResizeObserver?.disconnect()
   window.removeEventListener('popstate', onPopState)
   document.removeEventListener('scroll', onScrollCapture, true)

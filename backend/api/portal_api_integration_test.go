@@ -143,6 +143,10 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 
 	slug := "go-api-test-" + randomUUID()[:8]
 	created := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Go API integration", "slug": slug, "contentType": "article", "tags": []string{"教育"}, "parentCategory": "年级", "childCategory": "初一", "summary": "integration", "body": "Go is the only business API", "visibility": "private"}, sessionCookie, http.StatusCreated)
+	contentSearch := requestJSON(t, api, http.MethodGet, "/content?q=business", nil, sessionCookie, http.StatusOK)
+	if !bytes.Contains(contentSearch.Body.Bytes(), []byte(slug)) {
+		t.Fatalf("full-text content search did not find a body-only match: %s", contentSearch.Body.String())
+	}
 	var contentEnvelope struct {
 		Item map[string]any `json:"item"`
 	}
@@ -198,6 +202,14 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	publicList := requestJSON(t, api, http.MethodGet, "/public/resources", nil, nil, http.StatusOK)
 	if !bytes.Contains(publicList.Body.Bytes(), []byte(resourceID)) || !bytes.Contains(publicList.Body.Bytes(), []byte("https://example.com/edited")) {
 		t.Fatalf("published resource missing from public listing: %s", publicList.Body.String())
+	}
+	publicResourceSearch := requestJSON(t, api, http.MethodGet, "/public/resources?q=EDITED", nil, nil, http.StatusOK)
+	if !bytes.Contains(publicResourceSearch.Body.Bytes(), []byte(resourceID)) {
+		t.Fatalf("case-insensitive public resource search did not find the edited URL/title: %s", publicResourceSearch.Body.String())
+	}
+	privateResourceSearch := requestJSON(t, api, http.MethodGet, "/resources?q=example.com/edited", nil, sessionCookie, http.StatusOK)
+	if !bytes.Contains(privateResourceSearch.Body.Bytes(), []byte(resourceID)) {
+		t.Fatalf("authenticated resource search did not find a URL-field match: %s", privateResourceSearch.Body.String())
 	}
 
 	mp3Bytes := []byte("ID3sample-data-for-byte-range-preview")

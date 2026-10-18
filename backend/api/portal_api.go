@@ -68,6 +68,7 @@ type portalAPI struct {
 	ipc         IPCClient
 	uploadDir   string
 	resourceDir string
+	searchCache *searchResultCache
 	mu          sync.Mutex
 	rate        map[string]rateEntry
 }
@@ -133,9 +134,14 @@ func newPortalAPI(db *sql.DB, ipc IPCClient) *portalAPI {
 	if resourceDir == "" {
 		resourceDir = "/var/db/personal-portal/resources"
 	}
-	return &portalAPI{db: db, ipc: ipc, uploadDir: uploadDir, resourceDir: resourceDir, rate: make(map[string]rateEntry)}
+	return &portalAPI{db: db, ipc: ipc, uploadDir: uploadDir, resourceDir: resourceDir, searchCache: newSearchResultCache(), rate: make(map[string]rateEntry)}
 }
 func (a *portalAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Any content/resource write may change indexed public search results.
+	// Invalidate even on a failed write: this only causes a harmless cache miss.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && (strings.HasPrefix(r.URL.Path, "/content") || strings.HasPrefix(r.URL.Path, "/resources")) {
+		defer a.searchCache.invalidate()
+	}
 	if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
 		writeJSON(w, 200, map[string]any{"status": "ok"})
 		return
@@ -659,6 +665,12 @@ func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
 			q += ` AND c.status=$2`
 			args = append(args, status)
 		}
+		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
+			args = append(args, search)
+			placeholder := fmt.Sprintf("$%d", len(args))
+			expr := `coalesce(c.title, '') || ' ' || coalesce(c.summary, '') || ' ' || coalesce(c.body, '') || ' ' || coalesce(c.slug, '') || ' ' || coalesce(portal.text_array_join(c.tags, ' '), '') || ' ' || coalesce(c.parent_category, '') || ' ' || coalesce(c.child_category, '')`
+			q += ` AND (to_tsvector('simple', ` + expr + `) @@ websearch_to_tsquery('simple', ` + placeholder + `) OR lower(` + expr + `) LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + expr + `) % lower(` + placeholder + `))`
+		}
 		q += ` ORDER BY c.updated_at DESC,c.content_id DESC LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
 		if err != nil {
@@ -667,7 +679,16 @@ func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{"items": items})
 	case path == "/content/trash" && r.Method == http.MethodGet:
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+`, (SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='like') AS "likeCount", (SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='favorite') AS "favoriteCount" FROM portal.portal_content c WHERE c.author_id=$1 AND c.deleted_at IS NOT NULL ORDER BY c.deleted_at DESC,c.content_id DESC LIMIT 500) x`, u.ID)
+		q := `SELECT to_jsonb(x) FROM (SELECT ` + contentSelect + `, (SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='like') AS "likeCount", (SELECT count(*)::int FROM portal.portal_content_interactions i WHERE i.content_id=c.content_id AND i.interaction_type='favorite') AS "favoriteCount" FROM portal.portal_content c WHERE c.author_id=$1 AND c.deleted_at IS NOT NULL`
+		args := []any{u.ID}
+		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
+			args = append(args, search)
+			placeholder := fmt.Sprintf("$%d", len(args))
+			expr := `coalesce(c.title, '') || ' ' || coalesce(c.summary, '') || ' ' || coalesce(c.body, '') || ' ' || coalesce(c.slug, '') || ' ' || coalesce(portal.text_array_join(c.tags, ' '), '') || ' ' || coalesce(c.parent_category, '') || ' ' || coalesce(c.child_category, '')`
+			q += ` AND (to_tsvector('simple', ` + expr + `) @@ websearch_to_tsquery('simple', ` + placeholder + `) OR lower(` + expr + `) LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + expr + `) % lower(` + placeholder + `))`
+		}
+		q += ` ORDER BY c.deleted_at DESC,c.content_id DESC LIMIT 500) x`
+		items, err := queryJSONRows(r.Context(), a.db, q, args...)
 		if err != nil {
 			writeError(w, 500, "服务暂时不可用，请稍后再试。", nil)
 			return
@@ -1272,12 +1293,27 @@ func (a *portalAPI) dbError(w http.ResponseWriter, err error, message string) {
 
 func (a *portalAPI) publicContent(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/public/content" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT content_id::text AS "id",title,slug,content_type AS "contentType",tags,parent_category AS "parentCategory",child_category AS "childCategory",summary,published_at AS "publishedAt" FROM portal.portal_content WHERE status='published' AND visibility='public' AND deleted_at IS NULL ORDER BY published_at DESC NULLS LAST,updated_at DESC LIMIT 100) x`)
+		search := normalizeSearchQuery(r.URL.Query().Get("q"))
+		query := `SELECT to_jsonb(x) FROM (SELECT content_id::text AS "id",title,slug,content_type AS "contentType",tags,parent_category AS "parentCategory",child_category AS "childCategory",summary,published_at AS "publishedAt" FROM portal.portal_content WHERE status='published' AND visibility='public' AND deleted_at IS NULL`
+		args := []any{}
+		if search != "" {
+			args = append(args, search)
+			query += ` AND (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) @@ websearch_to_tsquery('simple', $1) OR lower(coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) LIKE '%' || lower($1) || '%' OR lower(coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) % lower($1))`
+		}
+		query += ` ORDER BY published_at DESC NULLS LAST,updated_at DESC LIMIT 100) x`
+		cacheKey := "public-content:v1:" + strings.ToLower(search)
+		items, err := a.searchCache.get(r.Context(), cacheKey, func() ([]byte, error) {
+			rows, err := queryJSONRows(r.Context(), a.db, query, args...)
+			if err != nil {
+				return nil, err
+			}
+			return encodeSearchItems(rows)
+		})
 		if err != nil {
 			a.dbError(w, err, "读取公开内容失败。")
 			return
 		}
-		writeJSON(w, 200, map[string]any{"items": items})
+		writeCachedItems(w, items)
 		return
 	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -1379,12 +1415,27 @@ func (a *portalAPI) publicInteraction(w http.ResponseWriter, r *http.Request, sl
 func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/public/resources"), "/")
 	if path == "" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",CASE WHEN stored_filename IS NOT NULL THEN '/api/public/resources/' || resource_id::text || '/download' ELSE NULL END AS "downloadUrl",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE is_public=TRUE AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`)
+		search := normalizeSearchQuery(r.URL.Query().Get("q"))
+		query := `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",CASE WHEN stored_filename IS NOT NULL THEN '/api/public/resources/' || resource_id::text || '/download' ELSE NULL END AS "downloadUrl",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE is_public=TRUE AND deleted_at IS NULL`
+		args := []any{}
+		if search != "" {
+			args = append(args, search)
+			query += ` AND (lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')) LIKE '%' || lower($1) || '%' OR lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')) % lower($1))`
+		}
+		query += ` ORDER BY updated_at DESC LIMIT 500) x`
+		cacheKey := "public-resources:v1:" + strings.ToLower(search)
+		items, err := a.searchCache.get(r.Context(), cacheKey, func() ([]byte, error) {
+			rows, err := queryJSONRows(r.Context(), a.db, query, args...)
+			if err != nil {
+				return nil, err
+			}
+			return encodeSearchItems(rows)
+		})
 		if err != nil {
 			a.dbError(w, err, "读取公开教育资源失败。")
 			return
 		}
-		writeJSON(w, 200, map[string]any{"items": items})
+		writeCachedItems(w, items)
 		return
 	}
 	parts := strings.Split(path, "/")
@@ -1459,7 +1510,16 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.Trim(r.URL.Path, "/")
 	if path == "resources" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500) x`, u.ID)
+		q := `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL`
+		args := []any{u.ID}
+		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
+			args = append(args, search)
+			placeholder := fmt.Sprintf("$%d", len(args))
+			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
+			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR ` + expr + ` % lower(` + placeholder + `))`
+		}
+		q += ` ORDER BY updated_at DESC LIMIT 500) x`
+		items, err := queryJSONRows(r.Context(), a.db, q, args...)
 		if err != nil {
 			a.dbError(w, err, "读取资源失败。")
 			return
@@ -1468,7 +1528,16 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if path == "resources/trash" && r.Method == http.MethodGet {
-		items, err := queryJSONRows(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",deleted_at AS "deletedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500) x`, u.ID)
+		q := `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",deleted_at AS "deletedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NOT NULL`
+		args := []any{u.ID}
+		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
+			args = append(args, search)
+			placeholder := fmt.Sprintf("$%d", len(args))
+			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
+			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR ` + expr + ` % lower(` + placeholder + `))`
+		}
+		q += ` ORDER BY deleted_at DESC LIMIT 500) x`
+		items, err := queryJSONRows(r.Context(), a.db, q, args...)
 		if err != nil {
 			a.dbError(w, err, "读取回收站失败。")
 			return
