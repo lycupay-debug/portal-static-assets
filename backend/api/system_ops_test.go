@@ -56,6 +56,11 @@ func TestActionableSystemWarningFiltersNoiseAndKeepsCurrentIncidents(t *testing.
 	}{
 		{name: "current database error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: "ERROR: permission denied for schema portal"}, want: true},
 		{name: "retired table reference", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: `ERROR: relation "portal.uploaded_image_assets" does not exist`}, want: false},
+		{name: "manual probe against retired database", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: `postgres: FATAL: database "app_core" does not exist`}, want: false},
+		{name: "manual probe using local root role", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: `postgres: FATAL: role "root" does not exist`}, want: false},
+		{name: "invalid diagnostic catalog column", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: `postgres: ERROR: column "idx_tup_read" does not exist`}, want: false},
+		{name: "invalid diagnostic index expression", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: "postgres: ERROR: functions in index expression must be marked IMMUTABLE"}, want: false},
+		{name: "unknown production database error remains actionable", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: "postgres: ERROR: permission denied for schema portal"}, want: true},
 		{name: "optional host service config warning", entry: systemLogEntry{Source: "server", Level: "warning", Time: now.Format("Jan _2 15:04:05"), Message: "/usr/sbin/service: WARNING: $sendmail_enable is not set properly - see rc.conf(5)."}, want: false},
 		{name: "test fixture error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: "INSERT INTO portal.event_inbox event_type='test.processor.recovery'"}, want: false},
 		{name: "stale server error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Add(-2 * time.Hour).Format("Jan _2 15:04:05"), Message: "ERROR: service operation failed"}, want: false},
