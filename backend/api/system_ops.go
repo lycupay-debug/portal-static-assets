@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -276,11 +277,14 @@ type taskPolicyDecision struct {
 	Reason   string `json:"reason"`
 }
 
-// decideSystemTaskPolicy is the shared policy contract for task executors. Restart
-// and SSH_MCP work always require explicit user approval in both modes.
+// decideSystemTaskPolicy is the shared policy contract for task executors.
+// Restarts always require explicit approval; SSH_MCP work is manual-only and never run by this worker.
 func decideSystemTaskPolicy(mode systemExecutionMode, class systemTaskClass) taskPolicyDecision {
-	if class == taskRestart || class == taskSSHMCP {
-		return taskPolicyDecision{Decision: "require_approval", Reason: "重启操作和 SSH_MCP 相关任务必须事先获得用户同意。"}
+	if class == taskSSHMCP {
+		return taskPolicyDecision{Decision: "manual_only", Reason: "SSH_MCP 相关任务只能由用户本人执行，不由任务执行器代执行。"}
+	}
+	if class == taskRestart {
+		return taskPolicyDecision{Decision: "require_approval", Reason: "重启操作必须事先获得用户同意。"}
 	}
 	if mode == systemModeDeveloper {
 		return taskPolicyDecision{Decision: "allow_authorized_scope", Reason: "开发者模式：在本次明确授权的任务范围内自主执行。"}
@@ -306,22 +310,45 @@ func decideSystemTaskPolicy(mode systemExecutionMode, class systemTaskClass) tas
 }
 
 type systemExecutionPolicyResponse struct {
-	Mode        systemExecutionMode `json:"mode"`
-	UpdatedAt   time.Time           `json:"updatedAt"`
-	ChangedBy   string              `json:"changedBy"`
-	Enforcement string              `json:"enforcement"`
-	Rules       map[string]any      `json:"rules"`
+	Mode             systemExecutionMode `json:"mode"`
+	UpdatedAt        time.Time           `json:"updatedAt"`
+	ChangedBy        string              `json:"changedBy"`
+	Enforcement      string              `json:"enforcement"`
+	ExecutorStatus   string              `json:"executorStatus"`
+	ExecutorLastSeen *time.Time          `json:"executorLastSeen,omitempty"`
+	Rules            map[string]any      `json:"rules"`
+}
+
+func (a *portalAPI) attachCommandExecutorStatus(ctx context.Context, result *systemExecutionPolicyResponse) {
+	var status string
+	var lastSeen sql.NullTime
+	err := a.db.QueryRowContext(ctx, `SELECT status,last_seen_at FROM portal.command_executor_heartbeat WHERE singleton=TRUE`).Scan(&status, &lastSeen)
+	if err != nil {
+		result.ExecutorStatus = "offline"
+		result.Enforcement = "executor_disconnected"
+		return
+	}
+	result.ExecutorStatus = status
+	if lastSeen.Valid {
+		result.ExecutorLastSeen = &lastSeen.Time
+	}
+	if status == "ready" && lastSeen.Valid && time.Since(lastSeen.Time) < 20*time.Second {
+		result.Enforcement = "executor_connected"
+	} else {
+		result.Enforcement = "executor_disconnected"
+	}
 }
 
 func systemExecutionRules() map[string]any {
 	return map[string]any{
-		"alwaysRequireApproval": []string{"restart", "ssh_mcp"},
-		"developerMode":         "All known task classes are permitted only within the current user-authorized scope, except restart and SSH_MCP tasks which always require explicit approval.",
+		"alwaysRequireApproval": []string{"restart"},
+		"alwaysManualOnly":      []string{"ssh_mcp"},
+		"developerMode":         "Known task classes run with root privileges within the explicitly authorized scope, except restart tasks which require explicit approval; SSH_MCP-related tasks are always manual-only and never executed by the task worker.",
 		"stableMode": map[string]string{
 			"read_only": "allow_read_only", "file_inspection": "require_path_scope", "test": "require_registered_task",
 			"build": "require_workspace_scope", "code_change": "require_change_scope", "system_admin": "require_operation_scope",
 			"deploy": "require_approval", "restart": "require_approval", "database_change": "require_approval",
-			"destructive": "require_approval", "ssh_mcp": "require_approval",
+			"destructive": "require_approval", "ssh_mcp": "manual_only",
 		},
 	}
 }
@@ -336,7 +363,7 @@ func (a *portalAPI) systemExecutionPolicy(w http.ResponseWriter, r *http.Request
 			a.dbError(w, err, "无法读取服务器运行策略。")
 			return
 		}
-		result.Enforcement = "policy_source_only"
+		a.attachCommandExecutorStatus(r.Context(), &result)
 		result.Rules = systemExecutionRules()
 		writeJSON(w, http.StatusOK, result)
 	case http.MethodPut:
@@ -390,7 +417,7 @@ func (a *portalAPI) systemExecutionPolicy(w http.ResponseWriter, r *http.Request
 			a.dbError(w, err, "策略已提交，但无法读取保存结果。")
 			return
 		}
-		result.Enforcement = "policy_source_only"
+		a.attachCommandExecutorStatus(r.Context(), &result)
 		result.Rules = systemExecutionRules()
 		writeJSON(w, http.StatusOK, result)
 	default:
@@ -406,6 +433,20 @@ func (a *portalAPI) systemOps(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/system-ops/policy":
 		a.systemExecutionPolicy(w, r)
+	case r.URL.Path == "/system-ops/tasks":
+		switch r.Method {
+		case http.MethodGet:
+			a.listCommandTasks(w, r)
+		case http.MethodPost:
+			a.createCommandTask(w, r)
+		default:
+			w.Header().Set("Allow", "GET, POST")
+			writeError(w, http.StatusMethodNotAllowed, "任务队列只支持 GET 和 POST。", nil)
+		}
+	case strings.HasPrefix(r.URL.Path, "/system-ops/tasks/") && strings.HasSuffix(r.URL.Path, "/approve") && r.Method == http.MethodPost:
+		a.approveCommandTask(w, r)
+	case strings.HasPrefix(r.URL.Path, "/system-ops/tasks/") && strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost:
+		a.cancelCommandTask(w, r)
 	case r.URL.Path == "/system-ops/logs" && r.Method == http.MethodGet:
 		source := r.URL.Query().Get("source")
 		path, ok := systemLogPath(source)

@@ -116,6 +116,12 @@ func receiveEventHandler(store EventStore) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		// Privileged command-task events are internal-only. Public event intake must
+		// never be able to create or wake a root command by choosing an event type.
+		if event.EventType == commandTaskEventType {
+			writeError(w, http.StatusForbidden, "privileged command events are internal-only", nil)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		duplicate, err := store.ReceiveEvent(ctx, event)
@@ -589,12 +595,21 @@ func main() {
 	db.SetConnMaxLifetime(30 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
+	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "--task-executor" {
+		if os.Geteuid() != 0 {
+			fmt.Fprintln(os.Stderr, "privileged task executor must run as root")
+			os.Exit(1)
+		}
+		runCommandTaskExecutor(rootCtx, db)
+		return
+	}
+
 	ipc := IPCClient{SocketPath: socketPath, Timeout: 750 * time.Millisecond}
 	// The C core acknowledgement wakes Go workers immediately. This buffered
 	// channel is intentionally lossy: the database is durable and periodic
 	// recovery scans reclaim work if a signal is missed or a process restarts.
-	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	eventWake := make(chan struct{}, 256)
 	var background sync.WaitGroup
 	background.Add(3)

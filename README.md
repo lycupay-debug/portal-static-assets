@@ -159,7 +159,7 @@ PostgreSQL（portal schema）
 ## 5. PostgreSQL 与 SQL 迁移规范（优先级 P2）
 
 - 数据库：`personal_portal`；业务 schema：`portal`；应用角色：`personal_portal_app`。不得访问 n8n 或 Host MCP 的数据库/凭据。
-- 迁移目录：`backend/migrations/`，编号文件是唯一迁移顺序；`portal.schema_migrations` 记录应用版本。当前已存在 `001` 至 `027` 迁移，新增迁移从下一个序号开始，不得改写已经应用到生产的历史迁移。
+- 迁移目录：`backend/migrations/`，编号文件是唯一迁移顺序；`portal.schema_migrations` 记录应用版本。当前已存在 `001` 至 `028` 迁移，新增迁移从下一个序号开始，不得改写已经应用到生产的历史迁移。
 - 应用启动不自动执行 DDL。生产迁移通过 `deploy/freebsd/migrate.sh` 显式运行，先做完整 PostgreSQL dump，再按版本顺序应用。
 - 每个迁移必须具备明确的事务语义：自带 `BEGIN/COMMIT` 的文件自行管理；不带显式事务的迁移由 `psql --single-transaction` 包裹。迁移失败必须停止，不得继续应用后续版本。
 - 迁移必须检查主键、外键、唯一约束、`NOT NULL`、检查约束、必要索引和并发访问成本。索引要服务于实际查询与租约领取模式，不盲目增加。
@@ -244,12 +244,12 @@ git status --short --branch
 | Go-only 生产业务后端 | 已实施 | Go API 处理业务；旧 Node API 不在正常生产流量路径，部署后已禁用旧认证服务 |
 | Vue 3 + TypeScript + Vite | 已实施 | 前端生产构建和类型检查纳入 CI；Node.js 只用于构建 |
 | OpenAPI 共享契约 | 已实施 | `api/openapi.yaml`；生成 TypeScript 类型；lint 和生成漂移检查纳入 CI |
-| PostgreSQL 版本化迁移 | 已实施至 027 | `backend/migrations/001`–`027`；生产数据库已应用 027；CI 空库按序迁移；迁移事务策略测试 |
+| PostgreSQL 版本化迁移 | 已实施至 028 | `backend/migrations/001`–`028`；新增命令任务队列与执行器心跳；CI 空库按序迁移；迁移事务策略测试 |
 | Go 事件接收、分发、租约、处理和恢复 | 已实现基础能力 | Go/PostgreSQL 为持久事实源；测试覆盖重复唤醒、处理并发、租约/崩溃恢复等路径 |
 | C IPC v2 | 已实施 | 版本化帧、request ID、ACK、有界 FIFO、超时、重连、错误/重复 ACK 测试 |
 | C 核心资源边界 | 已实施 | C 只处理事件元数据通知，不处理业务 payload |
 | 部署与恢复策略 | 已实施 | 备份、迁移、健康检查、手动回滚；开发期默认不自动回滚；隔离沙箱回滚演练 |
-| 系统运行模式策略 | 策略页与持久化配置已实现，执行器尚未接入 | `/account/system-ops/policy`；`portal.system_execution_policy`；变更写入 `portal.compliance_audit_log`；重启与 SSH_MCP 永远要求人工同意 |
+| 系统运行模式与任务执行 | 页面、持久化策略、审批队列和 root 执行器实现中 | `/account/system-ops/policy`；`portal.system_execution_policy`、`portal.command_tasks`、`portal.command_executor_heartbeat`；审批/执行审计；SSH_MCP 任务只登记、不代执行 |
 | 安全响应头与 Cloudflare 代理信任 | 已部署并验证 | 生产 Caddyfile 与仓库配置一致；本机及公网检查响应头；内部路由边界测试通过 |
 | 最新架构/部署 CI | 已通过 | `f7e8aba`：`https://github.com/lycupay-debug/personal-portal/actions/runs/38876797502` |
 | 最新生产部署 | 已完成 | 2026-10-16 UTC；部署脚本输出 stamp `20261016T085236Z`；发布后 health-check 通过 |

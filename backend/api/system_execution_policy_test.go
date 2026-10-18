@@ -2,13 +2,13 @@ package main
 
 import "testing"
 
-func TestSystemTaskPolicyKeepsHardApprovalGatesInBothModes(t *testing.T) {
+func TestSystemTaskPolicyKeepsRestartApprovalAndSSHMCPManualOnlyInBothModes(t *testing.T) {
 	for _, mode := range []systemExecutionMode{systemModeDeveloper, systemModeStable} {
-		for _, class := range []systemTaskClass{taskRestart, taskSSHMCP} {
-			got := decideSystemTaskPolicy(mode, class)
-			if got.Decision != "require_approval" {
-				t.Errorf("mode=%s class=%s decision=%q, want require_approval", mode, class, got.Decision)
-			}
+		if got := decideSystemTaskPolicy(mode, taskRestart); got.Decision != "require_approval" {
+			t.Errorf("mode=%s restart decision=%q, want require_approval", mode, got.Decision)
+		}
+		if got := decideSystemTaskPolicy(mode, taskSSHMCP); got.Decision != "manual_only" {
+			t.Errorf("mode=%s SSH_MCP decision=%q, want manual_only", mode, got.Decision)
 		}
 	}
 }

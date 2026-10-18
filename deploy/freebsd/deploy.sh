@@ -103,12 +103,31 @@ if [ ! -f "$release/favicon.ico" ] && [ -f "$www_base/current/favicon.ico" ]; th
 fi
 
 deployment_changed=1
+if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ] && [ -x /usr/local/etc/rc.d/personal_portal_task_executor ]; then
+  service personal_portal_task_executor stop || true
+fi
 service personal_portal_api stop
 service personal_portal_event_core stop
 install -o root -g wheel -m 0555 "$work/api" "$bin_dir/api"
 install -o root -g wheel -m 0555 "$repo/event-core/event-core" "$bin_dir/event-core"
+install -o root -g wheel -m 0555 "$repo/deploy/freebsd/personal_portal_task_executor" /usr/local/etc/rc.d/personal_portal_task_executor
+install -d -o personalportal -g personalportal -m 0700 /var/db/personal-portal/task-home
+install -d -o personalportal -g personalportal -m 0700 /var/db/personal-portal/task-home/go/pkg/mod
+if [ -d /root/go/pkg/mod ] && [ ! -d /var/db/personal-portal/task-home/go/pkg/mod/cache/download ]; then
+  cp -Rp /root/go/pkg/mod/. /var/db/personal-portal/task-home/go/pkg/mod/
+  chown -R personalportal:personalportal /var/db/personal-portal/task-home/go/pkg/mod
+fi
+install -d -o personalportal -g personalportal -m 0750 "$repo/frontend/dist"
+install -d -o personalportal -g personalportal -m 0700 "$repo/frontend/node_modules/.tmp" "$repo/frontend/node_modules/.cache"
+chown personalportal:personalportal "$repo/frontend/dist" "$repo/frontend/node_modules/.tmp" "$repo/frontend/node_modules/.cache"
+chmod 0750 "$repo/frontend/dist"
+chmod 0700 "$repo/frontend/node_modules/.tmp" "$repo/frontend/node_modules/.cache"
+sysrc personal_portal_task_executor_enable=YES >/dev/null
 service personal_portal_event_core start
 service personal_portal_api start
+if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ]; then
+  service personal_portal_task_executor start
+fi
 
 # Service supervisors return before the child process has necessarily bound
 # its socket. Wait for actual readiness instead of racing the first request.
@@ -133,6 +152,19 @@ wait_for_url http://127.0.0.1:8081/healthz '"status":"ok'
 wait_for_url http://127.0.0.1:8081/dbz '"status":"ok'
 wait_for_url http://127.0.0.1:8081/readyz '"status":"ready'
 wait_for_url http://127.0.0.1:8081/metrics 'personal_portal_events'
+
+# The privileged executor must report a fresh heartbeat before traffic switches.
+attempt=0
+while [ "$attempt" -lt 30 ]; do
+  heartbeat=$(su -m postgres -c "psql -d personal_portal -X -At -v ON_ERROR_STOP=1 -c \"SELECT 1 FROM portal.command_executor_heartbeat WHERE singleton=TRUE AND status='ready' AND last_seen_at > now()-interval '15 seconds'\"" 2>/dev/null || true)
+  if [ "$heartbeat" = "1" ]; then break; fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+if [ "$heartbeat" != "1" ]; then
+  echo "Privileged command executor did not become ready; inspect /var/log/personal-portal/task-executor.log" >&2
+  exit 1
+fi
 
 install -o root -g wheel -m 0644 "$repo/deploy/freebsd/Caddyfile" "$caddy_file"
 caddy validate --config "$caddy_file"

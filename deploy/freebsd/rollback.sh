@@ -87,6 +87,10 @@ else
     echo "Run as root." >&2
     exit 1
   fi
+  if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ] && [ -x /usr/local/etc/rc.d/personal_portal_task_executor ]; then
+    service personal_portal_task_executor stop || true
+    sysrc personal_portal_task_executor_enable=NO >/dev/null 2>&1 || true
+  fi
   service personal_portal_api stop || true
   service personal_portal_event_core stop || true
   install -o root -g wheel -m 0555 "$api_backup" "$bin_dir/api"

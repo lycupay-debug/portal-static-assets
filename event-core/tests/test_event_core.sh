@@ -4,6 +4,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 SOCKET="/var/tmp/personal-portal-event-core-test-$$.sock"
 LOG="/var/tmp/personal-portal-event-core-test-$$.log"
+BINARY="${EVENT_CORE_BINARY:-$ROOT/event-core}"
 PID=""
 
 cleanup() {
@@ -15,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-"$ROOT/event-core" "$SOCKET" >"$LOG" 2>&1 &
+"$BINARY" "$SOCKET" >"$LOG" 2>&1 &
 PID=$!
 
 i=0

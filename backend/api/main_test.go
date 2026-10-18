@@ -231,6 +231,20 @@ func TestReceiveEventHandlerAcceptsAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestReceiveEventHandlerRejectsPrivilegedCommandEvents(t *testing.T) {
+	store := &fakeEventStore{}
+	handler := receiveEventHandler(store)
+	body := `{"event_id":"018f2f5e-7a2b-7c4d-8e9f-0123456789ab","event_type":"portal.command.execute","payload":{"task_id":"018f2f5e-7a2b-7c4d-8e9f-0123456789ac"}}`
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body)))
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", recorder.Code)
+	}
+	if len(store.events) != 0 {
+		t.Fatalf("privileged event reached store: %#v", store.events)
+	}
+}
+
 func TestReceiveEventHandlerRejectsInvalidAndConflictingEvents(t *testing.T) {
 	t.Run("invalid UUID", func(t *testing.T) {
 		handler := receiveEventHandler(&fakeEventStore{})

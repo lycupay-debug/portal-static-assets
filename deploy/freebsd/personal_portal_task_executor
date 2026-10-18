@@ -1,0 +1,44 @@
+#!/bin/sh
+# PROVIDE: personal_portal_task_executor
+# REQUIRE: LOGIN postgresql personal_portal_event_core
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="personal_portal_task_executor"
+rcvar="${name}_enable"
+load_rc_config "$name"
+
+: ${personal_portal_task_executor_enable:="NO"}
+: ${personal_portal_task_executor_restart_delay:="2"}
+
+command="/usr/sbin/daemon"
+procname="/usr/sbin/daemon"
+pidfile="/var/run/personal-portal/task-executor-supervisor.pid"
+child_pidfile="/var/run/personal-portal/task-executor.pid"
+logfile="/var/log/personal-portal/task-executor.log"
+command_args="-f -P ${pidfile} -p ${child_pidfile} -R ${personal_portal_task_executor_restart_delay} -H -M 0600 -o ${logfile} env PERSONAL_PORTAL_EVENT_SOCKET=/var/run/personal-portal/event.sock /usr/local/libexec/personal-portal/api --task-executor"
+
+start_precmd="personal_portal_task_executor_prestart"
+personal_portal_task_executor_prestart()
+{
+    install -d -o root -g wheel -m 0750 /var/run/personal-portal
+    install -d -o root -g wheel -m 0750 /var/log/personal-portal
+    install -d -o personalportal -g personalportal -m 0700 /var/db/personal-portal/task-home
+    install -d -o personalportal -g personalportal -m 0700 /var/db/personal-portal/task-home/go/pkg/mod
+    if [ ! -d /var/db/personal-portal/task-home/go/pkg/mod/cache/download ] && [ -d /root/go/pkg/mod ]; then
+        cp -Rp /root/go/pkg/mod/. /var/db/personal-portal/task-home/go/pkg/mod/
+        chown -R personalportal:personalportal /var/db/personal-portal/task-home/go/pkg/mod
+    fi
+    if [ ! -r /usr/local/etc/personal-portal/database-url ]; then
+        echo "${name}: database configuration is not readable" >&2
+        return 1
+    fi
+    if [ ! -S /var/run/personal-portal/event.sock ]; then
+        echo "${name}: event-core socket is not available" >&2
+        return 1
+    fi
+    return 0
+}
+
+run_rc_command "$1"
