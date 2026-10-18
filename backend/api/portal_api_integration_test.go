@@ -70,9 +70,27 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	api := newPortalAPI(db, IPCClient{SocketPath: t.TempDir() + "/not-running.sock", Timeout: 100 * time.Millisecond})
 	api.uploadDir = t.TempDir()
 	api.resourceDir = t.TempDir()
+	t.Setenv("PERSONAL_PORTAL_UPLOAD_DIR", api.uploadDir)
+	t.Setenv("PERSONAL_PORTAL_RESOURCE_DIR", api.resourceDir)
+	processCleanupEvents := func() {
+		t.Helper()
+		processor := EventProcessor{DB: db, WorkerID: "integration-file-cleanup", Handlers: map[string]EventHandler{fileCleanupEventType: fileCleanupEventHandler}}
+		for i := 0; i < 20; i++ {
+			if !processor.processOne(ctx, []string{fileCleanupEventType}) {
+				// The test invokes the business processor directly rather than the
+				// dispatcher; mark completed test events as notified so they cannot
+				// interfere with other integration tests sharing this test database.
+				if _, err := db.ExecContext(ctx, `UPDATE portal.event_inbox SET dispatch_state='notified', dispatch_notified_at=now(), dispatch_lease_until=NULL WHERE event_type=$1 AND status='completed' AND dispatch_state='pending'`, fileCleanupEventType); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		t.Fatal("file cleanup event drain exceeded its safety limit")
+	}
 	metrics := httptest.NewRecorder()
 	eventMetricsHandler(db).ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	if metrics.Code != http.StatusOK || !strings.Contains(metrics.Body.String(), `personal_portal_events{status="received"}`) {
+	if metrics.Code != http.StatusOK || !strings.Contains(metrics.Body.String(), `personal_portal_events{status="received"}`) || !strings.Contains(metrics.Body.String(), "personal_portal_file_cleanup_events_failed") {
 		t.Fatalf("event metrics contract mismatch: status=%d body=%s", metrics.Code, metrics.Body.String())
 	}
 	login := requestJSON(t, api, http.MethodPost, "/auth/login", map[string]any{"email": email, "password": password}, nil, http.StatusOK)
@@ -228,6 +246,14 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("resource file missing before permanent deletion: %v", err)
 	}
 	requestJSON(t, api, http.MethodDelete, "/resources/"+mp3ID+"/permanent", nil, sessionCookie, http.StatusOK)
+	var cleanupStatus, cleanupType string
+	if err := db.QueryRowContext(ctx, `SELECT status,event_type FROM portal.event_inbox WHERE event_type=$1 AND payload->>'filename'=$2 ORDER BY received_at DESC LIMIT 1`, fileCleanupEventType, storedMP3).Scan(&cleanupStatus, &cleanupType); err != nil {
+		t.Fatalf("resource cleanup event was not persisted with the deletion: %v", err)
+	}
+	if cleanupStatus != "received" || cleanupType != fileCleanupEventType {
+		t.Fatalf("resource cleanup event state = %s/%s, want received/%s", cleanupStatus, cleanupType, fileCleanupEventType)
+	}
+	processCleanupEvents()
 	var storedMP3RecordExists bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.teaching_resources WHERE resource_id=$1::uuid)`, mp3ID).Scan(&storedMP3RecordExists); err != nil {
 		t.Fatal(err)
@@ -346,6 +372,14 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	}
 	requestJSON(t, api, http.MethodDelete, "/content/"+secondImageContent, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/content/"+secondImageContent+"/permanent", nil, sessionCookie, http.StatusOK)
+	var imageCleanupStatus string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM portal.event_inbox WHERE event_type=$1 AND payload->>'filename'=$2 ORDER BY received_at DESC LIMIT 1`, fileCleanupEventType, imageFilename).Scan(&imageCleanupStatus); err != nil {
+		t.Fatalf("image cleanup event was not persisted with the deletion: %v", err)
+	}
+	if imageCleanupStatus != "received" {
+		t.Fatalf("image cleanup event status = %s, want received", imageCleanupStatus)
+	}
+	processCleanupEvents()
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.uploaded_images WHERE filename=$1)`, imageFilename).Scan(&imageRegistered); err != nil {
 		t.Fatal(err)
 	}

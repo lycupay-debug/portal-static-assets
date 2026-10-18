@@ -183,7 +183,7 @@ func TestEventProcessorPostgresIntegration(t *testing.T) {
 		t.Fatalf("terminal error = %q, unexpected value", terminalError)
 	}
 
-	contentProcessor := EventProcessor{DB: db, WorkerID: "integration-content-validation", Handlers: registeredEventHandlers()}
+	contentProcessor := EventProcessor{DB: db, WorkerID: "integration-content-validation", Handlers: map[string]EventHandler{contentValidationEventType: validateContentEvent}}
 	for range 2 {
 		if !contentProcessor.processOne(ctx, contentProcessor.supportedTypes()) {
 			t.Fatal("content validator did not claim queued validation event")

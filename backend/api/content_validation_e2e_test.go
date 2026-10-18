@@ -108,7 +108,7 @@ func TestContentValidationHTTPToPostgresIntegration(t *testing.T) {
 	processor := EventProcessor{
 		DB:       db,
 		WorkerID: "http-integration-content-validator",
-		Handlers: registeredEventHandlers(),
+		Handlers: map[string]EventHandler{contentValidationEventType: validateContentEvent},
 	}
 	processed := false
 	for range 20 {

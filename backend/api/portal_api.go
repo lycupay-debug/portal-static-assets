@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -889,7 +888,7 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 			a.dbError(w, err, "永久删除失败。")
 			return
 		}
-		filesToRemove := make([]string, 0, len(imageNames))
+		cleanupEventIDs := make([]string, 0, len(imageNames))
 		for _, name := range imageNames {
 			var referenced bool
 			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE position($1 in body)>0)`, "/uploads/"+name).Scan(&referenced); err != nil {
@@ -903,18 +902,21 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 				a.dbError(w, err, "清理图片登记失败，永久删除事务已取消。")
 				return
 			}
-			filesToRemove = append(filesToRemove, name)
+			eventID, enqueueErr := enqueueFileCleanup(ctx, tx, "upload_image", name)
+			if enqueueErr != nil {
+				a.dbError(w, enqueueErr, "登记图片清理任务失败，永久删除事务已取消。")
+				return
+			}
+			cleanupEventIDs = append(cleanupEventIDs, eventID)
 		}
 		if err = tx.Commit(); err != nil {
 			a.dbError(w, err, "永久删除事务提交失败。")
 			return
 		}
-		// Filesystem work follows the committed database transaction. Missing
-		// files are already clean; other failures are logged for operator repair.
-		for _, name := range filesToRemove {
-			if removeErr := os.Remove(filepath.Join(a.uploadDir, name)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				log.Printf("content_permanent_delete_image_cleanup_failed content_id=%s filename=%s error=%v", id, name, removeErr)
-			}
+		// Durable events are committed with the content deletion. The C core
+		// notification is only a wakeup; PostgreSQL recovery scans cover misses.
+		for _, eventID := range cleanupEventIDs {
+			go a.notifyEvent(eventID, fileCleanupEventType)
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return
@@ -1605,15 +1607,25 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			a.dbError(w, err, "资源永久删除失败。")
 			return
 		}
+		cleanupEventID := ""
+		if stored.Valid {
+			filename := filepath.Base(stored.String)
+			if filename != stored.String {
+				a.dbError(w, errors.New("stored resource filename is not a basename"), "资源文件路径异常，永久删除事务已取消。")
+				return
+			}
+			cleanupEventID, err = enqueueFileCleanup(r.Context(), tx, "teaching_resource", filename)
+			if err != nil {
+				a.dbError(w, err, "登记资源文件清理任务失败，永久删除事务已取消。")
+				return
+			}
+		}
 		if err = tx.Commit(); err != nil {
 			a.dbError(w, err, "资源永久删除事务提交失败。")
 			return
 		}
-		if stored.Valid {
-			if removeErr := os.Remove(filepath.Join(a.resourceDir, filepath.Base(stored.String))); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				a.dbError(w, removeErr, "资源记录已永久删除，但文件清理失败，需要运维检查。")
-				return
-			}
+		if cleanupEventID != "" {
+			go a.notifyEvent(cleanupEventID, fileCleanupEventType)
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return
@@ -1887,6 +1899,14 @@ func eventMetricsHandler(db *sql.DB) http.HandlerFunc {
 		for _, status := range []string{"received", "processing", "completed", "failed"} {
 			fmt.Fprintf(w, "personal_portal_events{status=%q} %d\n", status, counts[status])
 		}
+		var failedFileCleanupEvents int
+		if err := db.QueryRowContext(ctx, `SELECT count(*)::int FROM portal.event_inbox WHERE event_type=$1 AND status='failed'`, fileCleanupEventType).Scan(&failedFileCleanupEvents); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "metrics database query failed", nil)
+			return
+		}
+		fmt.Fprintln(w, "# HELP personal_portal_file_cleanup_events_failed File cleanup events exhausted retries and require inspection.")
+		fmt.Fprintln(w, "# TYPE personal_portal_file_cleanup_events_failed gauge")
+		fmt.Fprintf(w, "personal_portal_file_cleanup_events_failed %d\n", failedFileCleanupEvents)
 		fmt.Fprintln(w, "# HELP personal_portal_event_dispatch_due Events waiting for a dispatch attempt.")
 		fmt.Fprintln(w, "# TYPE personal_portal_event_dispatch_due gauge")
 		fmt.Fprintf(w, "personal_portal_event_dispatch_due %d\n", dueDispatch)

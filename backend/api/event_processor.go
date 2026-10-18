@@ -28,6 +28,7 @@ type EventHandler func(context.Context, EventInput) (json.RawMessage, error)
 func registeredEventHandlers() map[string]EventHandler {
 	return map[string]EventHandler{
 		"portal.content.validate": validateContentEvent,
+		fileCleanupEventType:      fileCleanupEventHandler,
 	}
 }
 
@@ -224,6 +225,8 @@ func (p EventProcessor) processOne(ctx context.Context, eventTypes []string) boo
 	if handlerErr != nil {
 		if err := p.fail(updateCtx, *event, handlerErr); err != nil {
 			log.Printf("event_processor_failure_update_failed event_id=%s error=%v", event.EventID, err)
+		} else if event.Attempts >= maxProcessingAttempts {
+			log.Printf("event_dead_lettered event_id=%s event_type=%s attempts=%d error=%v", event.EventID, event.EventType, event.Attempts, handlerErr)
 		}
 		log.Printf("event_processed event_id=%s event_type=%s outcome=failed duration=%s error=%v", event.EventID, event.EventType, time.Since(processingStarted).Round(time.Millisecond), handlerErr)
 		return true

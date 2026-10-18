@@ -37,7 +37,10 @@ Business API errors use JSON with an error field and an optional errors array. C
 - EventDispatcher claims notification work with PostgreSQL leases and publishes ID/type metadata to C over IPC v2. Failed publication is retried with exponential backoff; lease fencing prevents stale dispatchers from overwriting newer results.
 - C supports PING, STATUS, EVENT, SUBSCRIBE, PUBLISH and ACK. PUBLISHED confirms a fan-out attempt. ACKNOWLEDGED confirms Go received a matching push. Neither is business completion.
 - Each subscriber has one outstanding push and a bounded FIFO of 32 metadata notifications. Queue overflow, disconnects and core restarts may lose in-memory hints. Go's periodic PostgreSQL scans and expired-lease recovery remain enabled.
-- EventProcessor claims registered event types independently, runs handlers, persists processing_result and commits terminal status. Only portal.content.validate is registered for production. Handlers must be idempotent because processing is at-least-once.
+- EventProcessor claims registered event types independently, runs handlers, persists processing_result and commits terminal status. Production handlers include portal.content.validate and portal.file.cleanup. Handlers must be idempotent because processing is at-least-once.
+- Permanent deletion of an article image or uploaded teaching resource inserts a portal.file.cleanup event in the same PostgreSQL transaction as the business-row deletion. A rollback therefore cannot leave an orphaned cleanup task, and a committed deletion cannot lose its cleanup task if the API process stops.
+- File cleanup payloads contain only a managed-file kind and a generated UUID filename, never an arbitrary path. The handler resolves only the configured upload/resource directory, treats a missing file as success, and returns filesystem errors to the existing 10-attempt exponential-backoff retry path. Expired leases recover after process restarts; exhausted tasks remain status=failed for inspection.
+- The internal metrics endpoint exposes personal_portal_file_cleanup_events_failed for monitoring. The event processor emits event_dead_lettered when a handler exhausts its retry attempts. Operators should alert on a non-zero failed gauge and inspect portal.event_inbox.last_error before manually requeueing a failed event.
 
 ## Local verification
 
