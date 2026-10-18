@@ -61,7 +61,8 @@ func TestActionableSystemWarningFiltersNoiseAndKeepsCurrentIncidents(t *testing.
 		{name: "stale server error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Add(-2 * time.Hour).Format("Jan _2 15:04:05"), Message: "ERROR: service operation failed"}, want: false},
 		{name: "current server error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Add(-5 * time.Minute).Format("Jan _2 15:04:05"), Message: "kernel: fatal service error"}, want: true},
 		{name: "failed read-only SSH query", entry: systemLogEntry{Source: "ssh", Level: "error", Action: "execute_shell_result", Message: "execute_shell_result · failed"}, want: false},
-		{name: "failed file mutation", entry: systemLogEntry{Source: "ssh", Level: "error", Action: "write_file", Message: "write_file · failed"}, want: true},
+		{name: "failed file mutation", entry: systemLogEntry{Source: "ssh", Level: "error", Time: now.Format("2006-01-02T15:04:05-0700"), Action: "write_file", Message: "write_file · failed"}, want: true},
+		{name: "stale failed file mutation", entry: systemLogEntry{Source: "ssh", Level: "error", Time: now.Add(-2 * time.Hour).Format("2006-01-02T15:04:05-0700"), Action: "write_file", Message: "write_file · failed"}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

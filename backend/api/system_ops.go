@@ -177,10 +177,42 @@ func readSystemLog(path, source string, after int64, limit int) (logReadResult, 
 	return logReadResult{Items: items, Cursor: cursor}, nil
 }
 
+func systemWarningIsRecent(entry systemLogEntry, now time.Time) bool {
+	if entry.Time == "" {
+		return false
+	}
+	var t time.Time
+	var err error
+	switch {
+	case strings.Contains(entry.Time, "T") && strings.HasSuffix(entry.Time, "Z"):
+		t, err = time.Parse(time.RFC3339, entry.Time)
+	case strings.Contains(entry.Time, "T") && (strings.HasSuffix(entry.Time, "+0000") || strings.HasSuffix(entry.Time, "-0000")):
+		t, err = time.Parse("2006-01-02T15:04:05-0700", entry.Time)
+	case strings.Contains(entry.Time, "T"):
+		t, err = time.Parse(time.RFC3339, entry.Time)
+	default:
+		t, err = time.ParseInLocation("Jan _2 15:04:05", entry.Time, time.Local)
+		if err == nil {
+			t = t.AddDate(now.Year()-t.Year(), 0, 0)
+			if t.After(now.Add(5 * time.Minute)) {
+				t = t.AddDate(-1, 0, 0)
+			}
+		}
+	}
+	if err != nil {
+		return false
+	}
+	age := now.Sub(t)
+	return age >= -5*time.Minute && age <= time.Hour
+}
+
 // actionableSystemWarning filters historical noise and test/diagnostic failures out of
 // the warning center. Full source logs remain available on the logs page for audit.
 func actionableSystemWarning(entry systemLogEntry, now time.Time) bool {
 	if entry.Level != "error" && entry.Level != "warning" {
+		return false
+	}
+	if !systemWarningIsRecent(entry, now) {
 		return false
 	}
 	if entry.Source == "ssh" {
@@ -211,20 +243,6 @@ func actionableSystemWarning(entry systemLogEntry, now time.Time) bool {
 	} {
 		if strings.Contains(lower, marker) {
 			return false
-		}
-	}
-	// A warning should represent a current incident, not an old log line replayed
-	// from the bounded tail on every page refresh.
-	if entry.Time != "" {
-		t, err := time.ParseInLocation("Jan _2 15:04:05", entry.Time, time.Local)
-		if err == nil {
-			t = t.AddDate(now.Year()-t.Year(), 0, 0)
-			if t.After(now.Add(5 * time.Minute)) {
-				t = t.AddDate(-1, 0, 0)
-			}
-			if now.Sub(t) > time.Hour || t.After(now.Add(5*time.Minute)) {
-				return false
-			}
 		}
 	}
 	return true
