@@ -1445,7 +1445,12 @@ func resourceFuzzySearchMatchSQL(alias, placeholder string) string {
 	for _, field := range fields {
 		parts = append(parts, query+" <% lower(coalesce("+prefix+field+", ''))")
 	}
-	return "(" + strings.Join(parts, " OR ") + ")"
+	// If the user supplied a filename extension, fuzzy fallback must be a close
+	// filename match; otherwise one-character differences in Unit/Part labels can
+	// expand into dozens of unrelated audio files.
+	filename := "lower(coalesce(" + prefix + "original_filename, ''))"
+	filenameFuzzy := "word_similarity(" + query + ", " + filename + ") >= 0.85"
+	return "((" + query + " ~ '\\.[a-z0-9]{2,5}$' AND " + filenameFuzzy + ") OR (" + query + " !~ '\\.[a-z0-9]{2,5}$' AND (" + strings.Join(parts, " OR ") + ")))"
 }
 
 // resourceSearchSimilarityOrderSQL ranks fuzzy fallbacks by their best individual-field match.
