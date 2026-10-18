@@ -535,8 +535,14 @@ const filteredTableRecords = computed(() => {
   if (!keyword) return searchableTableRecords.value
   return searchableTableRecords.value.filter((record) => String(record['_searchText'] || '').includes(keyword))
 })
-const virtualTableStart = computed(() => Math.max(0, Math.floor(tableScrollTop.value / virtualTableRowHeight) - virtualTableOverscan))
-const virtualTableEnd = computed(() => Math.min(filteredTableRecords.value.length, Math.ceil((tableScrollTop.value + virtualTableViewportHeight) / virtualTableRowHeight) + virtualTableOverscan))
+const virtualTableStart = computed(() => {
+  const count = filteredTableRecords.value.length
+  // A previous table can leave a large scrollTop behind when switching to a
+  // shorter dataset. Clamp the window so start can never exceed the last page.
+  const maxStart = Math.max(0, count - Math.ceil(virtualTableViewportHeight / virtualTableRowHeight) - virtualTableOverscan * 2)
+  return Math.min(maxStart, Math.max(0, Math.floor(tableScrollTop.value / virtualTableRowHeight) - virtualTableOverscan))
+})
+const virtualTableEnd = computed(() => Math.max(virtualTableStart.value, Math.min(filteredTableRecords.value.length, Math.ceil((tableScrollTop.value + virtualTableViewportHeight) / virtualTableRowHeight) + virtualTableOverscan)))
 const visibleTableRecords = computed(() => filteredTableRecords.value.slice(virtualTableStart.value, virtualTableEnd.value))
 function tableCellValue(record: TableRecord, columnKey: string): string {
   return String(record[columnKey] || (columnKey === 'title' ? '未命名内容' : '—'))
@@ -591,8 +597,15 @@ function observeVirtualTableWidth() {
   tableResizeObserver.observe(element)
 }
 watch(activeTableDefinition, async () => {
+  tableScrollTop.value = 0
   await nextTick()
+  if (virtualTableScrollElement.value) virtualTableScrollElement.value.scrollTop = 0
   observeVirtualTableWidth()
+})
+watch([activeAccountSection, contentViewMode, resourceViewMode, debouncedTableQuery], async () => {
+  tableScrollTop.value = 0
+  await nextTick()
+  if (virtualTableScrollElement.value) virtualTableScrollElement.value.scrollTop = 0
 })
 const virtualTableTopSpace = computed(() => virtualTableStart.value * virtualTableRowHeight)
 const virtualTableBottomSpace = computed(() => Math.max(0, (filteredTableRecords.value.length - virtualTableEnd.value) * virtualTableRowHeight))
