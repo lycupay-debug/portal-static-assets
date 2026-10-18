@@ -69,7 +69,7 @@
 
 
 ## ADR-0009：复用事件系统的受控命令任务执行器
-- 状态：实现中；部署完成并通过生产任务测试后更新为已实施。
+- 状态：已部署；FreeBSD API、C 事件核心和独立 root 执行器健康检查通过；专用测试数据库验证了稳定模式降权、开发者模式 root 执行、重启审批、SSH_MCP 人工处理和高风险命令重分类。
 - PostgreSQL `portal.command_tasks` 是任务生命周期的事实来源，幂等键唯一；`portal.event_inbox` 中的内部 `portal.command.execute` 事件只负责通过既有 C 事件核心唤醒，不承载可执行命令。
 - 公开 `/events` 接口拒绝 `portal.command.execute`，避免外部请求直接触发特权执行。管理员会话 API 才能创建、审批、取消任务。
 - 独立 root 执行器复用现有 API 二进制的 `--task-executor` 入口，独立 rc.d 服务运行；当前策略在执行前重新读取数据库，稳定模式低风险任务降权至 `personalportal`，经审批的高风险命令按每类受控清单执行。

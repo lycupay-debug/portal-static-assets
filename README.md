@@ -249,7 +249,7 @@ git status --short --branch
 | C IPC v2 | 已实施 | 版本化帧、request ID、ACK、有界 FIFO、超时、重连、错误/重复 ACK 测试 |
 | C 核心资源边界 | 已实施 | C 只处理事件元数据通知，不处理业务 payload |
 | 部署与恢复策略 | 已实施 | 备份、迁移、健康检查、手动回滚；开发期默认不自动回滚；隔离沙箱回滚演练 |
-| 系统运行模式与任务执行 | 页面、持久化策略、审批队列和 root 执行器实现中 | `/account/system-ops/policy`；`portal.system_execution_policy`、`portal.command_tasks`、`portal.command_executor_heartbeat`；审批/执行审计；SSH_MCP 任务只登记、不代执行 |
+| 系统运行模式与任务执行 | 已部署；执行器心跳正常；专用 PostgreSQL 集成测试通过 | `/account/system-ops/policy`；`portal.system_execution_policy`、`portal.command_tasks`、`portal.command_executor_heartbeat`；审批/执行审计；SSH_MCP 任务只登记、不代执行 |
 | 安全响应头与 Cloudflare 代理信任 | 已部署并验证 | 生产 Caddyfile 与仓库配置一致；本机及公网检查响应头；内部路由边界测试通过 |
 | 最新架构/部署 CI | 已通过 | `f7e8aba`：`https://github.com/lycupay-debug/personal-portal/actions/runs/38876797502` |
 | 最新生产部署 | 已完成 | 2026-10-16 UTC；部署脚本输出 stamp `20261016T085236Z`；发布后 health-check 通过 |
