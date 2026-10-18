@@ -669,7 +669,8 @@ func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
 			expr := `coalesce(c.title, '') || ' ' || coalesce(c.summary, '') || ' ' || coalesce(c.body, '') || ' ' || coalesce(c.slug, '') || ' ' || coalesce(portal.text_array_join(c.tags, ' '), '') || ' ' || coalesce(c.parent_category, '') || ' ' || coalesce(c.child_category, '')`
-			q += ` AND (to_tsvector('simple', ` + expr + `) @@ websearch_to_tsquery('simple', ` + placeholder + `) OR lower(` + expr + `) LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + expr + `) % lower(` + placeholder + `))`
+			fuzzyExpr := `coalesce(c.title, '') || ' ' || coalesce(c.summary, '') || ' ' || coalesce(c.slug, '') || ' ' || coalesce(portal.text_array_join(c.tags, ' '), '') || ' ' || coalesce(c.parent_category, '') || ' ' || coalesce(c.child_category, '')`
+			q += ` AND (to_tsvector('simple', ` + expr + `) @@ websearch_to_tsquery('simple', ` + placeholder + `) OR lower(` + expr + `) LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + placeholder + `) <% lower(` + fuzzyExpr + `))`
 		}
 		q += ` ORDER BY c.updated_at DESC,c.content_id DESC LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
@@ -685,7 +686,8 @@ func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
 			expr := `coalesce(c.title, '') || ' ' || coalesce(c.summary, '') || ' ' || coalesce(c.body, '') || ' ' || coalesce(c.slug, '') || ' ' || coalesce(portal.text_array_join(c.tags, ' '), '') || ' ' || coalesce(c.parent_category, '') || ' ' || coalesce(c.child_category, '')`
-			q += ` AND (to_tsvector('simple', ` + expr + `) @@ websearch_to_tsquery('simple', ` + placeholder + `) OR lower(` + expr + `) LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + expr + `) % lower(` + placeholder + `))`
+			fuzzyExpr := `coalesce(c.title, '') || ' ' || coalesce(c.summary, '') || ' ' || coalesce(c.slug, '') || ' ' || coalesce(portal.text_array_join(c.tags, ' '), '') || ' ' || coalesce(c.parent_category, '') || ' ' || coalesce(c.child_category, '')`
+			q += ` AND (to_tsvector('simple', ` + expr + `) @@ websearch_to_tsquery('simple', ` + placeholder + `) OR lower(` + expr + `) LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + placeholder + `) <% lower(` + fuzzyExpr + `))`
 		}
 		q += ` ORDER BY c.deleted_at DESC,c.content_id DESC LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
@@ -1298,7 +1300,7 @@ func (a *portalAPI) publicContent(w http.ResponseWriter, r *http.Request) {
 		args := []any{}
 		if search != "" {
 			args = append(args, search)
-			query += ` AND (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) @@ websearch_to_tsquery('simple', $1) OR lower(coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) LIKE '%' || lower($1) || '%' OR lower(coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) % lower($1))`
+			query += ` AND (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) @@ websearch_to_tsquery('simple', $1) OR lower(coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(body, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')) LIKE '%' || lower($1) || '%' OR lower($1) <% lower(coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(slug, '') || ' ' || coalesce(portal.text_array_join(tags, ' '), '') || ' ' || coalesce(parent_category, '') || ' ' || coalesce(child_category, '')))`
 		}
 		query += ` ORDER BY published_at DESC NULLS LAST,updated_at DESC LIMIT 100) x`
 		cacheKey := "public-content:v1:" + strings.ToLower(search)
@@ -1420,7 +1422,7 @@ func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 		args := []any{}
 		if search != "" {
 			args = append(args, search)
-			query += ` AND (lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')) LIKE '%' || lower($1) || '%' OR lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')) % lower($1))`
+			query += ` AND (lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')) LIKE '%' || lower($1) || '%' OR lower($1) <% lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')))`
 		}
 		query += ` ORDER BY updated_at DESC LIMIT 500) x`
 		cacheKey := "public-resources:v1:" + strings.ToLower(search)
@@ -1516,7 +1518,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
 			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
-			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR ` + expr + ` % lower(` + placeholder + `))`
+			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + placeholder + `) <% ` + expr + `)`
 		}
 		q += ` ORDER BY updated_at DESC LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
@@ -1534,7 +1536,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
 			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
-			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR ` + expr + ` % lower(` + placeholder + `))`
+			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR lower(` + placeholder + `) <% ` + expr + `)`
 		}
 		q += ` ORDER BY deleted_at DESC LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)

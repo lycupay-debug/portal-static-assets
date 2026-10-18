@@ -207,6 +207,10 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if !bytes.Contains(publicResourceSearch.Body.Bytes(), []byte(resourceID)) {
 		t.Fatalf("case-insensitive public resource search did not find the edited URL/title: %s", publicResourceSearch.Body.String())
 	}
+	fuzzyResourceSearch := requestJSON(t, api, http.MethodGet, "/public/resources?q=editef", nil, nil, http.StatusOK)
+	if !bytes.Contains(fuzzyResourceSearch.Body.Bytes(), []byte(resourceID)) {
+		t.Fatalf("typo-tolerant public resource search did not find a near match: %s", fuzzyResourceSearch.Body.String())
+	}
 	privateResourceSearch := requestJSON(t, api, http.MethodGet, "/resources?q=example.com/edited", nil, sessionCookie, http.StatusOK)
 	if !bytes.Contains(privateResourceSearch.Body.Bytes(), []byte(resourceID)) {
 		t.Fatalf("authenticated resource search did not find a URL-field match: %s", privateResourceSearch.Body.String())
