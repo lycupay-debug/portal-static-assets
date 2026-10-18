@@ -94,6 +94,7 @@ const sectionRoutes: Record<string, string> = {
   'network-tools': '/tools/network', 'document-converters': '/tools/document-converters',
   'add-tool': '/tools/add', 'workflow-overview': '/workflows', 'copyright-compliance': '/account/compliance',
   'system-warnings': '/account/system-ops/warnings', 'system-logs': '/account/system-ops/logs',
+  'system-execution-policy': '/account/system-ops/policy',
 }
 const routeSections = Object.fromEntries(Object.entries(sectionRoutes).map(([id, path]) => [path, id])) as Record<string, string>
 const routeAliases: Record<string, string> = {
@@ -157,6 +158,7 @@ const accountGroups = [
     id: 'system-ops', label: '系统运维', items: [
       { id: 'system-warnings', label: '系统警告', description: '查看服务器异常、失败任务和需要人工处理的运维警告。' },
       { id: 'system-logs', label: '系统日志', description: '实时查看服务器运行日志和 GPT 连接 SSH 的操作审计日志。' },
+      { id: 'system-execution-policy', label: '运行模式与任务策略', description: '切换开发者模式与稳定运行模式，管理服务器任务权限策略。' },
     ],
   },
 ]
@@ -1769,6 +1771,9 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="activeAccountSection === 'system-logs'">
           <SystemOpsCenter view="logs" />
+        </template>
+        <template v-else-if="activeAccountSection === 'system-execution-policy'">
+          <SystemOpsCenter view="policy" />
         </template>
 
         <template v-else>

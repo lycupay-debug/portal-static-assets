@@ -180,6 +180,41 @@ paths:
                   size: { type: integer }
         '400': { $ref: '#/components/responses/ErrorResponse' }
         '401': { $ref: '#/components/responses/ErrorResponse' }
+  /system-ops/policy:
+    get:
+      tags: [System operations]
+      summary: Read the current server execution mode and policy rules
+      operationId: getSystemExecutionPolicy
+      responses:
+        '200':
+          description: Persisted execution policy and audit metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemExecutionPolicy' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+    put:
+      tags: [System operations]
+      summary: Change the server execution mode
+      operationId: updateSystemExecutionPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [developer, stable] }
+      responses:
+        '200':
+          description: Updated policy and audit metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemExecutionPolicy' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
   /system-ops/logs:
     get:
       tags: [System operations]
@@ -864,6 +899,15 @@ components:
         action: { type: string }
         message: { type: string }
         details: { type: object, additionalProperties: true }
+    SystemExecutionPolicy:
+      type: object
+      required: [mode, updatedAt, changedBy, enforcement, rules]
+      properties:
+        mode: { type: string, enum: [developer, stable] }
+        updatedAt: { type: string, format: date-time }
+        changedBy: { type: string }
+        enforcement: { type: string, enum: [policy_source_only, executor_connected] }
+        rules: { type: object, additionalProperties: true }
     SystemLogPage:
       type: object
       required: [items, cursor]

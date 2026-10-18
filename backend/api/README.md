@@ -69,7 +69,8 @@ Use deploy/freebsd/deploy.sh. It requires a clean Git checkout, runs tests/build
 
 
 System operations:
-- `GET /system-ops/warnings`, `/system-ops/logs`, and `/system-ops/stream` are restricted to `is_admin` accounts on the server; hiding the navigation entry is not treated as authorization.
+- `GET /system-ops/warnings`, `/system-ops/logs`, `/system-ops/stream`, and `GET/PUT /system-ops/policy` are restricted to `is_admin` accounts on the server; hiding the navigation entry is not treated as authorization.
+- `/system-ops/policy` stores the developer/stable mode in `portal.system_execution_policy` and writes mode changes to `portal.compliance_audit_log`. The policy classifier keeps restart and SSH_MCP work behind explicit approval in both modes. It is a policy source only until a general command executor is connected; do not claim it governs execution paths that do not call the classifier.
 - Log history is read from a bounded tail, then incrementally from byte cursors. The SSE stream checks for appended lines every two seconds only while a browser is subscribed, sends keepalives, and supports `Last-Event-ID` resume. The UI closes the stream when the page is unmounted or paused.
 - Server messages come from `/var/log/messages`. GPT/SSH operations use a separate sanitized projection at `/var/log/host-mcp-admin-audit.log`; raw shell commands and output remain in the root-only `/var/log/host-mcp-audit.log` and are not exposed through the portal API.
 - Only the sanitized SSH audit projection is readable by the `personalportal` service account. Log lines are bounded in the browser to 500 entries; the API initial tail is capped at 256 KiB and 200 entries per response.

@@ -160,6 +160,16 @@ export type SystemLogEntry = {
     };
 };
 
+export type SystemExecutionPolicy = {
+    mode: 'developer' | 'stable';
+    updatedAt: string;
+    changedBy: string;
+    enforcement: 'policy_source_only' | 'executor_connected';
+    rules: {
+        [key: string]: unknown;
+    };
+};
+
 export type SystemLogPage = {
     items: Array<SystemLogEntry>;
     cursor: number;
@@ -494,6 +504,70 @@ export type UploadImageResponses = {
 };
 
 export type UploadImageResponse = UploadImageResponses[keyof UploadImageResponses];
+
+export type GetSystemExecutionPolicyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system-ops/policy';
+};
+
+export type GetSystemExecutionPolicyErrors = {
+    /**
+     * Structured API error
+     */
+    401: Error;
+    /**
+     * Structured API error
+     */
+    403: Error;
+};
+
+export type GetSystemExecutionPolicyError = GetSystemExecutionPolicyErrors[keyof GetSystemExecutionPolicyErrors];
+
+export type GetSystemExecutionPolicyResponses = {
+    /**
+     * Persisted execution policy and audit metadata
+     */
+    200: SystemExecutionPolicy;
+};
+
+export type GetSystemExecutionPolicyResponse = GetSystemExecutionPolicyResponses[keyof GetSystemExecutionPolicyResponses];
+
+export type UpdateSystemExecutionPolicyData = {
+    body: {
+        mode: 'developer' | 'stable';
+    };
+    path?: never;
+    query?: never;
+    url: '/system-ops/policy';
+};
+
+export type UpdateSystemExecutionPolicyErrors = {
+    /**
+     * Structured API error
+     */
+    400: Error;
+    /**
+     * Structured API error
+     */
+    401: Error;
+    /**
+     * Structured API error
+     */
+    403: Error;
+};
+
+export type UpdateSystemExecutionPolicyError = UpdateSystemExecutionPolicyErrors[keyof UpdateSystemExecutionPolicyErrors];
+
+export type UpdateSystemExecutionPolicyResponses = {
+    /**
+     * Updated policy and audit metadata
+     */
+    200: SystemExecutionPolicy;
+};
+
+export type UpdateSystemExecutionPolicyResponse = UpdateSystemExecutionPolicyResponses[keyof UpdateSystemExecutionPolicyResponses];
 
 export type ListSystemLogsData = {
     body?: never;

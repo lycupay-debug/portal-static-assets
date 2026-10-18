@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+const SystemExecutionPolicyCenter = defineAsyncComponent(() => import('./SystemExecutionPolicyCenter.vue'))
 
 type LogEntry = {
   id: number
@@ -10,7 +11,7 @@ type LogEntry = {
   message: string
   details?: Record<string, unknown>
 }
-type Props = { view: 'warnings' | 'logs' }
+type Props = { view: 'warnings' | 'logs' | 'policy' }
 const props = defineProps<Props>()
 const activeSource = ref<'server' | 'ssh'>('server')
 const logs = ref<LogEntry[]>([])
@@ -117,7 +118,7 @@ function actionLabel(action?: string) {
 watch(activeSource, () => { paused.value = false; void loadLogs(true) })
 onMounted(() => {
   if (props.view === 'logs') void loadLogs(true)
-  else {
+  else if (props.view === 'warnings') {
     void loadWarnings()
     warningTimer = setInterval(() => { if (!document.hidden) void loadWarnings() }, 15000)
   }
@@ -126,7 +127,8 @@ onBeforeUnmount(() => { closeStream(); if (warningTimer) clearInterval(warningTi
 </script>
 
 <template>
-  <section class="system-ops-center">
+  <SystemExecutionPolicyCenter v-if="view === 'policy'" />
+  <section v-else class="system-ops-center">
     <header class="ops-heading">
       <div><p class="ops-eyebrow">SYSTEM OPERATIONS</p><h1 class="account-page-title">{{ view === 'warnings' ? '系统警告' : '系统日志' }}</h1><p class="ops-intro">{{ view === 'warnings' ? '集中查看服务器异常、执行失败和需要人工处理的运维事件。' : '按需订阅新增日志；关闭本页后停止实时连接，不进行后台持续轮询。' }}</p></div>
       <button v-if="view === 'warnings'" class="ops-button" type="button" @click="loadWarnings">刷新警告</button>

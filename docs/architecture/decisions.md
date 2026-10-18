@@ -39,7 +39,7 @@
 - 门户使用独立数据库 `personal_portal` 与登录角色 `personal_portal_app`；不得访问 `n8n_db` 或 `host_mcp_oauth`。
 - Go API 使用 `database/sql` 与 pgx stdlib 驱动；连接 URL 从主机受限权限文件读取，不提交到 Git。
 - SQL schema 变更通过 `backend/migrations/` 中的版本化 SQL 管理；应用启动时不自动修改 schema。
-- `portal.schema_migrations` 记录已应用的迁移版本；当前 schema 包含事件收件箱、处理租约/结果、账户与会话、内容、历史版本、互动、教学资源和父子分类字段。
+- `portal.schema_migrations` 记录已应用的迁移版本；当前 schema 包含事件收件箱、处理租约/结果、账户与会话、内容、历史版本、互动、教学资源、父子分类字段及系统运行模式策略。
 - C `kqueue` 核心仍负责 IPC/事件通知；持久化事务与后续业务数据由 PostgreSQL 管理。
 
 
@@ -59,3 +59,10 @@
 - 可预期的输入错误（必填字段、格式、长度、未知字段或字段类型不符）返回 `valid=false` 和错误列表，不进入重试。仅处理器实际错误进入事件重试路径。
 - 私人/公开可见性仅作字段合法性校验；此事件不会发布内容、生成公开产物或改变任何公开索引。
 - 迁移 `005_event_processing_result.sql` 为事件收件箱添加结果字段。
+
+## ADR-0008：系统运行模式与任务权限策略
+- 状态：策略配置页面、持久化模式和分类判定规则已实现；通用命令执行器尚未接入。
+- 管理入口为 `/account/system-ops/policy`，与系统警告、系统日志页面分离。
+- `portal.system_execution_policy` 保存唯一当前模式（`developer` 或 `stable`）；模式变更在同一事务中写入 `portal.compliance_audit_log`。
+- 两种模式均要求重启操作与 SSH_MCP 相关操作事先取得用户同意；稳定模式下部署、数据库变更和破坏性任务逐次审批。未知任务类别默认拒绝。
+- 任何后续任务执行器必须在真正执行前调用后端统一策略判定器，并实施路径/工作区范围、审批、超时、进程组清理、幂等、审计与崩溃恢复；页面上的模式值不能被视为对尚未接入执行器的自动控制。
