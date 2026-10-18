@@ -1176,6 +1176,13 @@ html, body { color: #111111; background: #ffffff; }
 .education-resource-heading > p:last-child { margin: 12px 0 0; color: #777; font-size: var(--font-size-14px-d65225); line-height: 1.7; }
 .education-resource-results-section { padding-top: 26px; }
 .education-resource-list-item .education-resource-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 4px; }
+/* Keep long resource names and descriptions inside the four-column card layout. */
+.education-resource-list-item { min-width: 0; overflow: hidden; }
+.education-resource-list-item .knowledge-list-copy { min-width: 0; overflow: hidden; }
+.education-resource-list-item .knowledge-list-copy > strong { display: -webkit-box; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.education-resource-list-item .knowledge-list-copy > span:not(.education-resource-meta) { display: -webkit-box; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.education-resource-list-item .education-resource-meta { min-width: 0; max-width: 100%; overflow: hidden; }
+.education-resource-list-item .education-resource-meta .education-resource-filename { display: block; flex: 1 1 100%; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 .education-resource-meta b { padding: 3px 7px; border-radius: 6px; color: #444; background: rgba(0,0,0,.045); font-size: var(--font-size-11px-min14-4bd46d); font-weight: 500; }
 .education-resource-meta span { color: #888; font-size: var(--font-size-11px-min14-4bd46d); overflow-wrap: anywhere; }
 .resource-public-toggle { display: flex; align-items: flex-start; gap: 10px; margin: 8px 0 4px; padding: 12px; border-radius: 10px; background: rgba(0,0,0,.035); cursor: pointer; }
