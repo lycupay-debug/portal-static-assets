@@ -177,6 +177,59 @@ func readSystemLog(path, source string, after int64, limit int) (logReadResult, 
 	return logReadResult{Items: items, Cursor: cursor}, nil
 }
 
+// actionableSystemWarning filters historical noise and test/diagnostic failures out of
+// the warning center. Full source logs remain available on the logs page for audit.
+func actionableSystemWarning(entry systemLogEntry, now time.Time) bool {
+	if entry.Level != "error" && entry.Level != "warning" {
+		return false
+	}
+	if entry.Source == "ssh" {
+		// Read-only shell queries and blocked reads are useful audit entries, but are
+		// not service-health incidents. Only failed state-changing operations alert.
+		switch entry.Action {
+		case "write_file", "replace_in_file", "move_path", "delete_path":
+			return entry.Level == "error"
+		default:
+			return false
+		}
+	}
+	if entry.Source != "server" {
+		return false
+	}
+	lower := strings.ToLower(entry.Message)
+	// These are retired schema references, test fixtures, diagnostic probes, or
+	// optional host services unrelated to portal availability. Keep them in logs.
+	if strings.Contains(lower, "uploaded_image_assets") && strings.Contains(lower, "does not exist") {
+		return false
+	}
+	for _, marker := range []string{
+		"permission denied for function pg_ls_dir",
+		"go api integration",
+		"test.processor.",
+		"mit test license text",
+		"rc.conf(5)",
+	} {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	// A warning should represent a current incident, not an old log line replayed
+	// from the bounded tail on every page refresh.
+	if entry.Time != "" {
+		t, err := time.ParseInLocation("Jan _2 15:04:05", entry.Time, time.Local)
+		if err == nil {
+			t = t.AddDate(now.Year()-t.Year(), 0, 0)
+			if t.After(now.Add(5 * time.Minute)) {
+				t = t.AddDate(-1, 0, 0)
+			}
+			if now.Sub(t) > time.Hour || t.After(now.Add(5*time.Minute)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (a *portalAPI) systemOps(w http.ResponseWriter, r *http.Request) {
 	if !a.requireSystemOpsAdmin(w, r) {
 		return
@@ -201,21 +254,30 @@ func (a *portalAPI) systemOps(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	case r.URL.Path == "/system-ops/warnings" && r.Method == http.MethodGet:
-		items := make([]systemLogEntry, 0, 100)
+		now := time.Now()
+		items := make([]systemLogEntry, 0, 40)
 		serverPath, _ := systemLogPath("server")
 		server, err := readSystemLog(serverPath, "server", 0, 200)
 		if err == nil {
-			for i := len(server.Items) - 1; i >= 0 && len(items) < 80; i-- {
-				if server.Items[i].Level == "error" || server.Items[i].Level == "warning" {
-					items = append(items, server.Items[i])
+			seen := make(map[string]struct{})
+			for i := len(server.Items) - 1; i >= 0 && len(items) < 40; i-- {
+				entry := server.Items[i]
+				if !actionableSystemWarning(entry, now) {
+					continue
 				}
+				key := strings.ToLower(strings.TrimSpace(entry.Message))
+				if _, exists := seen[key]; exists {
+					continue
+				}
+				seen[key] = struct{}{}
+				items = append(items, entry)
 			}
 		}
 		sshPath, _ := systemLogPath("ssh")
 		ssh, err := readSystemLog(sshPath, "ssh", 0, 100)
 		if err == nil {
-			for i := len(ssh.Items) - 1; i >= 0 && len(items) < 100; i-- {
-				if ssh.Items[i].Level == "error" || ssh.Items[i].Level == "warning" {
+			for i := len(ssh.Items) - 1; i >= 0 && len(items) < 50; i-- {
+				if actionableSystemWarning(ssh.Items[i], now) {
 					items = append(items, ssh.Items[i])
 				}
 			}
@@ -225,10 +287,30 @@ func (a *portalAPI) systemOps(w http.ResponseWriter, r *http.Request) {
 			a.dbError(w, err, "无法读取系统事件状态。")
 			return
 		}
-		if failedCleanup > 0 {
-			items = append([]systemLogEntry{{Source: "server", Level: "error", Time: time.Now().Format(time.RFC3339), Message: fmt.Sprintf("存在 %d 个文件清理事件重试耗尽，需要运维处理。", failedCleanup)}}, items...)
+		// Surface every failed event family, not just file cleanup. Group by type so
+		// one broken event does not flood the warning list with duplicate rows.
+		rows, err := a.db.QueryContext(r.Context(), `SELECT event_type, count(*)::int FROM portal.event_inbox WHERE status='failed' GROUP BY event_type ORDER BY count(*) DESC, event_type LIMIT 20`)
+		if err != nil {
+			a.dbError(w, err, "无法读取系统事件状态。")
+			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": items, "failedFileCleanupEvents": failedCleanup, "checkedAt": time.Now().Format(time.RFC3339)})
+		for rows.Next() {
+			var eventType string
+			var count int
+			if err := rows.Scan(&eventType, &count); err != nil {
+				rows.Close()
+				a.dbError(w, err, "无法读取系统事件状态。")
+				return
+			}
+			items = append(items, systemLogEntry{Source: "server", Level: "error", Time: now.Format(time.RFC3339), Action: "event_dead_lettered", Message: fmt.Sprintf("事件类型 %s 有 %d 个处理失败的事件，需要核验。", eventType, count), Details: map[string]any{"eventType": eventType, "count": count}})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			a.dbError(w, err, "无法读取系统事件状态。")
+			return
+		}
+		rows.Close()
+		writeJSON(w, http.StatusOK, map[string]any{"items": items, "failedFileCleanupEvents": failedCleanup, "checkedAt": now.Format(time.RFC3339)})
 	case r.URL.Path == "/system-ops/stream" && r.Method == http.MethodGet:
 		a.streamSystemLog(w, r)
 	default:

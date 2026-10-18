@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestReadSystemLogReturnsLatestBoundedTailAndCursor(t *testing.T) {
@@ -43,5 +44,30 @@ func TestParseSystemSSHLogKeepsSanitizedMetadata(t *testing.T) {
 	entry := parseSystemLogLine("ssh", 42, line)
 	if entry.Action != "execute_shell_result" || entry.Level != "error" || entry.Details["returncode"] != float64(2) {
 		t.Fatalf("unexpected parsed entry: %#v", entry)
+	}
+}
+
+func TestActionableSystemWarningFiltersNoiseAndKeepsCurrentIncidents(t *testing.T) {
+	now := time.Date(2026, 10, 18, 5, 0, 0, 0, time.Local)
+	cases := []struct {
+		name  string
+		entry systemLogEntry
+		want  bool
+	}{
+		{name: "current database error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: "ERROR: permission denied for schema portal"}, want: true},
+		{name: "retired table reference", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: `ERROR: relation "portal.uploaded_image_assets" does not exist`}, want: false},
+		{name: "optional host service config warning", entry: systemLogEntry{Source: "server", Level: "warning", Time: now.Format("Jan _2 15:04:05"), Message: "/usr/sbin/service: WARNING: $sendmail_enable is not set properly - see rc.conf(5)."}, want: false},
+		{name: "test fixture error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Format("Jan _2 15:04:05"), Message: "INSERT INTO portal.event_inbox event_type='test.processor.recovery'"}, want: false},
+		{name: "stale server error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Add(-2 * time.Hour).Format("Jan _2 15:04:05"), Message: "ERROR: service operation failed"}, want: false},
+		{name: "current server error", entry: systemLogEntry{Source: "server", Level: "error", Time: now.Add(-5 * time.Minute).Format("Jan _2 15:04:05"), Message: "kernel: fatal service error"}, want: true},
+		{name: "failed read-only SSH query", entry: systemLogEntry{Source: "ssh", Level: "error", Action: "execute_shell_result", Message: "execute_shell_result · failed"}, want: false},
+		{name: "failed file mutation", entry: systemLogEntry{Source: "ssh", Level: "error", Action: "write_file", Message: "write_file · failed"}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := actionableSystemWarning(tc.entry, now); got != tc.want {
+				t.Fatalf("actionableSystemWarning()=%v, want %v", got, tc.want)
+			}
+		})
 	}
 }
