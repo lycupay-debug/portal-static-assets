@@ -1414,6 +1414,24 @@ func (a *portalAPI) publicInteraction(w http.ResponseWriter, r *http.Request, sl
 	writeJSON(w, 200, map[string]any{"active": active, "likeCount": likes, "favoriteCount": favs})
 }
 
+// resourceSearchTextSQL builds the shared text corpus used by resource matching.
+func resourceSearchTextSQL(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return "lower(coalesce(" + prefix + "title, '') || ' ' || coalesce(" + prefix + "description, '') || ' ' || coalesce(" + prefix + "original_filename, '') || ' ' || coalesce(" + prefix + "resource_type, '') || ' ' || coalesce(" + prefix + "grade, '') || ' ' || coalesce(" + prefix + "resource_url, ''))"
+}
+
+// resourceDirectSearchMatchSQL matches literal substrings, with or without whitespace.
+func resourceDirectSearchMatchSQL(alias, placeholder string) string {
+	text := resourceSearchTextSQL(alias)
+	query := "lower(" + placeholder + ")"
+	compactText := "regexp_replace(" + text + ", '[[:space:]]+', '', 'g')"
+	compactQuery := "regexp_replace(" + query + ", '[[:space:]]+', '', 'g')"
+	return "(" + text + " LIKE '%' || " + query + " || '%' OR " + compactText + " LIKE '%' || " + compactQuery + " || '%')"
+}
+
 // resourceSearchOrderSQL ranks literal filename matches before broader text and fuzzy matches.
 // The placeholder is supplied by the caller ($1 for public search, or the active query argument).
 func resourceSearchOrderSQL(placeholder string) string {
@@ -1442,7 +1460,7 @@ func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 		if search != "" {
 			args = append(args, search)
 			orderBy = resourceSearchOrderSQL("$1") + ", updated_at DESC"
-			query += ` AND (lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')) LIKE '%' || lower($1) || '%' OR regexp_replace(lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')), '[[:space:]]+', '', 'g') LIKE '%' || regexp_replace(lower($1), '[[:space:]]+', '', 'g') || '%' OR lower($1) <% lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')))`
+			query += ` AND (` + resourceDirectSearchMatchSQL("", "$1") + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.is_public=TRUE AND matched.deleted_at IS NULL AND ` + resourceDirectSearchMatchSQL("matched", "$1") + `) AND lower($1) <% ` + resourceSearchTextSQL("") + `))`
 		}
 		query += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		cacheKey := "public-resources:v2:" + strings.ToLower(search)
@@ -1539,8 +1557,8 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
 			orderBy = resourceSearchOrderSQL(placeholder) + ", updated_at DESC"
-			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
-			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR regexp_replace(` + expr + `, '[[:space:]]+', '', 'g') LIKE '%' || regexp_replace(lower(` + placeholder + `), '[[:space:]]+', '', 'g') || '%' OR lower(` + placeholder + `) <% ` + expr + `)`
+			expr := resourceSearchTextSQL("")
+			q += ` AND (` + resourceDirectSearchMatchSQL("", placeholder) + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.owner_id=$1 AND matched.deleted_at IS NULL AND ` + resourceDirectSearchMatchSQL("matched", placeholder) + `) AND lower(` + placeholder + `) <% ` + expr + `))`
 		}
 		q += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
@@ -1559,8 +1577,8 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
 			orderBy = resourceSearchOrderSQL(placeholder) + ", deleted_at DESC"
-			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
-			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR regexp_replace(` + expr + `, '[[:space:]]+', '', 'g') LIKE '%' || regexp_replace(lower(` + placeholder + `), '[[:space:]]+', '', 'g') || '%' OR lower(` + placeholder + `) <% ` + expr + `)`
+			expr := resourceSearchTextSQL("")
+			q += ` AND (` + resourceDirectSearchMatchSQL("", placeholder) + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.owner_id=$1 AND matched.deleted_at IS NOT NULL AND ` + resourceDirectSearchMatchSQL("matched", placeholder) + `) AND lower(` + placeholder + `) <% ` + expr + `))`
 		}
 		q += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
