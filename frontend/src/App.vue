@@ -678,6 +678,35 @@ async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 
 function switchResourceView() { resourceViewMode.value = resourceViewMode.value === 'active' ? 'trash' : 'active'; tableQuery.value = ''; void loadTeachingResources() }
 function downloadTeachingResource(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item?.url) window.open(item.url, '_blank', 'noopener,noreferrer'); else window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
 function formatFileSize(size: number) { return size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB` }
+const resourceFileExtensions = new Set(['ppt', 'pptx', 'mp3', 'pdf', 'doc', 'docx', 'txt'])
+function handleResourcePaste(event: ClipboardEvent) {
+  if (resourceBusy.value || resourceUploadDone.value) return
+  const clipboard = event.clipboardData
+  if (!clipboard) return
+  const files = Array.from(clipboard.files || [])
+  if (!files.length) {
+    for (const item of Array.from(clipboard.items || [])) {
+      if (item.kind !== 'file') continue
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
+  }
+  if (!files.length) return
+  event.preventDefault()
+  const file = files[0]
+  if (!file) return
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  if (!resourceFileExtensions.has(extension)) {
+    resourceError.value = '粘贴的文件格式不受支持。请使用 PPT、PPTX、MP3、PDF、DOC、DOCX 或 TXT。'
+    return
+  }
+  if (file.size > 25 * 1024 * 1024) {
+    resourceError.value = '单个文件大小不能超过 25 MB。'
+    return
+  }
+  resourceFile.value = file
+  resourceError.value = ''
+}
 
 async function initializeContentEditorRoute() {
   const id = contentEditorRouteId.value
@@ -1724,7 +1753,7 @@ onBeforeUnmount(() => {
         <span class="share-dialog-eyebrow">TEACHING LIBRARY</span>
         <h2 id="resource-create-title">{{ editingResourceId ? '编辑教学资源' : '创建教学资源' }}</h2>
         <p>{{ editingResourceId ? '可更新资源名称、类型、说明、分享链接；选择新文件才会替换原文件。' : '文件上传与 URL 分享二选一，也可以同时填写。' }}</p>
-        <form v-if="!resourceUploadDone" class="resource-create-form" @submit.prevent="createTeachingResource">
+        <form v-if="!resourceUploadDone" class="resource-create-form" @submit.prevent="createTeachingResource" @paste="handleResourcePaste">
           <label class="share-dialog-label" for="resource-title">资源名称</label>
           <input id="resource-title" v-model="resourceTitle" class="form-control share-dialog-url" maxlength="200" required placeholder="例如：七年级英语听力 Unit 1" />
           <label class="share-dialog-label" for="resource-type">类型</label>
@@ -1736,7 +1765,7 @@ onBeforeUnmount(() => {
           <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
           <label class="share-dialog-label" for="resource-file">上传文件（选填）</label>
           <input id="resource-file" class="form-control resource-file-input" type="file" accept=".ppt,.pptx,.mp3,.pdf,.doc,.docx,.txt" @change="resourceFile = ($event.target as HTMLInputElement).files?.[0] || null" />
-          <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。不上传文件时可直接使用 URL。</p>
+          <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。除点击选择文件外，也可先复制文件，再在此表单中按 Ctrl+V 粘贴（取决于浏览器是否提供剪贴板文件）。不上传文件时可直接使用 URL。</p>
           <p v-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}{{ editingResourceId ? ' · 上传后替换原文件' : '' }}</p>
           <label class="share-dialog-label" for="resource-url">URL 链接（选填）</label>
           <input id="resource-url" v-model="resourceUrl" type="url" class="form-control share-dialog-url" placeholder="粘贴可分享的 https:// 链接" />
