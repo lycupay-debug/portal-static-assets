@@ -142,10 +142,18 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Missing tags", "slug": "missing-tags-" + randomUUID()[:8], "contentType": "article", "summary": "integration", "body": "missing tags must return a validation error", "visibility": "private"}, sessionCookie, http.StatusBadRequest)
 
 	slug := "go-api-test-" + randomUUID()[:8]
-	created := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Go API integration", "slug": slug, "contentType": "article", "tags": []string{"教育"}, "parentCategory": "年级", "childCategory": "初一", "summary": "integration", "body": "Go is the only business API", "visibility": "private"}, sessionCookie, http.StatusCreated)
+	created := requestJSON(t, api, http.MethodPost, "/content", map[string]any{"title": "Go API integration", "slug": slug, "contentType": "article", "tags": []string{"教育"}, "parentCategory": "年级", "childCategory": "初一", "summary": "integration", "body": "Go is the only business API; unit 5 index fixture", "visibility": "private"}, sessionCookie, http.StatusCreated)
 	contentSearch := requestJSON(t, api, http.MethodGet, "/content?q=business", nil, sessionCookie, http.StatusOK)
 	if !bytes.Contains(contentSearch.Body.Bytes(), []byte(slug)) {
 		t.Fatalf("full-text content search did not find a body-only match: %s", contentSearch.Body.String())
+	}
+	contentCompactSearch := requestJSON(t, api, http.MethodGet, "/content?q=unit5", nil, sessionCookie, http.StatusOK)
+	if !bytes.Contains(contentCompactSearch.Body.Bytes(), []byte(slug)) {
+		t.Fatalf("content search without a space did not find the spaced body phrase: %s", contentCompactSearch.Body.String())
+	}
+	contentSpacedSearch := requestJSON(t, api, http.MethodGet, "/content?q=unit%205", nil, sessionCookie, http.StatusOK)
+	if !bytes.Contains(contentSpacedSearch.Body.Bytes(), []byte(slug)) {
+		t.Fatalf("content search with a space did not find the spaced body phrase: %s", contentSpacedSearch.Body.String())
 	}
 	var contentEnvelope struct {
 		Item map[string]any `json:"item"`
@@ -182,7 +190,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	requestJSON(t, api, http.MethodPatch, "/content/"+contentID, map[string]any{"body": "A changed revision after publication."}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
 
-	resource := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{"title": "URL-only resource", "description": "integration", "type": "电子书", "url": "https://example.com/material"}, sessionCookie, http.StatusCreated)
+	resource := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{"title": "Unit 5 URL-only resource", "description": "integration", "type": "电子书", "url": "https://example.com/material"}, sessionCookie, http.StatusCreated)
 	var resourceEnvelope struct {
 		Item map[string]any `json:"item"`
 	}
@@ -195,7 +203,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if bytes.Contains(privateList.Body.Bytes(), []byte(resourceID)) {
 		t.Fatalf("private resource leaked into public listing: %s", privateList.Body.String())
 	}
-	published := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusOK)
+	published := requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "Unit 5 URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": true}, sessionCookie, http.StatusOK)
 	if !bytes.Contains(published.Body.Bytes(), []byte("\"isPublic\":true")) {
 		t.Fatalf("resource publication was not accepted: %s", published.Body.String())
 	}
@@ -215,10 +223,15 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if !bytes.Contains(privateResourceSearch.Body.Bytes(), []byte(resourceID)) {
 		t.Fatalf("authenticated resource search did not find a URL-field match: %s", privateResourceSearch.Body.String())
 	}
+	spacedResourceSearch := requestJSON(t, api, http.MethodGet, "/resources?q=unit%205", nil, sessionCookie, http.StatusOK)
+	compactResourceSearch := requestJSON(t, api, http.MethodGet, "/resources?q=unit5", nil, sessionCookie, http.StatusOK)
+	if !bytes.Contains(spacedResourceSearch.Body.Bytes(), []byte(resourceID)) || !bytes.Contains(compactResourceSearch.Body.Bytes(), []byte(resourceID)) {
+		t.Fatalf("resource search did not normalize whitespace consistently: spaced=%s compact=%s", spacedResourceSearch.Body.String(), compactResourceSearch.Body.String())
+	}
 
 	mp3Bytes := []byte("ID3sample-data-for-byte-range-preview")
 	mp3 := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{
-		"title": "MP3 range preview", "description": "integration", "type": "音频", "filename": "range-test.mp3",
+		"title": "MP3 range preview", "description": "integration", "type": "音频", "filename": "Unit 5 Range-Test.mp3",
 		"data": base64.StdEncoding.EncodeToString(mp3Bytes), "isPublic": false,
 	}, sessionCookie, http.StatusCreated)
 	var mp3Envelope map[string]map[string]any
@@ -228,6 +241,11 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	mp3ID, _ := mp3Envelope["item"]["id"].(string)
 	if mp3ID == "" {
 		t.Fatalf("MP3 resource ID missing: %s", mp3.Body.String())
+	}
+	filenameSpacedSearch := requestJSON(t, api, http.MethodGet, "/resources?q=unit%205", nil, sessionCookie, http.StatusOK)
+	filenameCompactSearch := requestJSON(t, api, http.MethodGet, "/resources?q=unit5", nil, sessionCookie, http.StatusOK)
+	if !bytes.Contains(filenameSpacedSearch.Body.Bytes(), []byte(mp3ID)) || !bytes.Contains(filenameCompactSearch.Body.Bytes(), []byte(mp3ID)) {
+		t.Fatalf("filename search did not match both spaced and compact queries: spaced=%s compact=%s", filenameSpacedSearch.Body.String(), filenameCompactSearch.Body.String())
 	}
 	requestJSON(t, api, http.MethodGet, "/public/resources/"+mp3ID+"/preview", nil, nil, http.StatusNotFound)
 	for _, target := range []struct {
@@ -281,7 +299,7 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 		t.Fatalf("permanently deleted resource file remained on disk: err=%v", err)
 	}
 
-	requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": false}, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "Unit 5 URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": false}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/resources/"+resourceID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)

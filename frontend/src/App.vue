@@ -538,12 +538,15 @@ const searchableTableRecords = computed<TableRecord[]>(() => tableRecords.value.
     .filter(([key, value]) => key !== 'actions' && (typeof value === 'string' || typeof value === 'number'))
     .map(([, value]) => String(value))
     .join(' ')
-    .toLocaleLowerCase(),
+    .toLowerCase(),
 })))
 const filteredTableRecords = computed(() => {
-  const keyword = debouncedTableQuery.value.trim().toLocaleLowerCase()
+  const keyword = debouncedTableQuery.value.toLowerCase().trim()
   if (!keyword) return searchableTableRecords.value
-  return searchableTableRecords.value.filter((record) => String(record['_searchText'] || '').includes(keyword))
+  return searchableTableRecords.value.filter((record) => {
+    const text = record['_searchText'] as string
+    return text.includes(keyword) || text.replace(/\s/g, '').includes(keyword.replace(/\s/g, ''))
+  })
 })
 const virtualTableStart = computed(() => {
   const count = filteredTableRecords.value.length
