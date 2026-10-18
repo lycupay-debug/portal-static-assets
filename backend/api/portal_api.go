@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -857,8 +858,8 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 			return
 		}
 		defer tx.Rollback()
-		var deletedTitle, deletedSlug string
-		if err = tx.QueryRowContext(ctx, `SELECT title,slug FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL FOR UPDATE`, id, u.ID).Scan(&deletedTitle, &deletedSlug); err != nil {
+		var deletedBody string
+		if err = tx.QueryRowContext(ctx, `SELECT body FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL FOR UPDATE`, id, u.ID).Scan(&deletedBody); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				writeError(w, 404, "回收站中不存在该内容。", nil)
 			} else {
@@ -866,14 +867,54 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 			}
 			return
 		}
-		// Keep rights evidence and review history as audit records; remove the content row.
+		// Collect only app-managed image URLs in this content. Legacy files that
+		// are not referenced here are deliberately left untouched.
+		imageMatches := uploadedImageURLPattern.FindAllStringSubmatch(deletedBody, -1)
+		imageNames := make([]string, 0, len(imageMatches))
+		seenImages := make(map[string]struct{}, len(imageMatches))
+		for _, match := range imageMatches {
+			if len(match) != 2 || !uploadedImageName.MatchString(match[1]) {
+				continue
+			}
+			if _, exists := seenImages[match[1]]; exists {
+				continue
+			}
+			seenImages[match[1]] = struct{}{}
+			imageNames = append(imageNames, match[1])
+		}
+		// Remove the content and image registrations atomically. An image is
+		// eligible for cleanup only when no remaining content (including trash)
+		// references it, so shared images are never removed prematurely.
 		if _, err = tx.ExecContext(ctx, `DELETE FROM portal.portal_content WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NOT NULL`, id, u.ID); err != nil {
 			a.dbError(w, err, "永久删除失败。")
 			return
 		}
+		filesToRemove := make([]string, 0, len(imageNames))
+		for _, name := range imageNames {
+			var referenced bool
+			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE position($1 in body)>0)`, "/uploads/"+name).Scan(&referenced); err != nil {
+				a.dbError(w, err, "核验图片引用关系失败，永久删除事务已取消。")
+				return
+			}
+			if referenced {
+				continue
+			}
+			if _, err = tx.ExecContext(ctx, `DELETE FROM portal.uploaded_images WHERE filename=$1`, name); err != nil {
+				a.dbError(w, err, "清理图片登记失败，永久删除事务已取消。")
+				return
+			}
+			filesToRemove = append(filesToRemove, name)
+		}
 		if err = tx.Commit(); err != nil {
 			a.dbError(w, err, "永久删除事务提交失败。")
 			return
+		}
+		// Filesystem work follows the committed database transaction. Missing
+		// files are already clean; other failures are logged for operator repair.
+		for _, name := range filesToRemove {
+			if removeErr := os.Remove(filepath.Join(a.uploadDir, name)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				log.Printf("content_permanent_delete_image_cleanup_failed content_id=%s filename=%s error=%v", id, name, removeErr)
+			}
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return

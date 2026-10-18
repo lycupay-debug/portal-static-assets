@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -279,6 +280,57 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	api.ServeHTTP(ownerResponse, ownerRequest)
 	if ownerResponse.Code != http.StatusOK || !bytes.Equal(ownerResponse.Body.Bytes(), imageBytes) {
 		t.Fatalf("owner preview should work for pending image: status=%d body=%v", ownerResponse.Code, ownerResponse.Body.Bytes())
+	}
+
+	// A shared uploaded image must survive deletion of the first referencing
+	// content, then be removed from both the database and disk after the final
+	// reference is permanently deleted.
+	createImageContent := func(title string) string {
+		t.Helper()
+		created := requestJSON(t, api, http.MethodPost, "/content", map[string]any{
+			"title": title, "slug": "permanent-delete-" + randomUUID()[:8],
+			"contentType": "article", "tags": []string{"编程"},
+			"summary": "image cleanup test", "body": "![test image](" + uploaded.URL + ")",
+			"visibility": "private",
+		}, sessionCookie, http.StatusCreated)
+		var envelope struct {
+			Item map[string]any `json:"item"`
+		}
+		if err := json.Unmarshal(created.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		id, _ := envelope.Item["id"].(string)
+		if id == "" {
+			t.Fatalf("image cleanup test content ID missing: %s", created.Body.String())
+		}
+		return id
+	}
+	firstImageContent := createImageContent("Shared image cleanup first")
+	secondImageContent := createImageContent("Shared image cleanup second")
+	imageFilename := strings.TrimPrefix(uploaded.URL, "/uploads/")
+	imagePath := filepath.Join(api.uploadDir, imageFilename)
+	requestJSON(t, api, http.MethodDelete, "/content/"+firstImageContent, nil, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodDelete, "/content/"+firstImageContent+"/permanent", nil, sessionCookie, http.StatusOK)
+	var imageRegistered bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.uploaded_images WHERE filename=$1)`, imageFilename).Scan(&imageRegistered); err != nil {
+		t.Fatal(err)
+	}
+	if !imageRegistered {
+		t.Fatal("shared image registration was removed while another content still referenced it")
+	}
+	if _, err := os.Stat(imagePath); err != nil {
+		t.Fatalf("shared image file was removed too early: %v", err)
+	}
+	requestJSON(t, api, http.MethodDelete, "/content/"+secondImageContent, nil, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodDelete, "/content/"+secondImageContent+"/permanent", nil, sessionCookie, http.StatusOK)
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.uploaded_images WHERE filename=$1)`, imageFilename).Scan(&imageRegistered); err != nil {
+		t.Fatal(err)
+	}
+	if imageRegistered {
+		t.Fatal("orphaned image registration remained after final content deletion")
+	}
+	if _, err := os.Stat(imagePath); !os.IsNotExist(err) {
+		t.Fatalf("orphaned image file remained after final content deletion: err=%v", err)
 	}
 
 }
