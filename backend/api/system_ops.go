@@ -231,21 +231,6 @@ func actionableSystemWarning(entry systemLogEntry, now time.Time) bool {
 	lower := strings.ToLower(entry.Message)
 	// These are retired schema references, test fixtures, diagnostic probes, or
 	// optional host services unrelated to portal availability. Keep them in logs.
-	// Keep exact signatures from manual PostgreSQL catalog/index diagnostics in the full log,
-	// but do not promote them to incidents. Avoid broad suppression of database errors.
-	for _, marker := range []string{
-		`database "app_core" does not exist`,
-		`role "root" does not exist`,
-		`column "idx_tup_read" does not exist`,
-		"functions in index expression must be marked immutable",
-		`column "grade" does not exist`,
-		`column "indexname" does not exist`,
-		`operator is not unique: text || "char"`,
-	} {
-		if strings.Contains(lower, marker) {
-			return false
-		}
-	}
 	if strings.Contains(lower, "uploaded_image_assets") && strings.Contains(lower, "does not exist") {
 		return false
 	}
