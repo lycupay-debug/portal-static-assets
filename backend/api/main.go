@@ -642,12 +642,19 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ready"})
 	})
 
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// SSE streams need to stay open; retain a write deadline for ordinary API responses.
+		if r.URL.Path != "/system-ops/stream" {
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Second))
+		}
+		mux.ServeHTTP(w, r)
+	})
 	server := &http.Server{
 		Addr:              httpAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		WriteTimeout:      0,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 	}

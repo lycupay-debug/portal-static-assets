@@ -148,6 +148,29 @@ export type ResourceWrite = {
     data?: string;
 };
 
+export type SystemLogEntry = {
+    id: number;
+    time?: string;
+    source: 'server' | 'ssh';
+    level: 'info' | 'warning' | 'error';
+    action?: string;
+    message: string;
+    details?: {
+        [key: string]: unknown;
+    };
+};
+
+export type SystemLogPage = {
+    items: Array<SystemLogEntry>;
+    cursor: number;
+};
+
+export type SystemWarnings = {
+    items: Array<SystemLogEntry>;
+    failedFileCleanupEvents: number;
+    checkedAt: string;
+};
+
 export type EventInput = {
     event_id: string;
     event_type: string;
@@ -471,6 +494,108 @@ export type UploadImageResponses = {
 };
 
 export type UploadImageResponse = UploadImageResponses[keyof UploadImageResponses];
+
+export type ListSystemLogsData = {
+    body?: never;
+    path?: never;
+    query: {
+        source: 'server' | 'ssh';
+        after?: number;
+        limit?: number;
+    };
+    url: '/system-ops/logs';
+};
+
+export type ListSystemLogsErrors = {
+    /**
+     * Structured API error
+     */
+    400: Error;
+    /**
+     * Structured API error
+     */
+    401: Error;
+    /**
+     * Structured API error
+     */
+    403: Error;
+};
+
+export type ListSystemLogsError = ListSystemLogsErrors[keyof ListSystemLogsErrors];
+
+export type ListSystemLogsResponses = {
+    /**
+     * Bounded log records and continuation cursor
+     */
+    200: SystemLogPage;
+};
+
+export type ListSystemLogsResponse = ListSystemLogsResponses[keyof ListSystemLogsResponses];
+
+export type ListSystemWarningsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system-ops/warnings';
+};
+
+export type ListSystemWarningsErrors = {
+    /**
+     * Structured API error
+     */
+    401: Error;
+    /**
+     * Structured API error
+     */
+    403: Error;
+};
+
+export type ListSystemWarningsError = ListSystemWarningsErrors[keyof ListSystemWarningsErrors];
+
+export type ListSystemWarningsResponses = {
+    /**
+     * Recent recognizable warning records
+     */
+    200: SystemWarnings;
+};
+
+export type ListSystemWarningsResponse = ListSystemWarningsResponses[keyof ListSystemWarningsResponses];
+
+export type StreamSystemLogsData = {
+    body?: never;
+    path?: never;
+    query: {
+        source: 'server' | 'ssh';
+        after?: number;
+    };
+    url: '/system-ops/stream';
+};
+
+export type StreamSystemLogsErrors = {
+    /**
+     * Structured API error
+     */
+    400: Error;
+    /**
+     * Structured API error
+     */
+    401: Error;
+    /**
+     * Structured API error
+     */
+    403: Error;
+};
+
+export type StreamSystemLogsError = StreamSystemLogsErrors[keyof StreamSystemLogsErrors];
+
+export type StreamSystemLogsResponses = {
+    /**
+     * A stream of log events
+     */
+    200: string;
+};
+
+export type StreamSystemLogsResponse = StreamSystemLogsResponses[keyof StreamSystemLogsResponses];
 
 export type ListContentData = {
     body?: never;

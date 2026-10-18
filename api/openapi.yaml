@@ -24,6 +24,8 @@ tags:
     description: Authenticated teaching resource metadata, files, and recycle bin.
   - name: Platform
     description: Health, layout policy, and internal event intake.
+  - name: System operations
+    description: Administrator-only system warnings, log history, and resumable live log streams.
 paths:
   /healthz:
     get:
@@ -178,6 +180,55 @@ paths:
                   size: { type: integer }
         '400': { $ref: '#/components/responses/ErrorResponse' }
         '401': { $ref: '#/components/responses/ErrorResponse' }
+  /system-ops/logs:
+    get:
+      tags: [System operations]
+      summary: Read a bounded log tail or records after a byte cursor
+      operationId: listSystemLogs
+      parameters:
+        - { in: query, name: source, required: true, schema: { type: string, enum: [server, ssh] } }
+        - { in: query, name: after, schema: { type: integer, minimum: 0 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+      responses:
+        '200':
+          description: Bounded log records and continuation cursor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemLogPage' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /system-ops/warnings:
+    get:
+      tags: [System operations]
+      summary: List recent system warnings and failed cleanup events
+      operationId: listSystemWarnings
+      responses:
+        '200':
+          description: Recent recognizable warning records
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemWarnings' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /system-ops/stream:
+    get:
+      tags: [System operations]
+      summary: Subscribe to appended log records with Server-Sent Events
+      operationId: streamSystemLogs
+      description: Administrator-only SSE stream. Reconnect with Last-Event-ID to resume from the byte cursor.
+      parameters:
+        - { in: query, name: source, required: true, schema: { type: string, enum: [server, ssh] } }
+        - { in: query, name: after, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200':
+          description: A stream of log events
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
   /content:
     get:
       tags: [Content]
@@ -802,6 +853,30 @@ components:
         url: { type: [string, 'null'], maxLength: 2048, format: uri }
         filename: { type: string, maxLength: 255 }
         data: { type: string, contentEncoding: base64 }
+    SystemLogEntry:
+      type: object
+      required: [id, source, level, message]
+      properties:
+        id: { type: integer, format: int64 }
+        time: { type: string }
+        source: { type: string, enum: [server, ssh] }
+        level: { type: string, enum: [info, warning, error] }
+        action: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    SystemLogPage:
+      type: object
+      required: [items, cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SystemLogEntry' } }
+        cursor: { type: integer, format: int64 }
+    SystemWarnings:
+      type: object
+      required: [items, failedFileCleanupEvents, checkedAt]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SystemLogEntry' } }
+        failedFileCleanupEvents: { type: integer, minimum: 0 }
+        checkedAt: { type: string, format: date-time }
     EventInput:
       type: object
       required: [event_id, event_type, payload]

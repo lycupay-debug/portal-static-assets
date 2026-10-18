@@ -66,3 +66,10 @@ For PostgreSQL integration tests, set PERSONAL_PORTAL_TEST_DATABASE_URL_FILE to 
 ## Deployment
 
 Use deploy/freebsd/deploy.sh. It requires a clean Git checkout, runs tests/builds, creates a full database backup, applies pending migrations, installs Go/C binaries, switches the frontend and Caddy routes, runs health checks, then stops and disables the Node.js compatibility service. The emergency rollback copy is stored outside the repository at `/opt/personal-portal-legacy-node`. deploy/freebsd/rollback.sh restores the previous binaries, Caddyfile and frontend release using the deployment timestamp.
+
+
+System operations:
+- `GET /system-ops/warnings`, `/system-ops/logs`, and `/system-ops/stream` are restricted to `is_admin` accounts on the server; hiding the navigation entry is not treated as authorization.
+- Log history is read from a bounded tail, then incrementally from byte cursors. The SSE stream checks for appended lines every two seconds only while a browser is subscribed, sends keepalives, and supports `Last-Event-ID` resume. The UI closes the stream when the page is unmounted or paused.
+- Server messages come from `/var/log/messages`. GPT/SSH operations use a separate sanitized projection at `/var/log/host-mcp-admin-audit.log`; raw shell commands and output remain in the root-only `/var/log/host-mcp-audit.log` and are not exposed through the portal API.
+- Only the sanitized SSH audit projection is readable by the `personalportal` service account. Log lines are bounded in the browser to 500 entries; the API initial tail is capped at 256 KiB and 200 entries per response.

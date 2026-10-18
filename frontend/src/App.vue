@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, o
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
+const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
 import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
@@ -82,7 +83,7 @@ const authBusy = ref(false)
 const authError = ref('')
 const authNotice = ref('')
 const authForm = ref({ displayName: '', email: '', password: '' })
-const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows', 'compliance'])
+const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows', 'compliance', 'system-ops'])
 const activeAccountSection = ref('overview')
 const sectionRoutes: Record<string, string> = {
   overview: '/account', profile: '/profile', security: '/security',
@@ -91,6 +92,7 @@ const sectionRoutes: Record<string, string> = {
   'course-calendar': '/education/course-calendar', 'teaching-resources': '/education/teaching-resources',
   'network-tools': '/tools/network', 'document-converters': '/tools/document-converters',
   'add-tool': '/tools/add', 'workflow-overview': '/workflows', 'copyright-compliance': '/account/compliance',
+  'system-warnings': '/account/system-ops/warnings', 'system-logs': '/account/system-ops/logs',
 }
 const routeSections = Object.fromEntries(Object.entries(sectionRoutes).map(([id, path]) => [path, id])) as Record<string, string>
 const routeAliases: Record<string, string> = {
@@ -150,10 +152,16 @@ const accountGroups = [
       { id: 'copyright-compliance', label: '门户开发资源合规中心', description: '管理门户自身的软件依赖许可证、静态资源和内部审核记录。' },
     ],
   },
+  {
+    id: 'system-ops', label: '系统运维', items: [
+      { id: 'system-warnings', label: '系统警告', description: '查看服务器异常、失败任务和需要人工处理的运维警告。' },
+      { id: 'system-logs', label: '系统日志', description: '实时查看服务器运行日志和 GPT 连接 SSH 的操作审计日志。' },
+    ],
+  },
 ]
 const accountItems = accountGroups.flatMap((group) => group.items)
 const filteredAccountGroups = computed(() => {
-  const visibleGroups = accountGroups.filter(group => group.id !== 'compliance' || user.value?.isAdmin === true)
+  const visibleGroups = accountGroups.filter(group => !['compliance', 'system-ops'].includes(group.id) || user.value?.isAdmin === true)
   const keyword = accountNavQuery.value.trim().toLocaleLowerCase()
   if (!keyword) return visibleGroups
   return visibleGroups
@@ -169,7 +177,7 @@ function toggleAccountGroup(groupId: string) {
 function accountGroupIcon(groupId: string): string {
   const icons: Record<string, string> = {
     personal: 'bi-person', publishing: 'bi-journal-text', housing: 'bi-house-door',
-    education: 'bi-mortarboard', software: 'bi-tools', workflows: 'bi-diagram-3', compliance: 'bi-shield-check',
+    education: 'bi-mortarboard', software: 'bi-tools', workflows: 'bi-diagram-3', compliance: 'bi-shield-check', 'system-ops': 'bi-activity',
   }
   return icons[groupId] || 'bi-grid'
 }
@@ -1625,6 +1633,12 @@ onBeforeUnmount(() => {
 
         <template v-else-if="activeAccountSection === 'copyright-compliance'">
           <ComplianceCenter :is-admin="user?.isAdmin === true" />
+        </template>
+        <template v-else-if="activeAccountSection === 'system-warnings'">
+          <SystemOpsCenter view="warnings" />
+        </template>
+        <template v-else-if="activeAccountSection === 'system-logs'">
+          <SystemOpsCenter view="logs" />
         </template>
 
         <template v-else>

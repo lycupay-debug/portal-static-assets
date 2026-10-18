@@ -164,6 +164,10 @@ func (a *portalAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.compliance(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/system-ops/") {
+		a.systemOps(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/public/content") {
 		a.publicContent(w, r)
 		return
