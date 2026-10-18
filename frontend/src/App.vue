@@ -294,12 +294,37 @@ const educationResourceGrade = ref('全部年级')
 const educationResourceSearch = ref('')
 const educationResourceTypes = ['全部资源', ...resourceTypeOptions]
 const educationResourceGrades = ['全部年级', ...taxonomyChildOptions('年级').map(option => option.value)]
-const filteredEducationResources = computed(() => publicTeachingResources.value.filter(item => {
-  if (educationResourceCategory.value !== '全部资源' && item.type !== educationResourceCategory.value) return false
-  if (educationResourceGrade.value !== '全部年级' && item.grade !== educationResourceGrade.value) return false
+function educationResourceSearchRank(item: PublicTeachingResource, query: string): number {
+  const rawTerm = query.normalize('NFKC').toLocaleLowerCase().trim()
+  const compact = (value: string) => value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, '')
+  const compactTerm = compact(rawTerm)
+  const filename = (item.filename || '').normalize('NFKC').toLocaleLowerCase().trim()
+  const compactFilename = compact(filename)
+  const title = (item.title || '').normalize('NFKC').toLocaleLowerCase().trim()
+  const compactTitle = compact(title)
+  if (filename === rawTerm) return 0
+  if (compactFilename === compactTerm) return 1
+  if (title === rawTerm) return 2
+  if (filename.includes(rawTerm)) return 3
+  if (compactFilename.includes(compactTerm)) return 4
+  if (title.includes(rawTerm)) return 5
+  if (compactTitle.includes(compactTerm)) return 6
+  return 7
+}
+const filteredEducationResources = computed(() => {
   const term = educationResourceSearch.value.trim()
-  return !term || knowledgeFuzzyMatch(`${item.title} ${item.description || ''} ${item.type} ${item.grade || ''} ${item.filename || ''}`, term)
-}).sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()))
+  return publicTeachingResources.value.filter(item => {
+    if (educationResourceCategory.value !== '全部资源' && item.type !== educationResourceCategory.value) return false
+    if (educationResourceGrade.value !== '全部年级' && item.grade !== educationResourceGrade.value) return false
+    return !term || knowledgeFuzzyMatch(`${item.title} ${item.description || ''} ${item.type} ${item.grade || ''} ${item.filename || ''}`, term)
+  }).sort((a, b) => {
+    if (term) {
+      const relevance = educationResourceSearchRank(a, term) - educationResourceSearchRank(b, term)
+      if (relevance !== 0) return relevance
+    }
+    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+  })
+})
 const visibleEducationResources = computed(() => filteredEducationResources.value.slice(0, knowledgeVisibleCount.value))
 const knowledgeVisibleCount = ref(10)
 const knowledgePageSize = 10

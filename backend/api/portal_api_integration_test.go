@@ -242,6 +242,23 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if mp3ID == "" {
 		t.Fatalf("MP3 resource ID missing: %s", mp3.Body.String())
 	}
+	// A newer broad/fuzzy match must not outrank the exact original filename.
+	requestJSON(t, api, http.MethodPost, "/resources", map[string]any{
+		"title": "Unit 5 Range-Test.mp3 reference decoy", "description": "integration fuzzy-ranking decoy",
+		"type": "音频", "url": "https://example.com/range-test-reference",
+	}, sessionCookie, http.StatusCreated)
+	for _, query := range []string{"Unit%205%20Range-Test.mp3", "Unit5Range-Test.mp3"} {
+		ranked := requestJSON(t, api, http.MethodGet, "/resources?q="+query, nil, sessionCookie, http.StatusOK)
+		var envelope struct {
+			Items []map[string]any `json:"items"`
+		}
+		if err := json.Unmarshal(ranked.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if len(envelope.Items) == 0 || envelope.Items[0]["id"] != mp3ID {
+			t.Fatalf("exact filename should rank first for query %q: %s", query, ranked.Body.String())
+		}
+	}
 	filenameSpacedSearch := requestJSON(t, api, http.MethodGet, "/resources?q=unit%205", nil, sessionCookie, http.StatusOK)
 	filenameCompactSearch := requestJSON(t, api, http.MethodGet, "/resources?q=unit5", nil, sessionCookie, http.StatusOK)
 	if !bytes.Contains(filenameSpacedSearch.Body.Bytes(), []byte(mp3ID)) || !bytes.Contains(filenameCompactSearch.Body.Bytes(), []byte(mp3ID)) {

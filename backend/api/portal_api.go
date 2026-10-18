@@ -1414,18 +1414,38 @@ func (a *portalAPI) publicInteraction(w http.ResponseWriter, r *http.Request, sl
 	writeJSON(w, 200, map[string]any{"active": active, "likeCount": likes, "favoriteCount": favs})
 }
 
+// resourceSearchOrderSQL ranks literal filename matches before broader text and fuzzy matches.
+// The placeholder is supplied by the caller ($1 for public search, or the active query argument).
+func resourceSearchOrderSQL(placeholder string) string {
+	query := "lower(" + placeholder + ")"
+	compactQuery := "regexp_replace(" + query + ", '[[:space:]]+', '', 'g')"
+	filename := "lower(coalesce(original_filename, ''))"
+	compactFilename := "regexp_replace(" + filename + ", '[[:space:]]+', '', 'g')"
+	title := "lower(coalesce(title, ''))"
+	return "CASE " +
+		"WHEN " + filename + " = " + query + " THEN 0 " +
+		"WHEN " + compactFilename + " = " + compactQuery + " THEN 1 " +
+		"WHEN " + title + " = " + query + " THEN 2 " +
+		"WHEN " + filename + " LIKE '%' || " + query + " || '%' THEN 3 " +
+		"WHEN " + compactFilename + " LIKE '%' || " + compactQuery + " || '%' THEN 4 " +
+		"WHEN " + title + " LIKE '%' || " + query + " || '%' THEN 5 " +
+		"ELSE 6 END"
+}
+
 func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/public/resources"), "/")
 	if path == "" && r.Method == http.MethodGet {
 		search := normalizeSearchQuery(r.URL.Query().Get("q"))
 		query := `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",CASE WHEN stored_filename IS NOT NULL THEN '/api/public/resources/' || resource_id::text || '/download' ELSE NULL END AS "downloadUrl",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE is_public=TRUE AND deleted_at IS NULL`
 		args := []any{}
+		orderBy := "updated_at DESC"
 		if search != "" {
 			args = append(args, search)
+			orderBy = resourceSearchOrderSQL("$1") + ", updated_at DESC"
 			query += ` AND (lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')) LIKE '%' || lower($1) || '%' OR regexp_replace(lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')), '[[:space:]]+', '', 'g') LIKE '%' || regexp_replace(lower($1), '[[:space:]]+', '', 'g') || '%' OR lower($1) <% lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, '')))`
 		}
-		query += ` ORDER BY updated_at DESC LIMIT 500) x`
-		cacheKey := "public-resources:v1:" + strings.ToLower(search)
+		query += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
+		cacheKey := "public-resources:v2:" + strings.ToLower(search)
 		items, err := a.searchCache.get(r.Context(), cacheKey, func() ([]byte, error) {
 			rows, err := queryJSONRows(r.Context(), a.db, query, args...)
 			if err != nil {
@@ -1514,13 +1534,15 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	if path == "resources" && r.Method == http.MethodGet {
 		q := `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NULL`
 		args := []any{u.ID}
+		orderBy := "updated_at DESC"
 		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
+			orderBy = resourceSearchOrderSQL(placeholder) + ", updated_at DESC"
 			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
 			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR regexp_replace(` + expr + `, '[[:space:]]+', '', 'g') LIKE '%' || regexp_replace(lower(` + placeholder + `), '[[:space:]]+', '', 'g') || '%' OR lower(` + placeholder + `) <% ` + expr + `)`
 		}
-		q += ` ORDER BY updated_at DESC LIMIT 500) x`
+		q += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
 		if err != nil {
 			a.dbError(w, err, "读取资源失败。")
@@ -1532,13 +1554,15 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 	if path == "resources/trash" && r.Method == http.MethodGet {
 		q := `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",deleted_at AS "deletedAt" FROM portal.teaching_resources WHERE owner_id=$1 AND deleted_at IS NOT NULL`
 		args := []any{u.ID}
+		orderBy := "deleted_at DESC"
 		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
+			orderBy = resourceSearchOrderSQL(placeholder) + ", deleted_at DESC"
 			expr := `lower(coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(original_filename, '') || ' ' || coalesce(resource_type, '') || ' ' || coalesce(grade, '') || ' ' || coalesce(resource_url, ''))`
 			q += ` AND (` + expr + ` LIKE '%' || lower(` + placeholder + `) || '%' OR regexp_replace(` + expr + `, '[[:space:]]+', '', 'g') LIKE '%' || regexp_replace(lower(` + placeholder + `), '[[:space:]]+', '', 'g') || '%' OR lower(` + placeholder + `) <% ` + expr + `)`
 		}
-		q += ` ORDER BY deleted_at DESC LIMIT 500) x`
+		q += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
 		if err != nil {
 			a.dbError(w, err, "读取回收站失败。")
