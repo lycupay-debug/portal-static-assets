@@ -216,6 +216,29 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 			t.Fatalf("MP3 preview headers incorrect: %#v", rec.Header())
 		}
 	}
+	requestJSON(t, api, http.MethodDelete, "/resources/"+mp3ID, nil, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodPost, "/resources/"+mp3ID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)
+	requestJSON(t, api, http.MethodDelete, "/resources/"+mp3ID, nil, sessionCookie, http.StatusOK)
+	var storedMP3 string
+	if err := db.QueryRowContext(ctx, `SELECT stored_filename FROM portal.teaching_resources WHERE resource_id=$1::uuid`, mp3ID).Scan(&storedMP3); err != nil {
+		t.Fatal(err)
+	}
+	storedMP3Path := filepath.Join(api.resourceDir, filepath.Base(storedMP3))
+	if _, err := os.Stat(storedMP3Path); err != nil {
+		t.Fatalf("resource file missing before permanent deletion: %v", err)
+	}
+	requestJSON(t, api, http.MethodDelete, "/resources/"+mp3ID+"/permanent", nil, sessionCookie, http.StatusOK)
+	var storedMP3RecordExists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.teaching_resources WHERE resource_id=$1::uuid)`, mp3ID).Scan(&storedMP3RecordExists); err != nil {
+		t.Fatal(err)
+	}
+	if storedMP3RecordExists {
+		t.Fatal("permanently deleted file resource still has a database record")
+	}
+	if _, err := os.Stat(storedMP3Path); !os.IsNotExist(err) {
+		t.Fatalf("permanently deleted resource file remained on disk: err=%v", err)
+	}
+
 	requestJSON(t, api, http.MethodPatch, "/resources/"+resourceID, map[string]any{"title": "URL-only resource edited", "description": "integration updated", "type": "电子书", "url": "https://example.com/edited", "isPublic": false}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodDelete, "/resources/"+resourceID, nil, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/resources/"+resourceID+"/restore", map[string]any{}, sessionCookie, http.StatusOK)

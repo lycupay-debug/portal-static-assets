@@ -20,7 +20,7 @@
 ## 验证
 
 - `go test ./...`：通过。
-- `TestPortalAPIEndToEnd` 在独立 `personal_portal_event_test` 数据库上通过，覆盖同一图片被两篇文章引用时，删除第一篇不删除图片，删除最后一篇后清除图片登记与文件。
+- `TestPortalAPIEndToEnd` 在独立 `personal_portal_event_test` 数据库上通过，覆盖同一图片被两篇文章引用时，删除第一篇不删除图片，删除最后一篇后清除图片登记与文件；也覆盖教育资源移入回收站可恢复、永久删除后数据库记录与实际文件均清除。
 - 前端 `npm test`：25 项通过；`npm run build` 与类型检查通过。
 - 生产旧图片目录的 5 张未登记 PNG 文件不属于本次测试数据，未修改或删除。
 
