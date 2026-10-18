@@ -1432,6 +1432,37 @@ func resourceDirectSearchMatchSQL(alias, placeholder string) string {
 	return "(" + text + " LIKE '%' || " + query + " || '%' OR " + compactText + " LIKE '%' || " + compactQuery + " || '%')"
 }
 
+// resourceFuzzySearchMatchSQL applies typo tolerance to individual fields, not a concatenated
+// corpus. This prevents repeated generic words in titles/metadata from making unrelated rows match.
+func resourceFuzzySearchMatchSQL(alias, placeholder string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	query := "lower(" + placeholder + ")"
+	fields := []string{"title", "description", "original_filename", "resource_type", "grade", "resource_url"}
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		parts = append(parts, query+" <% lower(coalesce("+prefix+field+", ''))")
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+// resourceSearchSimilarityOrderSQL ranks fuzzy fallbacks by their best individual-field match.
+func resourceSearchSimilarityOrderSQL(alias, placeholder string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	query := "lower(" + placeholder + ")"
+	fields := []string{"title", "description", "original_filename", "resource_type", "grade", "resource_url"}
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		parts = append(parts, "word_similarity("+query+", lower(coalesce("+prefix+field+", '')))")
+	}
+	return "GREATEST(" + strings.Join(parts, ", ") + ") DESC"
+}
+
 // resourceSearchOrderSQL ranks literal filename matches before broader text and fuzzy matches.
 // The placeholder is supplied by the caller ($1 for public search, or the active query argument).
 func resourceSearchOrderSQL(placeholder string) string {
@@ -1459,8 +1490,8 @@ func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 		orderBy := "updated_at DESC"
 		if search != "" {
 			args = append(args, search)
-			orderBy = resourceSearchOrderSQL("$1") + ", updated_at DESC"
-			query += ` AND (` + resourceDirectSearchMatchSQL("", "$1") + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.is_public=TRUE AND matched.deleted_at IS NULL AND ` + resourceDirectSearchMatchSQL("matched", "$1") + `) AND lower($1) <% ` + resourceSearchTextSQL("") + `))`
+			orderBy = resourceSearchOrderSQL("$1") + ", " + resourceSearchSimilarityOrderSQL("", "$1") + ", updated_at DESC"
+			query += ` AND (` + resourceDirectSearchMatchSQL("", "$1") + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.is_public=TRUE AND matched.deleted_at IS NULL AND ` + resourceDirectSearchMatchSQL("matched", "$1") + `) AND ` + resourceFuzzySearchMatchSQL("", "$1") + `))`
 		}
 		query += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		cacheKey := "public-resources:v2:" + strings.ToLower(search)
@@ -1556,9 +1587,8 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
-			orderBy = resourceSearchOrderSQL(placeholder) + ", updated_at DESC"
-			expr := resourceSearchTextSQL("")
-			q += ` AND (` + resourceDirectSearchMatchSQL("", placeholder) + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.owner_id=$1 AND matched.deleted_at IS NULL AND ` + resourceDirectSearchMatchSQL("matched", placeholder) + `) AND lower(` + placeholder + `) <% ` + expr + `))`
+			orderBy = resourceSearchOrderSQL(placeholder) + ", " + resourceSearchSimilarityOrderSQL("", placeholder) + ", updated_at DESC"
+			q += ` AND (` + resourceDirectSearchMatchSQL("", placeholder) + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.owner_id=$1 AND matched.deleted_at IS NULL AND ` + resourceDirectSearchMatchSQL("matched", placeholder) + `) AND ` + resourceFuzzySearchMatchSQL("", placeholder) + `))`
 		}
 		q += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
@@ -1576,9 +1606,8 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		if search := normalizeSearchQuery(r.URL.Query().Get("q")); search != "" {
 			args = append(args, search)
 			placeholder := fmt.Sprintf("$%d", len(args))
-			orderBy = resourceSearchOrderSQL(placeholder) + ", deleted_at DESC"
-			expr := resourceSearchTextSQL("")
-			q += ` AND (` + resourceDirectSearchMatchSQL("", placeholder) + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.owner_id=$1 AND matched.deleted_at IS NOT NULL AND ` + resourceDirectSearchMatchSQL("matched", placeholder) + `) AND lower(` + placeholder + `) <% ` + expr + `))`
+			orderBy = resourceSearchOrderSQL(placeholder) + ", " + resourceSearchSimilarityOrderSQL("", placeholder) + ", deleted_at DESC"
+			q += ` AND (` + resourceDirectSearchMatchSQL("", placeholder) + ` OR (NOT EXISTS (SELECT 1 FROM portal.teaching_resources matched WHERE matched.owner_id=$1 AND matched.deleted_at IS NOT NULL AND ` + resourceDirectSearchMatchSQL("matched", placeholder) + `) AND ` + resourceFuzzySearchMatchSQL("", placeholder) + `))`
 		}
 		q += ` ORDER BY ` + orderBy + ` LIMIT 500) x`
 		items, err := queryJSONRows(r.Context(), a.db, q, args...)
