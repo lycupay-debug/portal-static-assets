@@ -1267,19 +1267,19 @@ html, body { color: #111111; background: #ffffff; }
 }
 
 
-/* Public education resource detail modal: contained scrolling and unified footer actions. */
-.education-resource-detail-backdrop { overscroll-behavior: contain; touch-action: none; }
-.education-resource-detail-dialog { display: flex; flex-direction: column; max-height: min(88vh, 820px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; -ms-overflow-style: none; }
+/* Resource detail actions stay in the dialog content; close is a small, unboxed top-right X. */
+.education-resource-detail-backdrop { overscroll-behavior: contain; }
+.education-resource-detail-dialog { position: relative; display: block; max-height: min(88vh, 820px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; -ms-overflow-style: none; padding-top: 30px; }
 .education-resource-detail-dialog::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.education-resource-detail-actions { position: sticky; bottom: -30px; z-index: 2; display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 10px; margin: auto -30px -30px; padding: 16px 30px 20px; background: rgba(255, 255, 255, .94); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
-.education-resource-detail-action, .education-resource-detail-close { box-sizing: border-box; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 8px; width: 132px; min-width: 132px; height: 42px; min-height: 42px; margin: 0; padding: 0 12px; border: 1px solid #111; border-radius: 10px; font: inherit; font-size: var(--font-size-13px-min14-233710); line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer; }
-.education-resource-detail-open { color: #111; background: rgba(255,255,255,.82); }
-.education-resource-detail-download { color: #fff; background: #111; }
-.education-resource-detail-close { width: 42px; min-width: 42px; padding: 0; color: #fff; background: #111; }
+.education-resource-detail-dialog > .share-dialog-eyebrow, .education-resource-detail-dialog > h2 { padding-right: 26px; }
+.education-resource-detail-close { position: absolute; top: 13px; right: 14px; display: grid; place-items: center; width: 26px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 0; color: #666; background: transparent; line-height: 1; cursor: pointer; }
 .education-resource-detail-close i { font-size: var(--font-size-15px-344c38); }
-.education-resource-detail-open:hover { background: #f0f0f0; }
-.education-resource-detail-download:hover, .education-resource-detail-close:hover { color: #fff; background: #333; border-color: #333; }
-@media (max-width: 480px) { .education-resource-detail-actions { gap: 7px; margin: auto -20px -20px; padding: 13px 20px 16px; } .education-resource-detail-action { width: auto; min-width: 0; flex: 1 1 auto; padding-inline: 8px; } .education-resource-detail-close { width: 42px; min-width: 42px; flex: 0 0 42px; } }
+.education-resource-detail-close:hover { color: #111; background: transparent; }
+.education-resource-detail-actions { position: static; display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 10px; margin: 22px 0 0; padding: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.education-resource-detail-action { box-sizing: border-box; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 40px; margin: 0; padding: 0 14px; border: 1px solid rgba(0, 0, 0, .13); border-radius: 10px; color: #444; background: rgba(255, 255, 255, .58); font: inherit; font-size: var(--font-size-13px-min14-233710); line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.education-resource-detail-action:hover { color: #111; border-color: rgba(0, 0, 0, .2); background: rgba(255, 255, 255, .9); }
+.education-resource-detail-open, .education-resource-detail-download { color: #444; background: rgba(255, 255, 255, .58); }
+@media (max-width: 480px) { .education-resource-detail-actions { flex-direction: row; align-items: flex-start; } .education-resource-detail-action { width: auto; min-width: 0; flex: 0 1 auto; padding-inline: 12px; } }
 
 
 /* Global typography governance: central tokens and minimum readable sizes. */
