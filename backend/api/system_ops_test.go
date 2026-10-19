@@ -47,6 +47,20 @@ func TestParseSystemSSHLogKeepsSanitizedMetadata(t *testing.T) {
 	}
 }
 
+func TestParseGoSSHLogAddsChineseSourceAndOperationLabels(t *testing.T) {
+	line := `{"time":"2026-10-19T08:00:00Z","action":"task.started","outcome":"started","details":{"tool_source":"Go SSH MCP","operation":"shell.exec","state":"running"}}`
+	entry := parseSystemLogLine("ssh", 43, line)
+	if entry.Action != "Go SSH MCP · 执行 Shell 命令" || entry.Source != "ssh" {
+		t.Fatalf("unexpected Go SSH MCP start entry: %#v", entry)
+	}
+	if got := goSSHLogAction("shell.exec", "task.completed", "success"); got != "Go SSH MCP · Shell 命令执行结果" {
+		t.Fatalf("unexpected shell result label: %q", got)
+	}
+	if got := goSSHLogAction("file.write", "task.completed", "success"); got != "Go SSH MCP · 写入文件" {
+		t.Fatalf("unexpected file write label: %q", got)
+	}
+}
+
 func TestActionableSystemWarningFiltersNoiseAndKeepsCurrentIncidents(t *testing.T) {
 	now := time.Date(2026, 10, 18, 5, 0, 0, 0, time.Local)
 	cases := []struct {

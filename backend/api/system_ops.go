@@ -70,8 +70,19 @@ func parseSystemLogLine(source string, id int64, line string) systemLogEntry {
 		if json.Unmarshal([]byte(line), &raw) == nil {
 			entry.Time, entry.Action, entry.Details = raw.Time, raw.Action, raw.Details
 			entry.Message = raw.Action
+			toolSource, _ := raw.Details["tool_source"].(string)
+			if toolSource == "Go SSH MCP" {
+				operation, _ := raw.Details["operation"].(string)
+				entry.Action = goSSHLogAction(operation, raw.Action, raw.Outcome)
+				entry.Message = entry.Action
+				if raw.Outcome != "" {
+					entry.Message += " · " + raw.Outcome
+				}
+			}
 			if raw.Outcome != "" {
-				entry.Message += " · " + raw.Outcome
+				if toolSource != "Go SSH MCP" {
+					entry.Message += " · " + raw.Outcome
+				}
 				switch raw.Outcome {
 				case "failed":
 					entry.Level = "error"
@@ -103,6 +114,43 @@ func parseSystemLogLine(source string, id int64, line string) systemLogEntry {
 		}
 	}
 	return entry
+}
+
+func goSSHLogAction(operation, eventType, outcome string) string {
+	labels := map[string]string{
+		"shell.exec":     "Shell 命令",
+		"file.read":      "读取文件",
+		"file.write":     "写入文件",
+		"file.replace":   "修改文件",
+		"file.move":      "移动路径",
+		"file.delete":    "删除路径",
+		"directory.list": "列出目录",
+		"system.info":    "读取系统信息",
+		"service.status": "查询服务状态",
+		"logs.tail":      "读取服务日志",
+	}
+	label := labels[operation]
+	if label == "" {
+		label = "执行工具操作"
+	}
+	var title string
+	switch {
+	case strings.Contains(eventType, "started"):
+		title = "执行 " + label
+	case outcome == "timeout":
+		title = label + "执行超时"
+	case outcome == "failed" || outcome == "blocked" || outcome == "unknown":
+		title = label + "执行失败"
+	case outcome == "success" && operation == "shell.exec":
+		title = "Shell 命令执行结果"
+	case outcome == "success":
+		title = label
+	case eventType == "task.queued" || eventType == "batch.accepted":
+		title = "已接收任务 · " + label
+	default:
+		title = label
+	}
+	return "Go SSH MCP · " + title
 }
 
 // readSystemLog reads only a bounded tail for a new viewer and only appended bytes for a live cursor.
