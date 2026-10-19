@@ -23,6 +23,7 @@ if [ ! -f "$CURSOR" ]; then
   chmod 0600 "$CURSOR"
 fi
 while :; do
+  /usr/local/bin/python3.14 /usr/local/sbin/go-ssh-mcp-service-log-sync.py >/dev/null 2>&1 || true
   last=$(cat "$CURSOR" 2>/dev/null || echo 0)
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
   sql="SELECT e.id::text || '|' || jsonb_build_object('time',to_char(e.created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),'action',e.event_type,'outcome',CASE WHEN e.payload->>'state'='succeeded' THEN 'success' WHEN e.payload->>'state'='timed_out' THEN 'timeout' WHEN e.payload->>'state' IN ('failed','cancelled','blocked','unknown') THEN e.payload->>'state' WHEN e.event_type='task.queued' OR e.event_type='batch.accepted' THEN 'accepted' WHEN e.event_type='task.started' THEN 'started' ELSE 'info' END,'uid',0,'details',jsonb_strip_nulls(jsonb_build_object('batch_id',e.batch_id::text,'task_id',e.task_id::text,'client_task_id',e.payload->>'client_task_id','tool_source','Go SSH MCP','operation',e.payload->>'operation','state',e.payload->>'state','duration_ms',e.payload->>'duration_ms')))::text FROM go_ssh_mcp.events e WHERE e.id > $last ORDER BY e.id LIMIT 200"
