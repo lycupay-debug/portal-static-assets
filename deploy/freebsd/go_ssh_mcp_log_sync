@@ -1,0 +1,14 @@
+#!/bin/sh
+# PROVIDE: go_ssh_mcp_log_sync
+# REQUIRE: LOGIN postgresql go_ssh_mcp
+# KEYWORD: shutdown
+. /etc/rc.subr
+name="go_ssh_mcp_log_sync"
+rcvar="${name}_enable"
+command="/usr/sbin/daemon"
+procname="/usr/sbin/daemon"
+pidfile="/var/run/go_ssh_mcp_log_sync.pid"
+command_args="-f -P ${pidfile} -o /var/log/go-ssh-mcp-log-sync.log /usr/local/sbin/go-ssh-mcp-log-sync"
+load_rc_config "$name"
+: ${go_ssh_mcp_log_sync_enable:="YES"}
+run_rc_command "$1"
