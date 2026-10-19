@@ -556,10 +556,21 @@ func serveUntilShutdown(ctx context.Context, server *http.Server) error {
 		return err
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		_ = server.Close()
+		closeErr := server.Close()
+		serveErr := <-serveResult
+		if errors.Is(err, context.DeadlineExceeded) {
+			fmt.Fprintf(os.Stderr, "backend API graceful shutdown reached 10s deadline; active connections were force-closed: %v\n", err)
+			if errors.Is(serveErr, http.ErrServerClosed) || serveErr == nil {
+				return nil
+			}
+			return serveErr
+		}
+		if closeErr != nil {
+			return fmt.Errorf("graceful HTTP shutdown failed (%v), force close failed: %w", err, closeErr)
+		}
 		return fmt.Errorf("graceful HTTP shutdown: %w", err)
 	}
 	err := <-serveResult
