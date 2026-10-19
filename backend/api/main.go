@@ -683,6 +683,9 @@ func main() {
 		WriteTimeout:      0,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 16,
+		BaseContext: func(net.Listener) context.Context {
+			return rootCtx
+		},
 	}
 
 	serverErr := serveUntilShutdown(rootCtx, server)
