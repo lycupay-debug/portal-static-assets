@@ -12,7 +12,12 @@ set -a
 set +a
 [ -n "${DATABASE_URL:-}" ] || exit 1
 umask 027
-install -o root -g personalportal -m 0640 /dev/null "$LOG" 2>/dev/null || true
+if [ ! -e "$LOG" ]; then
+  install -o root -g personalportal -m 0640 /dev/null "$LOG"
+else
+  chown root:personalportal "$LOG"
+  chmod 0640 "$LOG"
+fi
 if [ ! -f "$CURSOR" ]; then
   "$PSQL" "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -c 'SELECT COALESCE(max(id),0) FROM go_ssh_mcp.events' > "$CURSOR"
   chmod 0600 "$CURSOR"
