@@ -87,6 +87,9 @@ rm -f "$dump_tmp"
 
 cp "$bin_dir/api" "$bin_dir/api.pre-go-cutover-$stamp"
 cp "$bin_dir/event-core" "$bin_dir/event-core.pre-go-cutover-$stamp"
+if [ -f /usr/local/etc/rc.d/personal_portal_task_executor ]; then
+  cp /usr/local/etc/rc.d/personal_portal_task_executor "$backup_dir/personal_portal_task_executor.pre-go-cutover-$stamp"
+fi
 cp "$caddy_file" "$caddy_file.pre-go-cutover-$stamp"
 readlink "$www_base/current" > "$backup_dir/frontend-current-$stamp"
 chmod 0600 "$backup_dir/frontend-current-$stamp"

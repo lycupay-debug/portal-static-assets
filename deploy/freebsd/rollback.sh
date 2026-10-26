@@ -85,12 +85,15 @@ else
   fi
   if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ] && [ -x /usr/local/etc/rc.d/personal_portal_task_executor ]; then
     service personal_portal_task_executor stop || true
-    sysrc personal_portal_task_executor_enable=NO >/dev/null 2>&1 || true
   fi
   service personal_portal_api stop || true
   service personal_portal_event_core stop || true
   install -o root -g wheel -m 0555 "$api_backup" "$bin_dir/api"
   install -o root -g wheel -m 0555 "$core_backup" "$bin_dir/event-core"
+  executor_backup="$backup_dir/personal_portal_task_executor.pre-go-cutover-$stamp"
+  if [ -f "$executor_backup" ]; then
+    install -o root -g wheel -m 0555 "$executor_backup" /usr/local/etc/rc.d/personal_portal_task_executor
+  fi
   install -o root -g wheel -m 0644 "$caddy_backup" "$caddy_file"
 fi
 
@@ -108,6 +111,10 @@ else
   mv -h -f "$www_base/current.rollback" "$www_base/current"
   service personal_portal_event_core start
   service personal_portal_api start
+  if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ] && [ -x /usr/local/etc/rc.d/personal_portal_task_executor ]; then
+    sysrc personal_portal_task_executor_enable=YES >/dev/null
+    service personal_portal_task_executor start
+  fi
   caddy validate --config "$caddy_file"
   service caddy reload
   sysrc personal_portal_auth_api_enable=NO >/dev/null
