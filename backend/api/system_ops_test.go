@@ -86,3 +86,18 @@ func TestActionableSystemWarningFiltersNoiseAndKeepsCurrentIncidents(t *testing.
 		})
 	}
 }
+
+func TestParseServerLogTimeConvertsEmbeddedPostgresUTCToShanghai(t *testing.T) {
+	line := "Oct 26 15:53:13 freebsd postgres[23616]: [8-1] 2026-10-26 15:53:13.281 UTC [23616] FATAL: password authentication failed"
+	got := parseServerLogTime(line)
+	parsed, err := time.Parse(time.RFC3339, got)
+	if err != nil {
+		t.Fatalf("parseServerLogTime()=%q is not RFC3339: %v", got, err)
+	}
+	if parsed.UTC().Format("2006-01-02 15:04:05") != "2026-10-26 15:53:13" {
+		t.Fatalf("timestamp instant changed: got %s", parsed.UTC().Format(time.RFC3339))
+	}
+	if parsed.Format("2006-01-02 15:04:05 -0700") != "2026-10-26 23:53:13 +0800" {
+		t.Fatalf("timestamp was not displayed in Shanghai time: got %s", parsed.Format("2006-01-02 15:04:05 -0700"))
+	}
+}

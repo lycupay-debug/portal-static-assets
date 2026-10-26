@@ -1,41 +1,9 @@
 #!/bin/sh
-# Publish a sanitized, append-only projection of Go_SSH_MCP task lifecycle events
-# to the existing personal-portal SSH log feed. Never export shell input/output.
+# Poll the root-only KERNO audit log and publish a sanitized portal projection.
 set -eu
-CONFIG=/usr/local/etc/go-ssh-mcp.conf
-LOG=/var/log/host-mcp-admin-audit.log
-CURSOR=/var/db/go-ssh-mcp-log-sync.cursor
-PSQL=/usr/local/bin/psql
-[ -r "$CONFIG" ] || exit 1
-set -a
-. "$CONFIG"
-set +a
-[ -n "${DATABASE_URL:-}" ] || exit 1
-umask 027
-if [ ! -e "$LOG" ]; then
-  install -o root -g personalportal -m 0640 /dev/null "$LOG"
-else
-  chown root:personalportal "$LOG"
-  chmod 0640 "$LOG"
-fi
-if [ ! -f "$CURSOR" ]; then
-  "$PSQL" "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -c 'SELECT COALESCE(max(id),0) FROM go_ssh_mcp.events' > "$CURSOR"
-  chmod 0600 "$CURSOR"
-fi
+SCRIPT=/usr/local/sbin/go-ssh-mcp-service-log-sync.py
+[ -x "$SCRIPT" ] || exit 1
 while :; do
-  /usr/local/bin/python3.14 /usr/local/sbin/go-ssh-mcp-service-log-sync.py >/dev/null 2>&1 || true
-  last=$(cat "$CURSOR" 2>/dev/null || echo 0)
-  case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  sql="SELECT e.id::text || '|' || jsonb_build_object('time',to_char(e.created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),'action',e.event_type,'outcome',CASE WHEN e.payload->>'state'='succeeded' THEN 'success' WHEN e.payload->>'state'='timed_out' THEN 'timeout' WHEN e.payload->>'state' IN ('failed','cancelled','blocked','unknown') THEN e.payload->>'state' WHEN e.event_type='task.queued' OR e.event_type='batch.accepted' THEN 'accepted' WHEN e.event_type='task.started' THEN 'started' ELSE 'info' END,'uid',0,'details',jsonb_strip_nulls(jsonb_build_object('batch_id',e.batch_id::text,'task_id',e.task_id::text,'client_task_id',e.payload->>'client_task_id','tool_source','Go SSH MCP','operation',e.payload->>'operation','state',e.payload->>'state','duration_ms',e.payload->>'duration_ms')))::text FROM go_ssh_mcp.events e WHERE e.id > $last ORDER BY e.id LIMIT 200"
-  rows=$("$PSQL" "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -c "$sql" 2>/dev/null) || { sleep 2; continue; }
-  if [ -n "$rows" ]; then
-    printf '%s\n' "$rows" | while IFS='|' read -r id json; do
-      case "$id" in ''|*[!0-9]*) continue ;; esac
-      [ -n "$json" ] || continue
-      printf '%s\n' "$json" >> "$LOG"
-      printf '%s\n' "$id" > "$CURSOR.tmp"
-      mv "$CURSOR.tmp" "$CURSOR"
-    done
-  fi
+  "$SCRIPT" || true
   sleep 1
 done

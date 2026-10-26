@@ -107,9 +107,7 @@ func parseSystemLogLine(source string, id int64, line string) systemLogEntry {
 			}
 		}
 	} else {
-		if len(line) >= 15 {
-			entry.Time = line[:15]
-		}
+		entry.Time = parseServerLogTime(line)
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "panic") || strings.Contains(lower, "critical") || strings.Contains(lower, "fatal") || strings.Contains(lower, " error") {
 			entry.Level = "error"
@@ -122,16 +120,18 @@ func parseSystemLogLine(source string, id int64, line string) systemLogEntry {
 
 func goSSHLogAction(operation, eventType, outcome string) string {
 	labels := map[string]string{
-		"shell.exec":     "Shell 命令",
-		"file.read":      "读取文件",
-		"file.write":     "写入文件",
-		"file.replace":   "修改文件",
-		"file.move":      "移动路径",
-		"file.delete":    "删除路径",
-		"directory.list": "列出目录",
-		"system.info":    "读取系统信息",
-		"service.status": "查询服务状态",
-		"logs.tail":      "读取服务日志",
+		"shell.exec":       "Shell 命令",
+		"file.read":        "读取文件",
+		"file.write":       "写入文件",
+		"file.replace":     "修改文件",
+		"file.move":        "移动路径",
+		"file.delete":      "删除路径",
+		"directory.list":   "列出目录",
+		"system.info":      "读取系统信息",
+		"service.status":   "查询服务状态",
+		"logs.tail":        "读取服务日志",
+		"database.query":   "数据库查询",
+		"execute_parallel": "并行执行任务",
 	}
 	label := labels[operation]
 	if label == "" {
@@ -155,6 +155,38 @@ func goSSHLogAction(operation, eventType, outcome string) string {
 		title = label
 	}
 	return "Go SSH MCP · " + title
+}
+
+// parseServerLogTime returns ISO timestamps so browsers do not guess the year
+// (which makes syslog entries appear as 2001) or apply the viewer's timezone.
+// PostgreSQL embeds an explicit UTC timestamp in its messages; prefer it over
+// the syslog prefix. Other syslog records use the host's configured local zone.
+func parseServerLogTime(line string) string {
+	if utcAt := strings.Index(line, " UTC"); utcAt > 0 {
+		prefix := line[:utcAt]
+		for i := 0; i+19 <= len(prefix); i++ {
+			if i+10 >= len(prefix) || prefix[i+4] != '-' || prefix[i+7] != '-' {
+				continue
+			}
+			stamp := strings.TrimSpace(prefix[i:])
+			for _, layout := range []string{"2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05"} {
+				if parsed, err := time.Parse(layout, stamp); err == nil {
+					return parsed.UTC().In(time.Local).Format(time.RFC3339)
+				}
+			}
+		}
+	}
+	if len(line) >= 15 {
+		if parsed, err := time.ParseInLocation("Jan _2 15:04:05", line[:15], time.Local); err == nil {
+			now := time.Now()
+			parsed = time.Date(now.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), 0, time.Local)
+			if parsed.After(now.Add(24 * time.Hour)) {
+				parsed = parsed.AddDate(-1, 0, 0)
+			}
+			return parsed.Format(time.RFC3339)
+		}
+	}
+	return ""
 }
 
 // readSystemLog reads only a bounded tail for a new viewer and only appended bytes for a live cursor.
@@ -239,7 +271,7 @@ func systemWarningIsRecent(entry systemLogEntry, now time.Time) bool {
 	switch {
 	case strings.Contains(entry.Time, "T") && strings.HasSuffix(entry.Time, "Z"):
 		t, err = time.Parse(time.RFC3339, entry.Time)
-	case strings.Contains(entry.Time, "T") && (strings.HasSuffix(entry.Time, "+0000") || strings.HasSuffix(entry.Time, "-0000")):
+	case strings.Contains(entry.Time, "T") && len(entry.Time) >= 5 && (entry.Time[len(entry.Time)-5] == '+' || entry.Time[len(entry.Time)-5] == '-') && !strings.Contains(entry.Time[len(entry.Time)-5:], ":"):
 		t, err = time.Parse("2006-01-02T15:04:05-0700", entry.Time)
 	case strings.Contains(entry.Time, "T"):
 		t, err = time.Parse(time.RFC3339, entry.Time)

@@ -1,17 +1,17 @@
 #!/usr/local/bin/python3.14
-"""Sanitize Go SSH MCP JSON operation logs into the portal SSH audit feed."""
+"""Project sanitized KERNO/GSM audit events into the portal SSH log feed."""
 import json
 import os
-import stat
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 
-SOURCE = "/var/log/go-ssh-mcp.log"
+SOURCE = "/var/log/kerno-audit.log"
 AUDIT = "/var/log/host-mcp-admin-audit.log"
 STATE = "/var/db/go-ssh-mcp-service-log.cursor"
 ALLOWED = {
     "shell.exec", "file.read", "file.write", "file.replace", "file.move",
-    "file.delete", "directory.list", "system.info", "service.status", "logs.tail",
+    "file.delete", "directory.list", "system.info", "service.status",
+    "logs.tail", "database.query", "execute_parallel",
 }
 MAX_LINE = 65536
 
@@ -20,29 +20,12 @@ def parse_time(value):
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if result.tzinfo is None:
+            return None
+        return result.astimezone().isoformat(timespec="seconds")
     except (ValueError, OverflowError):
         return None
-
-
-def latest_audit_time():
-    try:
-        with open(AUDIT, "rb") as f:
-            f.seek(0, os.SEEK_END)
-            size = f.tell()
-            f.seek(max(0, size - 65536))
-            lines = f.read().splitlines()
-        for raw in reversed(lines):
-            try:
-                value = json.loads(raw)
-                t = parse_time(value.get("time"))
-                if t:
-                    return t
-            except (ValueError, UnicodeDecodeError, AttributeError):
-                continue
-    except OSError:
-        pass
-    return None
 
 
 def save_state(state):
@@ -63,37 +46,30 @@ def save_state(state):
             pass
 
 
-def safe_record(obj):
+def project(obj):
     if not isinstance(obj, dict):
         return None
     operation = obj.get("operation")
     if operation not in ALLOWED:
         return None
-    timestamp = obj.get("time")
-    parsed = parse_time(timestamp)
-    if parsed is None:
+    timestamp = parse_time(obj.get("timestamp"))
+    if timestamp is None:
         return None
-    level = str(obj.get("level", "INFO")).upper()
-    msg = str(obj.get("msg", "")).lower()
-    if "timeout" in msg or "timed out" in msg:
-        outcome, event = "timeout", "tool.operation.failed"
-    elif level in ("ERROR", "CRITICAL"):
-        outcome, event = "failed", "tool.operation.failed"
-    elif "completed" in msg:
-        outcome, event = "success", "tool.operation.completed"
+    if obj.get("timed_out") is True:
+        outcome, action = "timeout", "tool.operation.failed"
+    elif obj.get("success") is False or (isinstance(obj.get("returncode"), int) and obj["returncode"] != 0):
+        outcome, action = "failed", "tool.operation.failed"
     else:
-        outcome, event = "info", "tool.operation"
+        outcome, action = "success", "tool.operation.completed"
     details = {"tool_source": "Go SSH MCP", "operation": operation}
     duration = obj.get("duration_ms")
-    if isinstance(duration, (int, float)) and not isinstance(duration, bool) and 0 <= duration <= 86400000:
-        details["duration_ms"] = int(duration)
-    return {
-        "time": parsed.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "action": event,
-        "outcome": outcome,
-        "uid": 0,
-        "details": details,
-    }
+    if isinstance(duration, int) and not isinstance(duration, bool) and 0 <= duration <= 86400000:
+        details["duration_ms"] = duration
+    if isinstance(obj.get("returncode"), int) and not isinstance(obj.get("returncode"), bool):
+        details["returncode"] = obj["returncode"]
+    if obj.get("timed_out") is True:
+        details["timed_out"] = True
+    return {"time": timestamp, "action": action, "outcome": outcome, "uid": 0, "details": details}
 
 
 def main():
@@ -104,18 +80,18 @@ def main():
     try:
         with open(STATE, "r", encoding="ascii") as f:
             state = json.load(f)
-        offset = int(state.get("offset", 0))
-        old_inode = int(state.get("inode", 0))
+        offset, old_inode = int(state.get("offset", 0)), int(state.get("inode", 0))
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         offset, old_inode = 0, 0
-    rotated = old_inode not in (0, st.st_ino) or offset > st.st_size
-    if rotated:
+    if old_inode != st.st_ino or offset < 0 or offset > st.st_size:
         offset = 0
-    first_run = old_inode == 0
-    cutoff = latest_audit_time() if first_run else None
-    if offset < 0:
-        offset = 0
-    with open(SOURCE, "rb") as src, open(AUDIT, "a", encoding="utf-8") as audit:
+    os.makedirs(os.path.dirname(AUDIT), exist_ok=True)
+    if not os.path.exists(AUDIT):
+        fd = os.open(AUDIT, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o640)
+        os.close(fd)
+    os.chown(AUDIT, 0, __import__("grp").getgrnam("personalportal").gr_gid)
+    os.chmod(AUDIT, 0o640)
+    with open(SOURCE, "rb") as src, open(AUDIT, "a", encoding="utf-8") as dest:
         src.seek(offset)
         while True:
             start = src.tell()
@@ -126,20 +102,15 @@ def main():
                 src.seek(start)
                 break
             end = src.tell()
-            if len(raw) > MAX_LINE:
-                offset = end
-                continue
-            try:
-                obj = json.loads(raw)
-                record = safe_record(obj)
-            except (ValueError, UnicodeDecodeError):
-                record = None
-            if record:
-                parsed = parse_time(record["time"])
-                if cutoff is None or parsed > cutoff:
-                    audit.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
-                    audit.flush()
-                    os.fsync(audit.fileno())
+            if len(raw) <= MAX_LINE:
+                try:
+                    record = project(json.loads(raw))
+                except (ValueError, UnicodeDecodeError):
+                    record = None
+                if record is not None:
+                    dest.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+                    dest.flush()
+                    os.fsync(dest.fileno())
             offset = end
             save_state({"inode": st.st_ino, "offset": offset})
     if not os.path.exists(STATE):

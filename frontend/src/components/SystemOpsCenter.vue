@@ -105,7 +105,7 @@ function togglePause() {
 function formatTime(value?: string) {
   if (!value) return '时间未提供'
   const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('zh-CN', { hour12: false })
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
 }
 function levelLabel(level: string) { return ({ info: '信息', warning: '警告', error: '错误' } as Record<string, string>)[level] || level }
 function actionLabel(action?: string) {
