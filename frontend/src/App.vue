@@ -888,12 +888,7 @@ function selectAccountSection(id: string) {
   else if (id === 'teaching-resources') void loadTeachingResources()
 }
 function openNewContent() {
-  editingContentId.value = null
-  contentForm.value = emptyContentForm()
-  contentError.value = ''
-  contentNotice.value = ''
-  contentEditorOpen.value = false
-  void navigate('/content-management/new')
+  window.location.assign('/editor/new')
 }
 function returnToContentList() {
   contentEditorOpen.value = false
@@ -908,26 +903,8 @@ function cancelContentEditor() {
   contentError.value = ''
   void navigate('/content-management')
 }
-async function editContent(id: string) {
-  contentBusy.value = true
-  contentError.value = ''
-  try {
-    const response = await fetch(`/api/content/${encodeURIComponent(id)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { item?: PortalContent; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '读取内容详情失败。')
-    const item = result.item
-    editingContentId.value = item.id
-    contentForm.value = {
-      title: item.title, slug: item.slug, contentType: item.contentType, tags: mergeLegacyTaxonomyIntoTags(item.tags || [], item.parentCategory, item.childCategory),
-      summary: item.summary, body: item.body, visibility: item.visibility,
-    }
-    contentEditorOpen.value = false
-    await navigate('/content-management/' + encodeURIComponent(item.id))
-  } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '读取内容详情失败。'
-  } finally {
-    contentBusy.value = false
-  }
+function editContent(id: string) {
+  window.location.assign('/editor/' + encodeURIComponent(id))
 }
 async function saveContent() {
   if (!contentForm.value.title.trim()) { contentError.value = '请填写内容标题。'; return }
@@ -1340,6 +1317,9 @@ async function logout() {
 }
 function onPopState() {
   setRouteFromLocation()
+  const legacyEditorId = route.value.match(new RegExp('^/content-management/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$', 'i'))?.[1]
+  if (route.value === '/content-management/new') { window.location.replace('/editor/new'); return }
+  if (legacyEditorId) { window.location.replace('/editor/' + encodeURIComponent(legacyEditorId)); return }
   closeMenu()
   authError.value = ''
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
@@ -1354,6 +1334,9 @@ function onPopState() {
 }
 onMounted(() => {
   setRouteFromLocation()
+  const legacyEditorId = route.value.match(new RegExp('^/content-management/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$', 'i'))?.[1]
+  if (route.value === '/content-management/new') { window.location.replace('/editor/new'); return }
+  if (legacyEditorId) { window.location.replace('/editor/' + encodeURIComponent(legacyEditorId)); return }
   void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
   document.addEventListener('scroll', onScrollCapture, true)

@@ -7,6 +7,7 @@
 - Caddy 负责 HTTPS、静态前端、上传文件与反向代理；公共静态站点配置 `nosniff`、禁止 iframe 嵌入、严格跨源 Referrer Policy 与限制摄像头/麦克风/定位的 Permissions Policy。
 - 网站由 Cloudflare 代理时，Caddy 只信任 Cloudflare 官方 IPv4/IPv6 CIDR，并只从 `CF-Connecting-IP` 解析客户端地址；Go 只接受 Caddy 通过 `X-Portal-Client-IP` 注入的已解析地址。Cloudflare 更新 IP 段时应同步更新 Caddyfile 并验证，不要信任任意来源的转发头。
 - /api/* 去除 /api 前缀后代理至 127.0.0.1:8081 的唯一 Go API。
+- `/editor/` 是独立 Vue/Vite 构建入口，静态文件位于每个 release 的 `editor/` 子目录；它与门户同源，复用 `/api/auth/me`、`/api/content`、`/api/uploads` 及现有 HttpOnly、Secure、SameSite=Strict 会话 Cookie。Caddy 对 `/editor/` 使用独立 SPA fallback，避免落入门户首页；编辑器静态资源采用不可变缓存，HTML 不缓存。
 - Caddy 明确拒绝公网访问 /api/events、/api/dbz、/api/readyz 和 /api/metrics。这些控制端点只供本机部署、健康检查与监控使用。
 - Go 使用 database/sql + pgx，负责认证、会话、内容、历史版本、回收站、资源文件、公开内容互动、事件接收、分发、租约、重试和业务处理。
 - C 事件核心仅使用 FreeBSD kqueue/kevent 和 Unix Socket 传送事件 ID/type 元数据；业务 payload、持久化、租约与处理结果只由 Go/PostgreSQL 处理。
@@ -16,7 +17,7 @@
 
 ## 一键部署
 
-部署脚本要求仓库干净且所有变更已经提交。脚本会执行 OpenAPI 校验与类型生成检查、前端构建和测试、Go race tests/vet/build、C 编译与 IPC 测试；然后创建完整 PostgreSQL 备份、执行未应用的迁移、安装 Go/C 二进制、切换静态前端与 Caddy 路由，最后运行生产健康检查。
+部署脚本要求仓库干净且所有变更已经提交。脚本会执行 OpenAPI 校验与类型生成检查、前端构建和测试、独立编辑器构建、Go race tests/vet/build、C 编译与 IPC 测试；然后创建完整 PostgreSQL 备份、执行未应用的迁移、安装 Go/C 二进制、将门户与独立编辑器一并写入 release、切换静态前端与 Caddy 路由，最后运行生产健康检查。
 
     cd /opt/personal-portal
     git status --short

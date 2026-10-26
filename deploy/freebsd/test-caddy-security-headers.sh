@@ -26,6 +26,20 @@ for directive in \
   fi
 done
 
+# The independent editor is served as a separate same-origin SPA and never falls through to the portal index.
+for directive in \
+  'handle /editor {' \
+  'redir /editor/ 308' \
+  'handle /editor/* {' \
+  'try_files {path} /editor/index.html' \
+  'header @editor_html Cache-Control "no-cache"' \
+  'header @editor_assets Cache-Control "public, max-age=31536000, immutable"'; do
+  if ! grep -Fq "$directive" "$config"; then
+    echo "FAIL: missing independent editor routing directive: $directive" >&2
+    exit 1
+  fi
+done
+
 # Replacing the production Caddyfile must preserve the existing GSM route.
 if ! grep -Fq 'go.lycupaynotion.top {' "$config" || ! grep -Fq 'reverse_proxy 127.0.0.1:8766' "$config"; then
   echo "FAIL: the deployment Caddyfile must preserve the existing GSM reverse proxy." >&2

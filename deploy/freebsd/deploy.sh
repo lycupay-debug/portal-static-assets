@@ -98,8 +98,9 @@ chmod 0600 "$backup_dir/frontend-current-$stamp"
 PERSONAL_PORTAL_MIGRATION_BACKUP="$backup_dir/pre-go-cutover-$stamp.dump" "$repo/deploy/freebsd/migrate.sh"
 
 release="$www_base/releases/${stamp}-go-backend"
-mkdir -p "$release"
+mkdir -p "$release" "$release/editor"
 cp -R "$repo/frontend/dist/." "$release/"
+cp -R "$repo/frontend/dist-editor/." "$release/editor/"
 if [ ! -f "$release/favicon.ico" ] && [ -f "$www_base/current/favicon.ico" ]; then
   cp "$www_base/current/favicon.ico" "$release/favicon.ico"
 fi

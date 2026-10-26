@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run type-check && vite build && node scripts/check-bundle-budget.mjs",
+    "build": "npm run type-check && vite build && node scripts/check-bundle-budget.mjs && npm run build:editor",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "test": "tsx --test test/*.test.mjs",
     "api:generate": "openapi-ts -f openapi-ts.config.mjs",
     "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated",
-    "api:lint": "redocly lint ../api/openapi.yaml"
+    "api:lint": "redocly lint ../api/openapi.yaml",
+    "build:editor": "vite build --config editor-app/vite.config.ts"
   },
   "dependencies": {
     "@tiptap/extension-bubble-menu": "^3.32.0",
