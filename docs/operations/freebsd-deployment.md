@@ -29,6 +29,8 @@
 
 **部署期保护规则：自动回退入口已全局禁用。** 无论 `PERSONAL_PORTAL_RELEASE_MODE`、`PERSONAL_PORTAL_AUTO_ROLLBACK` 如何设置，部署失败后都不会自动调用 `rollback.sh`；脚本只输出诊断目录与人工恢复提示，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。自动回退策略函数始终返回禁用，Shell 测试覆盖 development/stable/production 与多种环境变量组合。手动回退脚本保留，只有操作者明确执行时才会恢复旧 Go/C 二进制、Caddyfile 与前端 release。数据库备份与迁移前置检查仍然执行；手动回退不等于数据库反向迁移。
 
+**独立编辑器静态发布回退：** 静态编辑器发布不重启 Go/C 服务。每次发布保存旧 release 指针与 Caddyfile 备份；如需撤销本次独立编辑器发布，执行 `./deploy/freebsd/rollback-editor-static.sh DEPLOYMENT-STAMP`。该脚本只恢复静态 release 和 Caddyfile，并 reload Caddy，不会调用完整 Go/C 回退脚本；它会拒绝回退到非当前活动 release，防止覆盖后续部署。
+
 ## 数据库迁移规则
 
 - 迁移文件位于 backend/migrations/，编号顺序是唯一执行顺序；portal.schema_migrations 记录已应用版本。
