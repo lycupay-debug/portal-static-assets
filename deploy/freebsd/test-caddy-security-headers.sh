@@ -32,7 +32,8 @@ for directive in \
   'redir /editor/ 308' \
   'handle /editor/* {' \
   'try_files {path} /editor/index.html' \
-  'header @editor_html Cache-Control "no-cache"' \
+  'header Cache-Control "no-cache"' \
+  'header Permissions-Policy "camera=(), microphone=(), geolocation=()"' \
   'header @editor_assets Cache-Control "public, max-age=31536000, immutable"'; do
   if ! grep -Fq "$directive" "$config"; then
     echo "FAIL: missing independent editor routing directive: $directive" >&2
