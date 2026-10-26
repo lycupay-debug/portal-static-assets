@@ -52,8 +52,12 @@ func (a *portalAPI) requireComplianceAdmin(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return nil, false
 	}
+	permission := "portal.compliance.manage"
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		permission = "portal.compliance.read"
+	}
 	var admin bool
-	if err := a.db.QueryRowContext(r.Context(), `SELECT (is_admin OR is_copyright_reviewer) FROM portal.portal_users WHERE user_id=$1`, u.ID).Scan(&admin); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_user_roles ur JOIN portal.role_permissions rp ON rp.role_key=ur.role_key WHERE ur.user_id=$1::uuid AND rp.permission_key=$2) OR EXISTS (SELECT 1 FROM portal.portal_users WHERE user_id=$1::uuid AND is_admin=TRUE)`, u.ID, permission).Scan(&admin); err != nil {
 		a.dbError(w, err, "无法验证版权合规管理权限。")
 		return nil, false
 	}
@@ -86,16 +90,73 @@ func (a *portalAPI) complianceReviewerUsers(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "请提供 isCopyrightReviewer 布尔值。", nil)
 		return
 	}
-	before, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS "displayName",is_admin AS "isAdmin",is_copyright_reviewer AS "isCopyrightReviewer" FROM portal.portal_users WHERE user_id=$1::uuid) x`, id)
+	tx, err := a.db.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
+		a.dbError(w, err, "无法开始审核人员权限事务。")
+		return
+	}
+	defer tx.Rollback()
+	var email string
+	var beforeRoles []byte
+	err = tx.QueryRowContext(r.Context(), `SELECT email, COALESCE((SELECT jsonb_agg(role_key ORDER BY role_key) FROM portal.portal_user_roles WHERE user_id=u.user_id),'[]'::jsonb) FROM portal.portal_users u WHERE user_id=$1::uuid FOR UPDATE`, id).Scan(&email, &beforeRoles)
+	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "账户不存在。", nil)
 		return
 	}
-	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.portal_users SET is_copyright_reviewer=$1,updated_at=now() WHERE user_id=$2::uuid`, *body.IsCopyrightReviewer, id); err != nil {
-		a.dbError(w, err, "无法更新内部审核专员权限。")
+	if err != nil {
+		a.dbError(w, err, "无法读取审核人员当前角色。")
 		return
 	}
-	a.logComplianceChange(r, u, "update", "portal_user", id, before)
+	if *body.IsCopyrightReviewer {
+		_, err = tx.ExecContext(r.Context(), `INSERT INTO portal.portal_user_roles(user_id,role_key,assigned_by) VALUES($1::uuid,'copyright_reviewer',$2) ON CONFLICT DO NOTHING`, id, u.Email)
+	} else {
+		_, err = tx.ExecContext(r.Context(), `DELETE FROM portal.portal_user_roles WHERE user_id=$1::uuid AND role_key='copyright_reviewer'`, id)
+	}
+	if err != nil {
+		a.dbError(w, err, "无法更新内部审核专员角色。")
+		return
+	}
+	_, err = tx.ExecContext(r.Context(), `INSERT INTO portal.portal_user_roles(user_id,role_key,assigned_by) SELECT $1::uuid,'user',$2 WHERE NOT EXISTS (SELECT 1 FROM portal.portal_user_roles WHERE user_id=$1::uuid) ON CONFLICT DO NOTHING`, id, u.Email)
+	if err != nil {
+		a.dbError(w, err, "无法确保账户具有默认角色。")
+		return
+	}
+	_, err = tx.ExecContext(r.Context(), `UPDATE portal.portal_users SET is_copyright_reviewer=$1,updated_at=now() WHERE user_id=$2::uuid`, *body.IsCopyrightReviewer, id)
+	if err != nil {
+		a.dbError(w, err, "无法同步内部审核专员兼容字段。")
+		return
+	}
+	afterRoles, err := tx.QueryContext(r.Context(), `SELECT role_key FROM portal.portal_user_roles WHERE user_id=$1::uuid ORDER BY role_key`, id)
+	if err != nil {
+		a.dbError(w, err, "无法读取更新后的角色。")
+		return
+	}
+	var roleKeys []string
+	for afterRoles.Next() {
+		var roleKey string
+		if err = afterRoles.Scan(&roleKey); err != nil {
+			afterRoles.Close()
+			a.dbError(w, err, "无法读取更新后的角色。")
+			return
+		}
+		roleKeys = append(roleKeys, roleKey)
+	}
+	if err = afterRoles.Err(); err != nil {
+		afterRoles.Close()
+		a.dbError(w, err, "无法读取更新后的角色。")
+		return
+	}
+	afterRoles.Close()
+	afterJSON, _ := json.Marshal(roleKeys)
+	_, err = tx.ExecContext(r.Context(), `INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,'update_user_roles','portal_user',$2::uuid,jsonb_build_object('email',$3::text,'roles',$4::jsonb),jsonb_build_object('email',$3::text,'roles',$5::jsonb))`, u.Email, id, email, string(beforeRoles), string(afterJSON))
+	if err != nil {
+		a.dbError(w, err, "无法记录审核人员权限审计。")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		a.dbError(w, err, "审核人员权限事务提交失败。")
+		return
+	}
 	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS "displayName",is_admin AS "isAdmin",is_copyright_reviewer AS "isCopyrightReviewer" FROM portal.portal_users WHERE user_id=$1::uuid) x`, id)
 	if err != nil {
 		a.dbError(w, err, "权限已更新，但无法读取更新结果。")
@@ -112,7 +173,7 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/compliance")
 	if path == "/reviewers" || strings.HasPrefix(path, "/reviewers/") {
 		var superAdmin bool
-		if err := a.db.QueryRowContext(r.Context(), `SELECT is_admin FROM portal.portal_users WHERE user_id=$1`, u.ID).Scan(&superAdmin); err != nil || !superAdmin {
+		if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_users u JOIN portal.portal_user_roles ur ON ur.user_id=u.user_id WHERE u.user_id=$1::uuid AND u.is_admin=TRUE AND lower(u.email)='lycupay@gmail.com' AND ur.role_key='super_admin')`, u.ID).Scan(&superAdmin); err != nil || !superAdmin {
 			writeError(w, http.StatusForbidden, "只有超管可以分配内部审核专员权限。", nil)
 			return
 		}

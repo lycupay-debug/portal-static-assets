@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 const SystemExecutionPolicyCenter = defineAsyncComponent(() => import('./SystemExecutionPolicyCenter.vue'))
+const PermissionManagement = defineAsyncComponent(() => import('./PermissionManagement.vue'))
+const policyView = ref<'execution' | 'permissions'>('execution')
 
 type LogEntry = {
   id: number
@@ -127,7 +129,14 @@ onBeforeUnmount(() => { closeStream(); if (warningTimer) clearInterval(warningTi
 </script>
 
 <template>
-  <SystemExecutionPolicyCenter v-if="view === 'policy'" />
+  <section v-if="view === 'policy'" class="system-ops-center">
+    <nav class="ops-source-tabs" aria-label="运维管理功能">
+      <button type="button" :class="{ active: policyView === 'execution' }" @click="policyView = 'execution'">运行模式与任务策略</button>
+      <button type="button" :class="{ active: policyView === 'permissions' }" @click="policyView = 'permissions'">权限管理</button>
+    </nav>
+    <SystemExecutionPolicyCenter v-if="policyView === 'execution'" />
+    <PermissionManagement v-else />
+  </section>
   <section v-else class="system-ops-center">
     <header class="ops-heading">
       <div><p class="ops-eyebrow">SYSTEM OPERATIONS</p><h1 class="account-page-title">{{ view === 'warnings' ? '系统警告' : '系统日志' }}</h1><p class="ops-intro">{{ view === 'warnings' ? '集中查看服务器异常、执行失败和需要人工处理的运维事件。' : '按需订阅新增日志；关闭本页后停止实时连接，不进行后台持续轮询。' }}</p></div>

@@ -166,6 +166,10 @@ func (a *portalAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.publicLegal(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/admin/") {
+		a.rbac(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/compliance/") {
 		a.compliance(w, r)
 		return

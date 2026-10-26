@@ -35,8 +35,12 @@ func (a *portalAPI) requireSystemOpsAdmin(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return false
 	}
+	permission := "portal.system_ops.manage"
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		permission = "portal.system_ops.read"
+	}
 	var isAdmin bool
-	if err := a.db.QueryRowContext(r.Context(), `SELECT is_admin FROM portal.portal_users WHERE user_id=$1::uuid`, u.ID).Scan(&isAdmin); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_user_roles ur JOIN portal.role_permissions rp ON rp.role_key=ur.role_key WHERE ur.user_id=$1::uuid AND rp.permission_key=$2)`, u.ID, permission).Scan(&isAdmin); err != nil {
 		a.dbError(w, err, "无法验证系统运维权限。")
 		return false
 	}
