@@ -1,8 +1,8 @@
 #!/bin/sh
 
-# Development is the safe default. Automatic rollback requires both an
-# explicit stable-phase declaration and an explicit opt-in.
+# Automatic rollback is intentionally disabled throughout development.
+# Recovery must be an explicit operator decision; environment variables cannot
+# re-enable automatic rollback. Keep the manual rollback script available.
 personal_portal_auto_rollback_enabled() {
-  [ "${PERSONAL_PORTAL_RELEASE_MODE:-development}" = "stable" ] &&
-    [ "${PERSONAL_PORTAL_AUTO_ROLLBACK:-0}" = "1" ]
+  return 1
 }

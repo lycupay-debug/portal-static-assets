@@ -26,7 +26,7 @@
 
 **数据库迁移安全：** 发布前先生成并保留完整 PostgreSQL dump。迁移按版本顺序执行；包含显式 `BEGIN/COMMIT` 的迁移由自身控制事务，历史上没有显式事务的迁移由 `psql --single-transaction` 包裹，避免单个迁移中途失败留下半套 DDL。迁移采用向前兼容优先的策略，不在部署失败时自动执行反向 SQL，也不会自动恢复整库 dump；恢复数据库属于单独的人工恢复决策，必须先评估发布后新增数据是否会丢失。
 
-**开发期保护规则：默认禁止自动回退。** `PERSONAL_PORTAL_RELEASE_MODE` 默认是 `development`；即使切换服务后健康检查失败，脚本也只输出诊断目录与手动回滚命令，不擅自切换回旧版本，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。只有进入稳定期后，由操作者显式设置 `PERSONAL_PORTAL_RELEASE_MODE=stable PERSONAL_PORTAL_AUTO_ROLLBACK=1`，才允许部署失败时自动回退；该条件已有独立 Shell 测试并纳入 GitHub CI。数据库备份与迁移前置检查仍然执行；自动回退不等于数据库反向迁移。
+**部署期保护规则：自动回退入口已全局禁用。** 无论 `PERSONAL_PORTAL_RELEASE_MODE`、`PERSONAL_PORTAL_AUTO_ROLLBACK` 如何设置，部署失败后都不会自动调用 `rollback.sh`；脚本只输出诊断目录与人工恢复提示，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。自动回退策略函数始终返回禁用，Shell 测试覆盖 development/stable/production 与多种环境变量组合。手动回退脚本保留，只有操作者明确执行时才会恢复旧 Go/C 二进制、Caddyfile 与前端 release。数据库备份与迁移前置检查仍然执行；手动回退不等于数据库反向迁移。
 
 ## 数据库迁移规则
 
