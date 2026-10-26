@@ -1068,11 +1068,6 @@ function setRouteFromLocation() {
   const rawPath = decodeURI(window.location.pathname || '/')
   const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath
   route.value = routeAliases[pathname] || pathname
-  if (route.value === '/register') {
-    history.replaceState({}, '', '/login')
-    route.value = '/login'
-    authNotice.value = '当前暂不开放公开注册，请联系管理员开通账户。'
-  }
   if (route.value === '/knowledge') {
     const params = new URLSearchParams(window.location.search)
     const requestedCategory = params.get('category') || 'recent'
@@ -1632,6 +1627,7 @@ onBeforeUnmount(() => {
           <button class="btn button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
         </form>
         <p v-if="isRegister" class="auth-switch">已经有账户？ <a href="/login" @click.prevent="navigate('/login')">立即登录</a></p>
+        <p v-else class="auth-switch">还没有账户？ <a href="/register" @click.prevent="navigate('/register')">立即注册</a></p>
         <a class="back-home" href="/" @click.prevent="navigate('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回首页</a>
       </section>
     </main>
