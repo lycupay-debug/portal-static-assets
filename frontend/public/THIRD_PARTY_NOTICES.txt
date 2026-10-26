@@ -1796,8 +1796,14 @@ SOFTWARE.
 
 ### dompurify@3.4.17
 
-- License metadata: (MPL-2.0 OR Apache-2.0)
-- License file: LICENSE
+- Upstream project: https://github.com/cure53/DOMPurify
+- Upstream source/version: DOMPurify 3.4.17; package lock entry `node_modules/dompurify`.
+- Copyright notice: `(c) Cure53 and other contributors` (preserved from the distributed upstream bundle header).
+- Available license options: MPL-2.0 OR Apache-2.0.
+- License selected for this project distribution: Apache-2.0.
+- License text included below: Apache License, Version 2.0 (the package's `LICENSE` file).
+- Rationale: use the explicitly offered Apache-2.0 alternative for this unmodified dependency; this choice does not relicense DOMPurify under the portal's own license.
+- Review boundary: this resolves the dual-license choice and notice omission for this package/version. Re-check if the version, upstream license options, bundling, or distribution model changes.
 
 ```text
 Apache License
