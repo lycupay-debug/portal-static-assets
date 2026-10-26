@@ -162,6 +162,10 @@ func goSSHLogAction(operation, eventType, outcome string) string {
 // PostgreSQL embeds an explicit UTC timestamp in its messages; prefer it over
 // the syslog prefix. Other syslog records use the host's configured local zone.
 func parseServerLogTime(line string) string {
+	return parseServerLogTimeWithCutover(line, "/var/db/system-log-timezone-cutover")
+}
+
+func parseServerLogTimeWithCutover(line, cutoverPath string) string {
 	if utcAt := strings.Index(line, " UTC"); utcAt > 0 {
 		prefix := line[:utcAt]
 		for i := 0; i+19 <= len(prefix); i++ {
@@ -182,6 +186,14 @@ func parseServerLogTime(line string) string {
 			parsed = time.Date(now.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), 0, time.Local)
 			if parsed.After(now.Add(24 * time.Hour)) {
 				parsed = parsed.AddDate(-1, 0, 0)
+			}
+			// Logs written before the host timezone was changed were stamped in UTC.
+			// The cutover marker lets us convert those legacy prefixes without
+			// shifting new Asia/Shanghai syslog timestamps a second time.
+			if raw, readErr := os.ReadFile(cutoverPath); readErr == nil {
+				if cutover, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(string(raw))); parseErr == nil && parsed.Before(cutover) {
+					parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), 0, time.UTC).In(time.Local)
+				}
 			}
 			return parsed.Format(time.RFC3339)
 		}

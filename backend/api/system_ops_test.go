@@ -101,3 +101,18 @@ func TestParseServerLogTimeConvertsEmbeddedPostgresUTCToShanghai(t *testing.T) {
 		t.Fatalf("timestamp was not displayed in Shanghai time: got %s", parsed.Format("2006-01-02 15:04:05 -0700"))
 	}
 }
+
+func TestParseServerLogTimeConvertsLegacyUTCOnlySyslogPrefix(t *testing.T) {
+	cutover := filepath.Join(t.TempDir(), "timezone-cutover")
+	if err := os.WriteFile(cutover, []byte("2026-10-27T00:44:12+08:00\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := parseServerLogTimeWithCutover("Oct 26 16:43:00 freebsd kernel: fatal service error", cutover)
+	parsed, err := time.Parse(time.RFC3339, got)
+	if err != nil {
+		t.Fatalf("parseServerLogTime()=%q is not RFC3339: %v", got, err)
+	}
+	if parsed.Format("2006-01-02 15:04:05 -0700") != "2026-10-27 00:43:00 +0800" {
+		t.Fatalf("legacy UTC syslog prefix was not converted: got %s", parsed.Format("2006-01-02 15:04:05 -0700"))
+	}
+}

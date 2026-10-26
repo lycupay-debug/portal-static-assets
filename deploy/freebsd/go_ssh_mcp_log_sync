@@ -1,6 +1,6 @@
 #!/bin/sh
 # PROVIDE: go_ssh_mcp_log_sync
-# REQUIRE: LOGIN postgresql go_ssh_mcp
+# REQUIRE: LOGIN kerno
 # KEYWORD: shutdown
 . /etc/rc.subr
 name="go_ssh_mcp_log_sync"
