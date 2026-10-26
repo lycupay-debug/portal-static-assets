@@ -61,6 +61,7 @@ if [ -n "$(git -C "$repo" status --porcelain)" ]; then
 fi
 
 sh "$repo/deploy/freebsd/test-caddy-security-headers.sh"
+sh "$repo/deploy/freebsd/test-editor-static-rollback.sh"
 
 cd "$repo/frontend"
 npm ci
