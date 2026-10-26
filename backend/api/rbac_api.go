@@ -115,6 +115,10 @@ func (a *portalAPI) updateUserRoles(w http.ResponseWriter, r *http.Request, acto
 		writeError(w, http.StatusBadRequest, "请提供 roles 字符串数组。", nil)
 		return
 	}
+	if len(body.Roles) == 0 {
+		writeError(w, http.StatusBadRequest, "账户至少必须保留一个角色。", nil)
+		return
+	}
 	roles := make(map[string]bool, len(body.Roles))
 	for _, role := range body.Roles {
 		role = strings.TrimSpace(role)
