@@ -336,10 +336,23 @@ func (a *portalAPI) createSession(ctx context.Context, userID string, w http.Res
 	}
 	return err
 }
+func portalRegistrationEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PERSONAL_PORTAL_REGISTRATION_ENABLED"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *portalAPI) auth(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case path == "/auth/register" && r.Method == http.MethodPost:
+		if !portalRegistrationEnabled() {
+			writeError(w, http.StatusForbidden, "当前暂不开放注册。", nil)
+			return
+		}
 		if a.rateLimited(w, r) {
 			return
 		}

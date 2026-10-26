@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func TestCommandTaskExecutorPostgresIntegration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT status,stdout,exit_code FROM portal.command_tasks WHERE task_id=$1::uuid`, ids[0]).Scan(&status, &stdout, &exitCode); err != nil {
 		t.Fatal(err)
 	}
-	if status != "completed" || !exitCode.Valid || exitCode.Int64 != 0 || !strings.Contains(stdout, "FreeBSD") {
+	if status != "completed" || !exitCode.Valid || exitCode.Int64 != 0 || !strings.Contains(strings.ToLower(stdout), runtime.GOOS) {
 		t.Fatalf("read-only task result status=%q exit=%v stdout=%q", status, exitCode, stdout)
 	}
 

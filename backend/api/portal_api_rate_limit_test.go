@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -42,5 +43,17 @@ func TestRateLimitDoesNotTrustForwardedIPFromNonLoopbackPeer(t *testing.T) {
 	second.Header.Set("X-Portal-Client-IP", "203.0.113.100")
 	if rateLimitClientIP(first) != rateLimitClientIP(second) {
 		t.Fatal("untrusted forwarded headers must not change the rate-limit client identity")
+	}
+}
+
+func TestRegistrationIsDisabledUnlessExplicitlyEnabled(t *testing.T) {
+	t.Setenv("PERSONAL_PORTAL_REGISTRATION_ENABLED", "")
+	api := &portalAPI{}
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"email":"new@example.com","password":"not-a-real-password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	api.auth(response, req)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("registration status = %d, want %d; body=%s", response.Code, http.StatusForbidden, response.Body.String())
 	}
 }

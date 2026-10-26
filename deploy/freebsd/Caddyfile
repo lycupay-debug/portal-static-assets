@@ -57,10 +57,6 @@ www.lycupaynotion.top {
 	}
 }
 
-free.lycupaynotion.top {
-	reverse_proxy 127.0.0.1:8765
-}
-
-n8n.lycupaynotion.top {
-	reverse_proxy 127.0.0.1:5678
+go.lycupaynotion.top {
+	reverse_proxy 127.0.0.1:8766
 }

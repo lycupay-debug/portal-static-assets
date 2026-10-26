@@ -26,4 +26,10 @@ for directive in \
   fi
 done
 
-echo "PASS: public security headers and Cloudflare client-IP trust are configured."
+# Replacing the production Caddyfile must preserve the existing GSM route.
+if ! grep -Fq 'go.lycupaynotion.top {' "$config" || ! grep -Fq 'reverse_proxy 127.0.0.1:8766' "$config"; then
+  echo "FAIL: the deployment Caddyfile must preserve the existing GSM reverse proxy." >&2
+  exit 1
+fi
+
+echo "PASS: public security headers, Cloudflare client-IP trust, and GSM route preservation are configured."

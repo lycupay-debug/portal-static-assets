@@ -1068,6 +1068,11 @@ function setRouteFromLocation() {
   const rawPath = decodeURI(window.location.pathname || '/')
   const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath
   route.value = routeAliases[pathname] || pathname
+  if (route.value === '/register') {
+    history.replaceState({}, '', '/login')
+    route.value = '/login'
+    authNotice.value = '当前暂不开放公开注册，请联系管理员开通账户。'
+  }
   if (route.value === '/knowledge') {
     const params = new URLSearchParams(window.location.search)
     const requestedCategory = params.get('category') || 'recent'
@@ -1406,7 +1411,7 @@ onBeforeUnmount(() => {
         <a href="/#explore" @click.prevent="navigate('/#explore')">资源目录</a>
         <a href="/#about" @click.prevent="navigate('/#about')">关于</a>
         <a v-if="user" class="btn btn-outline-secondary nav-auth" href="/account" @click.prevent="navigate('/account')">个人中心</a>
-        <a v-else class="btn btn-outline-secondary nav-auth" href="/login" @click.prevent="navigate('/login')">登录 / 注册</a>
+        <a v-else class="btn btn-outline-secondary nav-auth" href="/login" @click.prevent="navigate('/login')">登录</a>
       </nav>
     </header>
 
@@ -1626,7 +1631,7 @@ onBeforeUnmount(() => {
           <p v-if="isRegister" class="field-help">密码长度为 10–72 个字符。请勿重复使用其他网站的密码。</p>
           <button class="btn button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
         </form>
-        <p class="auth-switch">{{ isRegister ? '已经有账户？' : '还没有账户？' }} <a :href="isRegister ? '/login' : '/register'" @click.prevent="navigate(isRegister ? '/login' : '/register')">{{ isRegister ? '立即登录' : '创建账户' }}</a></p>
+        <p v-if="isRegister" class="auth-switch">已经有账户？ <a href="/login" @click.prevent="navigate('/login')">立即登录</a></p>
         <a class="back-home" href="/" @click.prevent="navigate('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回首页</a>
       </section>
     </main>

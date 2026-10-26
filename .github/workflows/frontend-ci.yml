@@ -80,11 +80,13 @@ jobs:
           psql -h localhost -U personal_portal_app -d portal_test -v ON_ERROR_STOP=1 -c "SELECT version, name FROM portal.schema_migrations ORDER BY version;"
       - name: Configure PostgreSQL integration tests
         run: echo 'postgres://personal_portal_app:ci-only-password@localhost:5432/portal_test?sslmode=disable' > "$RUNNER_TEMP/database-url"
-      - name: Run Go unit and PostgreSQL integration tests
+      - name: Prepare the production service identity for executor integration tests
+        run: sudo useradd --system --no-create-home --shell /usr/sbin/nologin personalportal
+      - name: Run Go unit and PostgreSQL integration tests with privilege-drop capability
         working-directory: backend
         env:
           PERSONAL_PORTAL_TEST_DATABASE_URL_FILE: ${{ runner.temp }}/database-url
-        run: go test -race ./...
+        run: sudo --preserve-env=PERSONAL_PORTAL_TEST_DATABASE_URL_FILE "$(command -v go)" test -race ./...
       - name: Run Go static analysis
         working-directory: backend
         run: go vet ./...
