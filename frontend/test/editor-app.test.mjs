@@ -14,6 +14,8 @@ test('independent editor uses same-origin authenticated Go APIs', () => {
   assert.match(app, /\/api\/content\//)
   assert.match(app, /\/api\/content'/)
   assert.match(editorComponent, /\/api\/uploads/)
+  assert.match(editorComponent, /v-if="imageUploadError" class="content-editor-image-error" role="alert"/)
+  assert.match(app, /<NotificationHost \/>/)
   assert.match(app, /window\.location\.replace\('\/login'\)/)
 })
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ContentDocumentEditor from '../src/components/ContentDocumentEditor.vue'
+import NotificationHost from '../src/components/NotificationHost.vue'
 import { portalTaxonomy } from '../src/utils/taxonomy'
 
 type PortalUser = { id: string; email: string; displayName: string; isAdmin: boolean }
@@ -263,5 +264,6 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </section>
+    <NotificationHost />
   </main>
 </template>
