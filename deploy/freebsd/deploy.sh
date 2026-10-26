@@ -51,10 +51,9 @@ trap rollback_on_failure EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if [ ! -s "$legacy_node_dir/backend/auth-api/server.mjs" ] || [ ! -s "$legacy_node_dir/backend/content-api/handlers.mjs" ]; then
-  echo "Legacy Node rollback archive is missing: $legacy_node_dir" >&2
-  exit 1
-fi
+# The current production stack is Go + C event core. Rollback uses the
+# pre-cutover Go binaries, Caddyfile, and frontend release captured below;
+# the retired Node.js API is not a rollback dependency and stays disabled.
 
 if [ -n "$(git -C "$repo" status --porcelain)" ]; then
   echo "Repository must be clean and committed before deployment." >&2
