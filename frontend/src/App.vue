@@ -12,6 +12,7 @@ import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
 import { useScrollRestoration } from './composables/useScrollRestoration'
+import { usePublicArticleActions } from './composables/usePublicArticleActions'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
@@ -722,52 +723,14 @@ async function loadLegalDocument(slug: string) {
   }
 }
 
-async function togglePublicInteraction(type: 'like' | 'favorite') {
-  if (!publicArticle.value || publicInteractionBusy.value) return
-  publicInteractionBusy.value = true
-  try {
-    const result = await apiRequest<{ active?: boolean; likeCount?: number; favoriteCount?: number; error?: string }>(`/public/content/${encodeURIComponent(publicArticle.value.slug)}/interactions`, {
-      method: 'POST',
-      body: JSON.stringify({ type }),
-    }, '操作失败，请稍后重试。')
-    publicArticle.value = { ...publicArticle.value,
-      likeCount: result.likeCount ?? publicArticle.value.likeCount,
-      favoriteCount: result.favoriteCount ?? publicArticle.value.favoriteCount,
-      ...(type === 'like' ? { viewerLiked: Boolean(result.active) } : { viewerFavorited: Boolean(result.active) }),
-    }
-    portalNotify.success(type === 'like' ? (result.active ? '已点赞' : '已取消点赞') : (result.active ? '已收藏' : '已取消收藏'))
-  } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 401) {
-      authNotice.value = '请先登录，再进行点赞或收藏。'
-      await navigate('/login')
-      return
-    }
-    portalNotify.error(error instanceof Error ? error.message : '操作失败。')
-  } finally { publicInteractionBusy.value = false }
-}
-function sharePublicArticle() {
-  if (!publicArticle.value) return
-  shareUrl.value = window.location.href
-  shareDialogOpen.value = true
-}
-async function copyShareUrl() {
-  if (!shareUrl.value) return
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(shareUrl.value)
-    } else {
-      const input = document.querySelector<HTMLInputElement>('.share-dialog-url')
-      if (!input) throw new Error('无法读取分享链接。')
-      input.focus()
-      input.select()
-      if (!document.execCommand('copy')) throw new Error('浏览器未能复制链接，请手动选择并复制。')
-    }
-    portalNotify.success('分享链接已复制')
-    shareDialogOpen.value = false
-  } catch (error) {
-    portalNotify.error(error instanceof Error ? error.message : '复制失败，请手动复制链接。')
-  }
-}
+const { toggleInteraction: togglePublicInteraction, shareArticle: sharePublicArticle, copyShareUrl } = usePublicArticleActions({
+  article: publicArticle,
+  busy: publicInteractionBusy,
+  authNotice,
+  shareDialogOpen,
+  shareUrl,
+  navigate,
+})
 async function navigate(target: string) {
   saveScrollPosition()
   closeMenu()
