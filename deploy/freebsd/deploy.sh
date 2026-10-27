@@ -61,7 +61,6 @@ if [ -n "$(git -C "$repo" status --porcelain)" ]; then
 fi
 
 sh "$repo/deploy/freebsd/test-caddy-security-headers.sh"
-sh "$repo/deploy/freebsd/test-editor-static-rollback.sh"
 
 cd "$repo/frontend"
 npm ci
@@ -99,9 +98,8 @@ chmod 0600 "$backup_dir/frontend-current-$stamp"
 PERSONAL_PORTAL_MIGRATION_BACKUP="$backup_dir/pre-go-cutover-$stamp.dump" "$repo/deploy/freebsd/migrate.sh"
 
 release="$www_base/releases/${stamp}-go-backend"
-mkdir -p "$release" "$release/editor"
+mkdir -p "$release"
 cp -R "$repo/frontend/dist/." "$release/"
-cp -R "$repo/frontend/dist-editor/." "$release/editor/"
 if [ ! -f "$release/favicon.ico" ] && [ -f "$www_base/current/favicon.ico" ]; then
   cp "$www_base/current/favicon.ico" "$release/favicon.ico"
 fi

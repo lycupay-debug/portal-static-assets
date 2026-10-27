@@ -888,7 +888,7 @@ function selectAccountSection(id: string) {
   else if (id === 'teaching-resources') void loadTeachingResources()
 }
 function openNewContent() {
-  window.location.assign('/editor/new')
+  window.location.assign('/content-management/new')
 }
 function returnToContentList() {
   contentEditorOpen.value = false
@@ -904,7 +904,7 @@ function cancelContentEditor() {
   void navigate('/content-management')
 }
 function editContent(id: string) {
-  window.location.assign('/editor/' + encodeURIComponent(id))
+  window.location.assign('/content-management/' + encodeURIComponent(id))
 }
 async function saveContent() {
   if (!contentForm.value.title.trim()) { contentError.value = '请填写内容标题。'; return }
@@ -1317,9 +1317,6 @@ async function logout() {
 }
 function onPopState() {
   setRouteFromLocation()
-  const legacyEditorId = route.value.match(new RegExp('^/content-management/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$', 'i'))?.[1]
-  if (route.value === '/content-management/new') { window.location.replace('/editor/new'); return }
-  if (legacyEditorId) { window.location.replace('/editor/' + encodeURIComponent(legacyEditorId)); return }
   closeMenu()
   authError.value = ''
   if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
@@ -1334,9 +1331,6 @@ function onPopState() {
 }
 onMounted(() => {
   setRouteFromLocation()
-  const legacyEditorId = route.value.match(new RegExp('^/content-management/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$', 'i'))?.[1]
-  if (route.value === '/content-management/new') { window.location.replace('/editor/new'); return }
-  if (legacyEditorId) { window.location.replace('/editor/' + encodeURIComponent(legacyEditorId)); return }
   void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
   document.addEventListener('scroll', onScrollCapture, true)

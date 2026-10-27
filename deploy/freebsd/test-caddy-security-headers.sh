@@ -26,18 +26,16 @@ for directive in \
   fi
 done
 
-# The independent editor is served as a separate same-origin SPA and never falls through to the portal index.
+# Old editor URLs must resolve to the integrated portal editor; the retired SPA must not be served.
 for directive in \
   'handle /editor {' \
-  'redir /editor/ 308' \
+  'redir /content-management 308' \
   'handle /editor/assets/* {' \
-  'handle /editor/* {' \
-  'try_files {path} /editor/index.html' \
-  'header Cache-Control "no-cache"' \
-  'header Cache-Control "public, max-age=31536000, immutable"' \
-  'header Permissions-Policy "camera=(), microphone=(), geolocation=()"'; do
+  'respond 410' \
+  'handle_path /editor/* {' \
+  'redir /content-management{path} 308'; do
   if ! grep -Fq "$directive" "$config"; then
-    echo "FAIL: missing independent editor routing directive: $directive" >&2
+    echo "FAIL: missing legacy editor compatibility directive: $directive" >&2
     exit 1
   fi
 done
