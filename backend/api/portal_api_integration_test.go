@@ -118,6 +118,16 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	for _, path := range []string{"/compliance/overview", "/compliance/assets?limit=5", "/compliance/licenses", "/compliance/documents", "/compliance/scans", "/compliance/audit"} {
 		requestJSON(t, api, http.MethodGet, path, nil, sessionCookie, http.StatusOK)
 	}
+	policyDraft := requestJSON(t, api, http.MethodPatch, "/compliance/documents/privacy-policy", map[string]any{
+		"bodyMarkdown":       "Integration-test draft update.",
+		"missingInformation": []string{},
+		"factualAssumptions": []string{"Integration-test assumption"},
+		"legalBasis":         []map[string]string{{"title": "Integration reference", "reference": "https://example.invalid/legal"}},
+		"changeNote":         "Exercise parameterized JSONB update.",
+	}, sessionCookie, http.StatusOK)
+	if !bytes.Contains(policyDraft.Body.Bytes(), []byte("version")) {
+		t.Fatalf("legal document JSONB update response mismatch: %s", policyDraft.Body.String())
+	}
 	assetExport := requestJSON(t, api, http.MethodGet, "/compliance/export/assets.csv", nil, sessionCookie, http.StatusOK)
 	if !strings.Contains(assetExport.Header().Get("Content-Type"), "text/csv") || !bytes.HasPrefix(assetExport.Body.Bytes(), []byte("\xef\xbb\xbf")) || !bytes.Contains(assetExport.Body.Bytes(), []byte("asset_id,asset_type")) {
 		t.Fatalf("compliance CSV export contract mismatch: headers=%v body_prefix=%q", assetExport.Header(), assetExport.Body.String()[:min(len(assetExport.Body.String()), 120)])

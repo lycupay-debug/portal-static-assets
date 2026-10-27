@@ -131,7 +131,11 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 			a.dbError(w, err, "恢复失败。")
 			return
 		}
-		n, _ := res.RowsAffected()
+		n, err := res.RowsAffected()
+		if err != nil {
+			a.dbError(w, err, "恢复失败。")
+			return
+		}
 		if n == 0 {
 			writeError(w, 404, "回收站中不存在该内容。", nil)
 			return
@@ -231,7 +235,11 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 				a.dbError(w, err, "取消发布失败。")
 				return
 			}
-			n, _ := res.RowsAffected()
+			n, err := res.RowsAffected()
+			if err != nil {
+				a.dbError(w, err, "取消发布失败。")
+				return
+			}
 			if n == 0 {
 				writeError(w, 404, "内容不存在或无权访问。", nil)
 				return
@@ -270,7 +278,11 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 			a.dbError(w, err, "删除失败。")
 			return
 		}
-		n, _ := res.RowsAffected()
+		n, err := res.RowsAffected()
+		if err != nil {
+			a.dbError(w, err, "删除失败。")
+			return
+		}
 		if n == 0 {
 			writeError(w, 404, "内容不存在或无权访问。", nil)
 			return

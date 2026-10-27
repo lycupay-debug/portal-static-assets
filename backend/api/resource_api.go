@@ -157,7 +157,11 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			a.dbError(w, err, "资源恢复失败。")
 			return
 		}
-		n, _ := res.RowsAffected()
+		n, err := res.RowsAffected()
+		if err != nil {
+			a.dbError(w, err, "资源恢复失败。")
+			return
+		}
 		if n == 0 {
 			writeError(w, 404, "资源不存在或无权恢复。", nil)
 			return
@@ -223,7 +227,11 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			a.dbError(w, err, "删除资源失败。")
 			return
 		}
-		n, _ := res.RowsAffected()
+		n, err := res.RowsAffected()
+		if err != nil {
+			a.dbError(w, err, "删除资源失败。")
+			return
+		}
 		if n == 0 {
 			writeError(w, 404, "资源不存在或已在回收站。", nil)
 			return
@@ -329,7 +337,11 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		a.dbError(w, err, "资源更新失败。")
 		return
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		a.dbError(w, err, "资源更新失败。")
+		return
+	}
 	if n == 0 {
 		writeError(w, 404, "资源不存在或无权编辑。", nil)
 		return

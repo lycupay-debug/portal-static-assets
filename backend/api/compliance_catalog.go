@@ -185,15 +185,13 @@ func (a *portalAPI) complianceDocumentBySlug(w http.ResponseWriter, r *http.Requ
 	if b.BodyMarkdown != nil {
 		add("body_markdown", *b.BodyMarkdown)
 	}
-	if b.Status != nil { /* status already bound */
-	}
 	if b.MissingInformation != nil {
 		raw, _ := json.Marshal(*b.MissingInformation)
-		add("missing_information", string(raw)+"::jsonb")
+		add("missing_information", string(raw))
 	}
 	if b.FactualAssumptions != nil {
 		raw, _ := json.Marshal(*b.FactualAssumptions)
-		add("factual_assumptions", string(raw)+"::jsonb")
+		add("factual_assumptions", string(raw))
 	}
 	if b.ApprovedBy != nil {
 		add("approved_by", strings.TrimSpace(*b.ApprovedBy))
@@ -206,23 +204,13 @@ func (a *portalAPI) complianceDocumentBySlug(w http.ResponseWriter, r *http.Requ
 	}
 	if b.LegalBasis != nil {
 		raw, _ := json.Marshal(*b.LegalBasis)
-		add("legal_basis", string(raw)+"::jsonb")
+		add("legal_basis", string(raw))
 	}
-	// JSONB values above are cast as SQL text parameters by the explicit placeholder cast below.
-	for i := range args {
-		_ = i
-	}
+	// JSON values are passed as parameters; PostgreSQL infers JSONB types from
+	// the destination columns, so no SQL fragments are appended to user values.
 	query := `UPDATE portal.compliance_legal_documents SET ` + strings.Join(sets, ",") + ` WHERE slug=$1 RETURNING document_id::text,version,body_markdown,status`
-	// The JSONB placeholders are passed as text and cast in a follow-up update to keep input strictly parameterized.
-	query = strings.ReplaceAll(query, "missing_information=$", "missing_information=$")
 	var docID, newBody, status string
 	var version int
-	// Normalize json strings to []byte-compatible values; pgx accepts []byte for JSONB.
-	for i := 1; i < len(args); i++ {
-		if s, ok := args[i].(string); ok && (strings.HasSuffix(s, "::jsonb")) {
-			args[i] = strings.TrimSuffix(s, "::jsonb")
-		}
-	}
 	if err = a.db.QueryRowContext(r.Context(), query, args...).Scan(&docID, &version, &newBody, &status); err != nil {
 		a.dbError(w, err, "无法更新政策草稿。")
 		return
