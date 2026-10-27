@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - integration/portal-cleanup-2026-10
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: API contract lint
+        working-directory: frontend
+        run: npm run api:lint
+      - name: Verify generated API contract
+        working-directory: frontend
+        run: npm run api:check
+      - name: Type check and unit tests
+        working-directory: frontend
+        run: |
+          npm run type-check
+          npm test
+      - name: Production build and bundle budget
+        working-directory: frontend
+        run: npm run build
+
+  backend:
+    name: Go backend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Verify dependencies
+        working-directory: backend
+        run: go mod verify
+      - name: Unit and race tests
+        working-directory: backend
+        run: go test -race -count=1 ./...
+      - name: Static checks
+        working-directory: backend
+        run: go vet ./...
+
+  event-core:
+    name: C event core checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and protocol tests
+        working-directory: event-core
+        run: make clean all test
+
+  compliance-and-deploy-policy:
+    name: Compliance and deployment policy checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compliance asset scanner unit tests
+        run: python -m unittest scripts.compliance.test_scan_assets
+      - name: Python syntax checks
+        run: python -m compileall -q scripts/compliance
+      - name: Shell syntax checks
+        run: |
+          find deploy/freebsd scripts/ops -type f \( -name '*.sh' -o -name 'deploy.sh' -o -name 'rollback.sh' \) -print0 | xargs -0 -n1 sh -n
+      - name: Patch whitespace check
+        run: git diff --check
