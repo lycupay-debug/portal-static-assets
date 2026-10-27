@@ -4,6 +4,8 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 SOCKET="/var/tmp/personal-portal-event-core-test-$$.sock"
 LOG="/var/tmp/personal-portal-event-core-test-$$.log"
+REGULAR="$SOCKET.regular"
+DUPLICATE_LOG="$LOG.duplicate"
 BINARY="${EVENT_CORE_BINARY:-$ROOT/event-core}"
 PID=""
 
@@ -12,9 +14,20 @@ cleanup() {
         kill -TERM "$PID" 2>/dev/null || true
         wait "$PID" 2>/dev/null || true
     fi
-    rm -f "$SOCKET" "$LOG"
+    rm -f "$SOCKET" "$LOG" "$REGULAR" "$DUPLICATE_LOG"
 }
 trap cleanup EXIT INT TERM
+
+# Startup must never unlink a non-socket path.
+printf 'preserve this file' > "$REGULAR"
+if "$BINARY" "$REGULAR" > /dev/null 2>&1; then
+    echo "FAIL: event core accepted a regular file as its socket path" >&2
+    exit 1
+fi
+if [ "$(cat "$REGULAR")" != 'preserve this file' ]; then
+    echo "FAIL: event core modified or removed a non-socket path" >&2
+    exit 1
+fi
 
 "$BINARY" "$SOCKET" >"$LOG" 2>&1 &
 PID=$!
@@ -29,6 +42,17 @@ while [ ! -S "$SOCKET" ]; do
     fi
     sleep 0.1
 done
+
+# A second daemon must not unlink the active listener and steal its path.
+if "$BINARY" "$SOCKET" >"$DUPLICATE_LOG" 2>&1; then
+    echo "FAIL: second event core instance unexpectedly started" >&2
+    exit 1
+fi
+if ! grep -q 'Address already in use' "$DUPLICATE_LOG"; then
+    cat "$DUPLICATE_LOG" >&2
+    echo "FAIL: duplicate listener did not report an active socket" >&2
+    exit 1
+fi
 
 PYTHON=${PYTHON:-python3.14}
 if ! command -v "$PYTHON" >/dev/null 2>&1; then PYTHON=python3; fi
@@ -201,4 +225,4 @@ grep -q "event-core stopped" "$LOG"
 grep -q "event_core_push_queue_overflow" "$LOG"
 grep -q "event_core_ack_timeout" "$LOG"
 grep -q "event_core_client_timeout" "$LOG"
-echo "PASS: SIGTERM shutdown, bounded queue, idle-client expiry, and ACK timeout observability"
+echo "PASS: safe socket path handling, active-listener protection, SIGTERM shutdown, bounded queue, idle-client expiry, and ACK timeout observability"
