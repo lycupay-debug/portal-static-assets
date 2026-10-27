@@ -1,4 +1,4 @@
-export type AccountNavigationItem = {
+type AccountNavigationItem = {
   id: string
   label: string
   description: string

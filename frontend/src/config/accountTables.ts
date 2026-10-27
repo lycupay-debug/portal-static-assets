@@ -1,4 +1,4 @@
-export type TableColumn = { key: string; label: string; width?: string }
+type TableColumn = { key: string; label: string; width?: string }
 export type AccountTableDefinition = { title: string; columns: TableColumn[]; note: string }
 
 export const tableDefinitions: Record<string, AccountTableDefinition> = {

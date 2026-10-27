@@ -72,7 +72,7 @@ const Callout = Node.create({
   renderMarkdown(node, helpers) { return ':::callout ' + (node.attrs?.backgroundColor || '#F1F1F1') + '\n' + helpers.renderChildren(node.content || []) + '\n:::' },
 })
 
-export type ContentEditorAction = (editor: Editor) => void
+type ContentEditorAction = (editor: Editor) => void
 
 export function normalizeEditorLinkUrl(value: string): string | null {
   const trimmed = value.trim()
