@@ -72,8 +72,12 @@ npm run type-check
 npm test
 npm run build
 
+# Run the PostgreSQL integration suite against a fresh, isolated database
+# built from the repository migrations. Do not silently skip DB integration
+# tests during a production release preflight.
+sh "$repo/scripts/ops/test-postgres-integration.sh" "$repo" "$go_bin"
+
 cd "$repo/backend"
-"$go_bin" test -race ./...
 "$go_bin" vet ./...
 "$go_bin" build -trimpath -ldflags="-s -w" -o "$work/api" ./api
 
