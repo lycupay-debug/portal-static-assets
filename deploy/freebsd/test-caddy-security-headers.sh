@@ -29,11 +29,11 @@ done
 # Old editor URLs must resolve to the integrated portal editor; the retired SPA must not be served.
 for directive in \
   'handle /editor {' \
-  'redir /content-management 308' \
+  'redir https://{http.request.host}/content-management 308' \
   'handle /editor/assets/* {' \
   'respond 410' \
   'handle_path /editor/* {' \
-  'redir /content-management{path} 308'; do
+  'redir https://{http.request.host}/content-management{path} 308'; do
   if ! grep -Fq "$directive" "$config"; then
     echo "FAIL: missing legacy editor compatibility directive: $directive" >&2
     exit 1

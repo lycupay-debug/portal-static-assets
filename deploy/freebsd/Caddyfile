@@ -17,13 +17,13 @@ www.lycupaynotion.top {
 
 	# Compatibility redirects: the editor is integrated into the main portal again.
 	handle /editor {
-		redir /content-management 308
+		redir https://{http.request.host}/content-management 308
 	}
 	handle /editor/assets/* {
 		respond 410
 	}
 	handle_path /editor/* {
-		redir /content-management{path} 308
+		redir https://{http.request.host}/content-management{path} 308
 	}
 
 	# Internal control surfaces must never be exposed through the public gateway.

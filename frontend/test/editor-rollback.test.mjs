@@ -17,7 +17,7 @@ test('content management uses the integrated Tiptap editor without redirecting t
 })
 
 test('legacy editor URLs redirect into the portal and standalone assets are disabled', () => {
-  assert.match(caddy, /redir \/content-management 308/)
+  assert.match(caddy, /redir https:\/\/\{http\.request\.host\}\/content-management 308/)
   assert.match(caddy, /handle_path \/editor\/\*/)
   assert.match(caddy, /respond 410/)
   assert.doesNotMatch(caddy, /try_files \{path\} \/editor\/index\.html/)
