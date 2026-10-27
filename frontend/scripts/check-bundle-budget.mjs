@@ -33,8 +33,8 @@ if (!cssPaths.length) throw new Error('Could not find initial CSS assets in dist
 
 const entry = sizes(entryPath)
 assertBudget('Initial JavaScript (gzip)', entry.gzip, 65 * 1024, 'gzip bytes')
-// Keep a small raw-size allowance for whitespace-insensitive table search.
-assertBudget('Initial JavaScript (raw)', entry.raw, 191 * 1024, 'raw bytes')
+// Gzip remains the primary delivery-size guard. The raw limit allows small, intentional module-boundary refactors.
+assertBudget('Initial JavaScript (raw)', entry.raw, 192 * 1024, 'raw bytes')
 const initialCssGzip = cssPaths.reduce((total, path) => total + sizes(path).gzip, 0)
 assertBudget('Initial CSS (gzip)', initialCssGzip, 85 * 1024, 'gzip bytes')
 

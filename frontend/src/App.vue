@@ -12,15 +12,14 @@ import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, normalizeKnowledgeTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
-import { buildSearchableTableRecords, filterAccountTableRecords } from './utils/accountTableFiltering'
-import { buildAccountTableRecords } from './utils/accountTableRecords'
-import { buildTableColumnTemplate, tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
+import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
+import { useAccountTable } from './composables/useAccountTable'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
 import { directoryPages, directoryTiles } from './config/publicDirectories'
-import { contentStatusLabels, contentTypeLabels, tableDefinitions } from './config/accountTables'
+import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
@@ -98,7 +97,6 @@ function toggleAccountGroup(groupId: string) {
 
 
 
-type TableRecord = Record<string, string | number>
 const tableQuery = ref('')
 const debouncedTableQuery = ref('')
 let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -225,44 +223,29 @@ const publicInteractionBusy = ref(false)
 const shareDialogOpen = ref(false)
 const shareUrl = ref('')
 watch(publicContentError, (message) => { if (message) portalNotify.error(message, '内容读取失败') }, { flush: 'sync' })
-const virtualTableRowHeight = 44
-const virtualTableViewportHeight = 440
-const virtualTableOverscan = 6
-const activeTableDefinition = computed(() => tableDefinitions[activeAccountSection.value] || null)
-const tableRecords = computed<TableRecord[]>(() => buildAccountTableRecords({
-  section: activeAccountSection.value,
-  contentViewMode: contentViewMode.value,
-  contentItems: contentItems.value,
-  contentTrashItems: contentTrashItems.value,
-  resourceViewMode: resourceViewMode.value,
-  teachingResources: teachingResources.value,
-  teachingResourceTrash: teachingResourceTrash.value,
-  contentTypeLabels,
-  contentStatusLabels,
-}))
-// Build each record's normalized search text once per data change, rather than
-// converting every cell to lowercase on every keystroke. Action/status helper fields
-// are excluded because they are UI-only and do not add useful search content.
-const searchableTableRecords = computed(() => buildSearchableTableRecords(tableRecords.value))
-const filteredTableRecords = computed(() => filterAccountTableRecords(searchableTableRecords.value, debouncedTableQuery.value))
-const virtualTableStart = computed(() => {
-  const count = filteredTableRecords.value.length
-  // A previous table can leave a large scrollTop behind when switching to a
-  // shorter dataset. Clamp the window so start can never exceed the last page.
-  const maxStart = Math.max(0, count - Math.ceil(virtualTableViewportHeight / virtualTableRowHeight) - virtualTableOverscan * 2)
-  return Math.min(maxStart, Math.max(0, Math.floor(tableScrollTop.value / virtualTableRowHeight) - virtualTableOverscan))
+const {
+  activeTableDefinition,
+  filteredTableRecords,
+  virtualTableStart,
+  visibleTableRecords,
+  tableColumnTemplate,
+  virtualTableTopSpace,
+  virtualTableBottomSpace,
+} = useAccountTable({
+  activeAccountSection,
+  contentViewMode,
+  contentItems,
+  contentTrashItems,
+  resourceViewMode,
+  teachingResources,
+  teachingResourceTrash,
+  debouncedTableQuery,
+  tableScrollTop,
+  virtualTableViewportWidth,
 })
-const virtualTableEnd = computed(() => Math.max(virtualTableStart.value, Math.min(filteredTableRecords.value.length, Math.ceil((tableScrollTop.value + virtualTableViewportHeight) / virtualTableRowHeight) + virtualTableOverscan)))
-const visibleTableRecords = computed(() => filteredTableRecords.value.slice(virtualTableStart.value, virtualTableEnd.value))
 function openTableCell(label: string, value: string) {
   selectedTableCell.value = { label, value }
 }
-const tableColumnTemplate = computed(() => buildTableColumnTemplate(
-  activeTableDefinition.value?.columns || [],
-  filteredTableRecords.value,
-  virtualTableViewportWidth.value,
-  window.innerWidth * 0.75,
-))
 function observeVirtualTableWidth() {
   tableResizeObserver?.disconnect()
   const element = virtualTableScrollElement.value
@@ -285,8 +268,6 @@ watch([activeAccountSection, contentViewMode, resourceViewMode, debouncedTableQu
   await nextTick()
   if (virtualTableScrollElement.value) virtualTableScrollElement.value.scrollTop = 0
 })
-const virtualTableTopSpace = computed(() => virtualTableStart.value * virtualTableRowHeight)
-const virtualTableBottomSpace = computed(() => Math.max(0, (filteredTableRecords.value.length - virtualTableEnd.value) * virtualTableRowHeight))
 function onVirtualTableScroll(event: Event) {
   tableScrollTop.value = (event.target as HTMLElement).scrollTop
 }
