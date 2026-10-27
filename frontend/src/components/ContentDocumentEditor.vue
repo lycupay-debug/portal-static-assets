@@ -2,9 +2,9 @@
 import type { Editor as CoreEditor } from '@tiptap/core'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
-import DragHandle from '@tiptap/extension-drag-handle'
 import { createContentEditorExtensions, createContentEditorTools, executeContentEditorTool, normalizeEditorImageUrl, normalizeEditorLinkUrl } from '../utils/contentEditor'
-import { portalNotify } from '../utils/notification'
+import { useEditorImageUpload } from '../composables/useEditorImageUpload'
+import { createContentEditorDragHandle } from '../utils/contentEditorDragHandle'
 
 const props = defineProps<{ modelValue: string; disabled?: boolean; workspace?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -24,63 +24,13 @@ const contextMenu = ref({ open: false, x: 0, y: 0, target: "text" })
 const backgroundColors = [{ name: '浅灰', value: '#F1F1F1' }, { name: '中浅灰', value: '#E5E5E5' }, { name: '灰白', value: '#F8F8F8' }, { name: '中灰', value: '#D6D6D6' }, { name: '深浅灰', value: '#C9C9C9' }, { name: '无背景', value: '' }]
 const textColors = [{ name: '默认', value: '#292929' }, { name: '深黑', value: '#111111' }, { name: '深灰', value: '#444444' }, { name: '中灰', value: '#707070' }, { name: '浅灰', value: '#929292' }]
 const outlineItems = ref<Array<{ level: number; text: string; index: number }>>([])
-let dragHandleTarget: HTMLElement | null = null
-
 const editor = useEditor({
   content: props.modelValue || '',
   contentType: 'markdown',
   editable: !props.disabled,
   extensions: [
     ...createContentEditorExtensions(),
-    DragHandle.configure({
-      render() {
-        const button = document.createElement('button')
-        button.type = 'button'
-        button.className = 'content-editor-drag-handle'
-        button.title = '拖动排序'
-        button.setAttribute('aria-label', '块操作菜单')
-        button.setAttribute('draggable', 'true')
-        button.innerHTML = '<svg class="content-editor-drag-icon" aria-hidden="true" viewBox="0 0 20 20" focusable="false"><circle cx="6" cy="4" r="1.65"/><circle cx="14" cy="4" r="1.65"/><circle cx="6" cy="10" r="1.65"/><circle cx="14" cy="10" r="1.65"/><circle cx="6" cy="16" r="1.65"/><circle cx="14" cy="16" r="1.65"/></svg>'
-        return button
-      },
-      computePositionConfig: { placement: 'left-start', strategy: 'absolute' },
-      onNodeChange: change => {
-        const { editor: currentEditor, node } = change
-        // The installed plugin emits `pos` at runtime, although its public option type omits it.
-        const pos = (change as typeof change & { pos: number }).pos
-        if (!node || typeof pos !== 'number' || pos < 0) {
-          dragHandleTarget = null
-          return
-        }
-        const dom = currentEditor.view.nodeDOM(pos)
-        dragHandleTarget = dom instanceof HTMLElement ? dom : null
-      },
-      getReferencedVirtualElement: () => {
-        const root = dragHandleTarget
-        if (!root) return null
-        // Lists and callouts can be taller than one line. Anchor the handle to their first
-        // visible text line instead of centering it against the whole block's bounding box.
-        const firstLine = root.matches('ul, ol, blockquote, [data-callout]')
-          ? root.querySelector(':scope > li > div > p:first-child, :scope > li > p:first-child, :scope > p:first-child, :scope > h1:first-child, :scope > h2:first-child, :scope > h3:first-child')
-          : null
-        const target = firstLine instanceof HTMLElement ? firstLine : root
-        return {
-          getBoundingClientRect: () => {
-            const rect = target.getBoundingClientRect()
-            // Floating UI's `left-start` aligns the handle's top edge with this virtual rect.
-            // Shift the anchor by half the height difference so the handle's center sits on
-            // the first line's center (text baseline, checkbox, number, or bullet row).
-            const handleHeight = 32
-            const alignedTop = rect.top + (rect.height - handleHeight) / 2
-            if (!root.matches('ul, ol')) return new DOMRect(rect.left, alignedTop, rect.width, rect.height)
-            // For lists, anchor horizontally to the list container's outer edge so the
-            // handle stays in the gutter, clear of markers and task checkboxes.
-            const listRect = root.getBoundingClientRect()
-            return new DOMRect(listRect.left, alignedTop, listRect.width, rect.height)
-          },
-        }
-      },
-    }),
+    createContentEditorDragHandle(),
   ],
   editorProps: {
     attributes: { class: 'content-editor-document', 'aria-label': '文档正文编辑器', spellcheck: 'true' },
@@ -195,6 +145,7 @@ const toolActions = {
     if (url) current.chain().focus().insertContent({ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] }).run()
   },
 }
+const { onImageFileChange } = useEditorImageUpload({ editor, menuOpen: imageMenuOpen, error: imageUploadError })
 const toolbarItems = computed(() => createContentEditorTools(editor.value, toolActions))
 const slashItems = computed(() => toolbarItems.value.filter(item => !slashQuery.value || (item.label + ' ' + item.description + ' ' + item.keywords).toLocaleLowerCase().includes(slashQuery.value.toLocaleLowerCase())))
 
@@ -218,31 +169,7 @@ function insertImageFromUrl() {
   imageMenuOpen.value = false
   imageUrl.value = ''
 }
-function onImageFileChange(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  const current = editor.value
-  if (!file || !current || !file.type.startsWith('image/')) return
-  imageUploadError.value = ''
-  if (file.size > 8 * 1024 * 1024) { imageUploadError.value = '图片大小不能超过 8 MB。'; portalNotify.error(imageUploadError.value, '图片上传失败'); return }
-  if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'].includes(file.type)) { imageUploadError.value = '仅支持 PNG、JPEG、GIF、WebP 或 AVIF 图片。'; portalNotify.error(imageUploadError.value, '图片上传失败'); return }
-  const reader = new FileReader()
-  reader.onload = async () => {
-    if (typeof reader.result !== 'string' || !editor.value) return
-    try {
-      const data = reader.result.split(',')[1] || ''
-      const response = await fetch('/api/uploads', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ mime: file.type, data }) })
-      const result = await response.json() as { url?: string; error?: string }
-      if (!response.ok || !result.url) throw new Error(result.error || '图片上传失败。')
-      editor.value.chain().focus().setImage({ src: result.url, alt: file.name }).run()
-      imageMenuOpen.value = false
-    } catch (error) {
-      imageUploadError.value = error instanceof Error ? error.message : '图片上传失败，请重试。'
-      portalNotify.error(imageUploadError.value, '图片上传失败')
-    }
-  }
-  reader.readAsDataURL(file)
-  ;(event.target as HTMLInputElement).value = ''
-}
+
 function resizeSelectedImage(width: string) {
   const current = editor.value
   if (!current || !current.isActive('image')) return
