@@ -1,0 +1,190 @@
+/* Global typography governance: central tokens and minimum readable sizes. */
+html { font-size: var(--font-size-16px-4678bd); }
+body, #app { font-family: var(--font-family-base); font-size: var(--font-size-base); }
+/* Outside compact cards, rendered text must not fall below 14px. */
+/* Cards and their compact metadata may use 12px, but never smaller. */
+/* Keep icon glyphs visually proportionate; the text minimum rules above exclude icon elements. */
+#app :where(i[class*="bi-"], .icon, svg) { flex-shrink: 0; }
+
+/* Code uses the platform monospace stack; all other text inherits system-ui. */
+#app :where(code, kbd, pre, samp) { font-family: var(--font-family-mono); }
+
+/* Bootstrap utility classes can set text below the portal's readable-size policy. */
+#app :where(small, .small, .form-text, .form-control-sm, .form-select-sm, .btn-sm, .badge, .breadcrumb, .pagination-sm, .pagination-sm .page-link, .form-label, .form-check-label, .invalid-feedback, .valid-feedback, .text-muted, .text-body-secondary) { font-size: max(var(--font-size-base), 1em); }
+/* In cards, these compact utility labels may use 12px but never smaller. */
+#app :where(.card, [class*="-card"], [class*="-tile"], .section-card, .public-author-card, .knowledge-list-item, .education-resource-card, .virtual-table-panel) :where(small, .small, .form-text, .form-control-sm, .form-select-sm, .btn-sm, .badge, .breadcrumb, .pagination-sm, .pagination-sm .page-link, .form-label, .form-check-label, .invalid-feedback, .valid-feedback, .text-muted, .text-body-secondary) { font-size: max(var(--font-size-card-xs), 1em); }
+/* Teaching resource detail drawer and batch upload controls. */
+.resource-clickable-row { cursor: pointer; }
+.resource-clickable-row:focus-visible { outline: 2px solid rgba(0, 0, 0, .42); outline-offset: -2px; }
+.resource-clickable-row:hover { background: rgba(0, 0, 0, .035); }
+.resource-batch-toggle { display: flex; align-items: center; gap: 9px; margin: 2px 0 6px; color: #333; font-size: var(--font-size-13px-min14-233710); cursor: pointer; }
+.resource-batch-toggle input { width: 16px; height: 16px; margin: 0; accent-color: #222; }
+.resource-detail-drawer-backdrop { position: fixed; z-index: 1250; inset: 0; display: flex; justify-content: flex-end; background: rgba(15, 15, 15, .28); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.resource-detail-drawer { display: flex; flex-direction: column; width: min(580px, 94vw); height: 100%; color: #171717; background: rgba(255, 255, 255, .94); box-shadow: -18px 0 70px rgba(0, 0, 0, .16); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); animation: resource-drawer-in .2s ease-out both; }
+.resource-detail-drawer-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 26px 20px; border-bottom: 1px solid rgba(0, 0, 0, .08); }
+.resource-detail-drawer-heading h2 { margin: 6px 0 0; font-size: 24px; letter-spacing: -.035em; }
+.resource-detail-drawer-heading > button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: #333; background: transparent; cursor: pointer; }
+.resource-detail-drawer-heading > button:hover { background: rgba(0, 0, 0, .06); }
+.resource-detail-drawer-body { min-height: 0; overflow-y: auto; padding: 24px 26px 30px; }
+.resource-detail-drawer-body > h3 { margin: 0 0 22px; font-size: 20px; line-height: 1.45; overflow-wrap: anywhere; }
+.resource-detail-fields { display: grid; gap: 0; margin: 0; }
+.resource-detail-fields > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; padding: 14px 0; border-bottom: 1px solid rgba(0, 0, 0, .065); }
+.resource-detail-fields dt { color: #777; font-size: 13px; font-weight: 500; }
+.resource-detail-fields dd { min-width: 0; margin: 0; color: #222; font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
+.resource-detail-fields dd a { color: #222; text-decoration: underline; text-underline-offset: 3px; }
+.resource-detail-fields .resource-detail-id { color: #777; font-size: 12px; overflow-wrap: anywhere; }
+.resource-detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 10px; margin-top: 24px; }
+@keyframes resource-drawer-in { from { transform: translateX(18px); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
+@media (max-width: 560px) { .resource-detail-drawer { width: 100%; } .resource-detail-drawer-heading { padding: 20px 18px 16px; } .resource-detail-drawer-body { padding: 20px 18px 26px; } .resource-detail-fields > div { grid-template-columns: 94px minmax(0, 1fr); gap: 10px; } }
+@media (prefers-reduced-motion: reduce) { .resource-detail-drawer { animation: none; } }
+
+/* Editor block rhythm and first-line alignment: keep visual controls centered on the text line. */
+.content-editor-document {
+  --editor-line-height: 1.85;
+  line-height: var(--editor-line-height);
+}
+.content-editor-document :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, table) {
+  scroll-margin-block: 1.5em;
+}
+.content-editor-document > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table, hr, figure, img, [data-callout="true"]) {
+  margin-block-start: 0;
+  margin-block-end: 0.75em;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) {
+  padding-inline-start: 1.7em;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) > li {
+  padding-inline-start: 0.08em;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) > li > :first-child,
+.content-editor-document ul[data-type="taskList"] > li > div > :first-child {
+  margin-block-start: 0;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) > li > :last-child,
+.content-editor-document ul[data-type="taskList"] > li > div > :last-child {
+  margin-block-end: 0;
+}
+.content-editor-document ul[data-type="taskList"] {
+  display: grid;
+  gap: 0.25em;
+  list-style: none;
+  margin-block: 0 0.75em;
+  padding: 0;
+}
+.content-editor-document ul[data-type="taskList"] > li {
+  display: grid;
+  grid-template-columns: 1.25em minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.45em;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+.content-editor-document ul[data-type="taskList"] > li > label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: start;
+  width: 1.25em;
+  min-height: calc(var(--editor-line-height) * 1em);
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  cursor: pointer;
+}
+.content-editor-document ul[data-type="taskList"] > li > label input[type="checkbox"] {
+  display: block;
+  flex: 0 0 1em;
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  padding: 0;
+  accent-color: #333333;
+  cursor: pointer;
+}
+.content-editor-document ul[data-type="taskList"] > li > div {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  line-height: var(--editor-line-height);
+  overflow-wrap: anywhere;
+}
+.content-editor-document ul[data-type="taskList"] > li > div > p {
+  min-height: calc(var(--editor-line-height) * 1em);
+  margin-block: 0 0.5em;
+  line-height: inherit;
+}
+.content-editor-document ul[data-type="taskList"] > li > div > p:last-child {
+  margin-block-end: 0;
+}
+.content-editor-document ul[data-type="taskList"] > li[data-checked="true"] > div {
+  color: #888888;
+}
+.content-editor-document ul[data-type="taskList"] > li[data-checked="true"] > div > p {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(0, 0, 0, 0.28);
+}
+.content-editor-document :is(blockquote, pre, table, img, hr) {
+  max-width: 100%;
+}
+.content-editor-document blockquote {
+  margin-block: 0.75em;
+  padding-block: 0.15em;
+  line-height: var(--editor-line-height);
+}
+.content-editor-document > [data-callout="true"] {
+  margin-block: 0 0.75em;
+  line-height: var(--editor-line-height);
+}
+.content-editor-document > [data-callout="true"] > :first-child { margin-block-start: 0; }
+.content-editor-document > [data-callout="true"] > :last-child { margin-block-end: 0; }
+.content-editor-document pre {
+  line-height: 1.6;
+  tab-size: 2;
+}
+.content-editor-document table :is(th, td) {
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.content-editor-document :is(input, button, a, [contenteditable="false"]):focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.55);
+  outline-offset: 2px;
+}
+.content-editor-document ul[data-type="taskList"] > li > label:hover input[type="checkbox"] {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.055);
+}
+.content-a4-paper .content-editor-document {
+  --editor-line-height: 1.9;
+}
+@media (max-width: 680px) {
+  .content-editor-document :is(ul:not([data-type="taskList"]), ol) { padding-inline-start: 1.45em; }
+  .content-editor-document ul[data-type="taskList"] > li { column-gap: 0.35em; }
+}
+
+/* A larger, crisp six-dot grip makes block dragging easier to discover and target. */
+.content-editor-drag-handle {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  border-radius: 6px;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.content-editor-drag-handle > .content-editor-drag-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  flex: none;
+  pointer-events: none;
+  user-select: none;
+}
+.content-editor-drag-handle:focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.55);
+  outline-offset: 1px;
+}

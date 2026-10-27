@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 const component = await readFile(new URL('../src/components/ContentDocumentEditor.vue', import.meta.url), 'utf8')
 const dragHandle = await readFile(new URL('../src/utils/contentEditorDragHandle.ts', import.meta.url), 'utf8')
-const theme = await readFile(new URL('../src/theme.css', import.meta.url), 'utf8')
+const theme = await readFile(new URL('../src/theme-typography.css', import.meta.url), 'utf8')
 
 test('drag handle anchors to the first visible text line of multiline blocks', () => {
   assert.match(dragHandle, /onNodeChange:\s*change\s*=>/)
@@ -17,9 +17,8 @@ test('drag handle anchors to the first visible text line of multiline blocks', (
   assert.match(dragHandle, /new DOMRect\(rect\.left, alignedTop, rect\.width, rect\.height\)/)
   assert.match(dragHandle, /new DOMRect\(listRect\.left, alignedTop, listRect\.width, rect\.height\)/)
   assert.match(dragHandle, /For lists, anchor horizontally to the list container's outer edge/)
-})
-
   assert.match(component, /createContentEditorDragHandle\(\)/)
+})
 test('drag handle uses a larger six-dot icon and an accessible 30 by 32 pixel hit area', () => {
   assert.match(theme, /\.content-editor-drag-handle\s*\{[^}]*width:\s*30px/s)
   assert.match(theme, /\.content-editor-drag-handle\s*\{[^}]*height:\s*32px/s)

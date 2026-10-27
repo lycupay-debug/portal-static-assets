@@ -1,0 +1,261 @@
+/* Keep the content-management heading, toolbar, and table inside one aligned content boundary. */
+.account-content.account-content-table-mode > h1.account-page-title {
+  margin-right: 24px;
+  margin-left: 24px;
+}
+.account-content.account-content-table-mode > .virtual-table-panel {
+  width: calc(100% - 48px);
+  margin-right: 24px;
+  margin-left: 24px;
+}
+.account-content.account-content-table-mode > .content-feedback {
+  margin-right: 24px;
+  margin-left: 24px;
+}
+@media (max-width: 760px) {
+  .account-content.account-content-table-mode > h1.account-page-title { margin-right: 16px; margin-left: 16px; }
+  .account-content.account-content-table-mode > .virtual-table-panel { width: calc(100% - 32px); margin-right: 16px; margin-left: 16px; }
+  .account-content.account-content-table-mode > .content-feedback { margin-right: 16px; margin-left: 16px; }
+}
+
+/* Position the content list toolbar 8% of the viewport height below the top edge. */
+.account-content.account-content-table-mode > .virtual-table-panel {
+  margin-top: 8vh;
+  height: calc(100% - 8vh - 88px);
+}
+@media (max-width: 760px) {
+  .account-content.account-content-table-mode > .virtual-table-panel {
+    margin-top: 8vh;
+    height: calc(100% - 8vh - 86px);
+  }
+}
+
+/* Content table: compact 2vh toolbar offset and shared intrinsic column widths. */
+.account-content.account-content-table-mode > .virtual-table-panel {
+  margin-top: 0;
+  height: calc(100% - 5vh);
+}
+.account-content.account-content-table-mode > .virtual-table-panel > .virtual-table-toolbar {
+  margin-top: 2vh;
+  padding-inline: 2vw;
+}
+.virtual-table-scroll { overflow-x: auto; }
+.virtual-table-header,
+.virtual-table-row {
+  width: max-content;
+  min-width: 100%;
+  grid-template-columns: var(--table-columns);
+}
+.virtual-table-header span,
+.virtual-table-row span { padding-inline: 1vw; }
+.content-toolbar-actions { gap: 1vw; }
+@media (max-width: 760px) {
+  .account-content.account-content-table-mode > .virtual-table-panel { height: calc(100% - 5vh); }
+  .account-content.account-content-table-mode > .virtual-table-panel > .virtual-table-toolbar { padding-inline: 3vw; }
+  .virtual-table-header span,
+  .virtual-table-row span { padding-inline: 2vw; }
+}
+
+/* Responsive layout foundation v1: fluid viewport-relative spacing tokens.
+   Layout spacing uses viewport-relative units; fixed pixel values remain only
+   where they represent visual strokes, icons, or minimum interactive targets. */
+:root {
+  --layout-gutter-x: clamp(2.5vw, 4.2vw, 6.5vw);
+  --layout-gutter-y: clamp(2vh, 4vh, 5.5vh);
+  --layout-space-1: clamp(.45vw, .7vw, .9vw);
+  --layout-space-2: clamp(.7vw, 1vw, 1.3vw);
+  --layout-space-3: clamp(1vw, 1.5vw, 1.9vw);
+  --layout-space-4: clamp(1.4vw, 2vw, 2.6vw);
+  --layout-space-5: clamp(2vh, 3vh, 4vh);
+  --layout-sidebar-track: 18vw;
+  --layout-content-gutter: clamp(2vw, 3vw, 4.5vw);
+  --layout-table-top-gap: 8vh;
+}
+
+html, body, #app { width: 100%; min-width: 0; }
+body { overflow-x: clip; }
+.site-shell { width: 100%; max-width: 100%; }
+.site-header { padding-inline: var(--layout-gutter-x); }
+.hero { padding-inline: var(--layout-gutter-x); column-gap: 5%; }
+.explore-section,
+.published-content-section,
+.site-footer { padding-inline: var(--layout-gutter-x); }
+.about-section { margin-inline: var(--layout-gutter-x); padding: var(--layout-gutter-y) var(--layout-gutter-x); }
+.route-main { padding-inline: var(--layout-gutter-x); }
+
+/* Shared account layout: proportional columns and fluid page gutters. */
+.account-layout {
+  grid-template-columns: minmax(0, var(--layout-sidebar-track)) minmax(0, 1fr);
+}
+.account-sidebar { padding: 2.2vh 1vw 1.8vh; }
+.account-sidebar-item { gap: 1vw; padding-inline: 1vw; }
+.account-sidebar-collapse { padding-inline: 1vw; }
+.account-content { padding: var(--layout-gutter-y) var(--layout-content-gutter); }
+.account-content.account-content-table-mode { padding: 0; }
+.account-content-table-mode > h1.account-page-title {
+  margin: 2vh 2vw .5vh;
+}
+.account-content.account-content-table-mode > .virtual-table-panel {
+  width: 96%;
+  margin-inline: 2%;
+  margin-top: var(--layout-table-top-gap);
+  height: calc(100% - var(--layout-table-top-gap) - 8vh);
+}
+.virtual-table-toolbar { gap: 1.5vw; padding: 1.4vh 1.5vw; }
+.virtual-table-header span,
+.virtual-table-row span { padding-inline: 1.25vw; }
+.virtual-table-footnote { padding: 1vh 1.25vw; }
+.content-editor-panel { padding: 2vh 2vw 3vh; }
+.content-editor-heading { gap: 1.5vw; margin-bottom: 2vh; }
+.notion-document-properties { gap: 1vw; padding-bottom: 2vh; }
+.notion-summary-property { padding-block: 1.7vh 1.4vh; }
+
+@media (min-width: 1920px) {
+  :root {
+    --layout-gutter-x: 4vw;
+    --layout-content-gutter: 2.5vw;
+    --layout-sidebar-track: 15vw;
+  }
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --layout-gutter-x: 3.2vw;
+    --layout-content-gutter: 2.6vw;
+    --layout-sidebar-track: 21vw;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --layout-gutter-x: 4vw;
+    --layout-gutter-y: 3vh;
+    --layout-content-gutter: 4vw;
+    --layout-sidebar-track: 100%;
+    --layout-table-top-gap: 8vh;
+  }
+  .site-header { padding-inline: var(--layout-gutter-x); }
+  .hero, .explore-section, .published-content-section, .site-footer,
+  .route-main { padding-inline: var(--layout-gutter-x); }
+  .about-section { margin-inline: var(--layout-gutter-x); padding-inline: var(--layout-gutter-x); }
+  .account-layout { grid-template-columns: minmax(0, 1fr); }
+  .account-sidebar { padding: 1.2vh 2vw; }
+  .account-content { padding: var(--layout-gutter-y) var(--layout-content-gutter); }
+  .account-content.account-content-table-mode { padding: 0; }
+  .account-content.account-content-table-mode > h1.account-page-title { margin: 1.5vh 4vw .5vh; }
+  .account-content.account-content-table-mode > .virtual-table-panel {
+    width: 92%;
+    margin-inline: 4%;
+    margin-top: var(--layout-table-top-gap);
+    height: calc(100% - var(--layout-table-top-gap) - 8vh);
+  }
+  .virtual-table-toolbar { gap: 1.5vh; padding: 1.5vh 3vw; }
+  .virtual-table-header span,
+  .virtual-table-row span { padding-inline: 2.5vw; }
+  .content-editor-panel { padding: 1.8vh 3vw 3vh; }
+  .notion-document-properties { grid-template-columns: minmax(0, 1fr); gap: 1.5vh; }
+}
+
+@media (max-width: 380px) {
+  :root { --layout-gutter-x: 3vw; --layout-content-gutter: 3vw; }
+  .account-content.account-content-table-mode > .virtual-table-panel { width: 94%; margin-inline: 3%; }
+  .virtual-table-toolbar { padding-inline: 2vw; }
+}
+
+/* Content table layout: toolbar starts 2vh from the viewport top; columns share content-sized tracks. */
+.account-content.account-content-table-mode > .virtual-table-panel { margin-top: 0; height: calc(100% - 5vh); }
+.account-content.account-content-table-mode > .virtual-table-panel > .virtual-table-toolbar { margin-top: 2vh; padding-inline: 2vw; }
+.virtual-table-scroll { overflow-x: auto; }
+.virtual-table-header, .virtual-table-row { width: max-content; min-width: 100%; grid-template-columns: var(--table-columns); }
+.virtual-table-header span, .virtual-table-row span { padding-inline: 1vw; }
+.content-toolbar-actions { gap: 1vw; }
+@media (max-width: 760px) {
+  .account-content.account-content-table-mode > .virtual-table-panel { height: calc(100% - 5vh); }
+  .account-content.account-content-table-mode > .virtual-table-panel > .virtual-table-toolbar { padding-inline: 3vw; }
+  .virtual-table-header span, .virtual-table-row span { padding-inline: 2vw; }
+}
+
+/* Table column readability: keep titles compact and reserve enough width for full timestamps. */
+.virtual-table-header,
+.virtual-table-row {
+  grid-template-columns: var(--table-columns);
+  width: max-content;
+  min-width: 100%;
+}
+.virtual-table-header span,
+.virtual-table-row span {
+  min-width: 0;
+  box-sizing: border-box;
+  padding-inline: 12px;
+}
+.virtual-table-row [role="cell"] {
+  min-width: 0;
+}
+
+
+
+/* Show complete table values; use horizontal scrolling instead of ellipsis clipping. */
+.virtual-table-header,
+.virtual-table-row {
+  width: max-content;
+  min-width: 100%;
+  grid-template-columns: var(--table-columns);
+}
+.virtual-table-header span,
+.virtual-table-row span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+
+/* Table cells: cap previews at ten characters; click to read the complete value. */
+.table-cell-preview {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.table-cell-preview:hover { color: #494949; }
+.table-cell-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(26, 26, 26, .32);
+  backdrop-filter: blur(8px);
+}
+.table-cell-detail {
+  width: min(620px, 100%);
+  max-height: min(75vh, 720px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-radius: 16px;
+  color: #323232;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 20px 70px rgba(37, 37, 37, .18);
+}
+.table-cell-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.table-cell-detail-heading h2 { margin: 0; font-size: var(--font-size-18px-6d27d5); font-weight: 650; }
+.table-cell-detail-heading button { border: 0; background: transparent; font-size: var(--font-size-26px-a7658f); cursor: pointer; }
+.table-cell-detail p { margin: 20px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+
+/* Unify virtual-table bounds: use the full account content width on every viewport. */
+.account-content.account-content-table-mode > .virtual-table-panel {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  box-sizing: border-box;
+}
+

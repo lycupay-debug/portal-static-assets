@@ -3,7 +3,15 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 
 const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
-const theme = await readFile(new URL('../src/theme.css', import.meta.url), 'utf8')
+const themeParts = await Promise.all([
+  'theme-foundation.css',
+  'theme-editor-workspace.css',
+  'theme-account-layout.css',
+  'theme-public-content.css',
+  'theme-component-normalization.css',
+  'theme-typography.css',
+].map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))
+const theme = themeParts.join('\n')
 const appCss = await readFile(new URL('../src/app.css', import.meta.url), 'utf8')
 const editorTests = await readFile(new URL('./document-editor.test.mjs', import.meta.url), 'utf8')
 
