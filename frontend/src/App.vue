@@ -6,8 +6,10 @@ const ComplianceCenter = defineAsyncComponent(() => import('./components/Complia
 const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
 const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
 import { portalNotify } from './utils/notification'
-import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
+import { taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
+import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, normalizeKnowledgeTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
+const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import { educationResourceSearchRank } from './utils/resourceSearch'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
@@ -19,20 +21,6 @@ import { contentStatusLabels, contentTypeLabels, tableDefinitions } from './conf
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus, knowledgeCategorySearchTerms } from './config/knowledgeCategories'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
-const removedGradeTags = new Set(['年级', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'])
-const knowledgeTagOptions = portalTaxonomy
-  .filter(category => category.value !== '年级')
-  .map(category => ({ ...category, children: category.children.filter(tag => !removedGradeTags.has(tag)) }))
-const taxonomyParentNames = new Set<string>(knowledgeTagOptions.map(category => category.value))
-const normalizeKnowledgeTags = (tags: string[]) => {
-  const selectedChildren = [...new Set(tags.filter(tag => tag && !removedGradeTags.has(tag) && !taxonomyParentNames.has(tag)))]
-  const selectedParents = knowledgeTagOptions
-    .filter(category => category.children.some(child => selectedChildren.includes(child)))
-    .map(category => category.value)
-  return [...selectedParents, ...selectedChildren]
-}
-const mergeLegacyTaxonomyIntoTags = (tags: string[], parentCategory?: string | null, childCategory?: string | null) =>
-  normalizeKnowledgeTags([...tags, parentCategory || '', childCategory || ''])
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
