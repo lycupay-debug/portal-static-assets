@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { normalizeComplianceAssetDetail } from '../utils/compliance.ts'
+import { ApiRequestError, apiRequest } from '../api/client'
 
 type AnyRecord = Record<string, any>
 const props = defineProps<{ isAdmin?: boolean }>()
@@ -42,18 +43,12 @@ const feedback = ref('')
 const visibleTabs = computed(() => props.isAdmin ? tabs : tabs.filter(tab => tab.id !== 'reviewers'))
 const filteredAssets = computed(() => assets.value)
 async function api<T = AnyRecord>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
-    ...init,
-  })
-  const contentType = response.headers.get('content-type') || ''
-  const data = contentType.includes('application/json') ? await response.json() : null
-  if (!response.ok) {
-    if (response.status === 403) permissionDenied.value = true
-    throw new Error(data?.error || `请求失败（${response.status}）`)
+  try {
+    return await apiRequest<T>(path, init)
+  } catch (requestError) {
+    if (requestError instanceof ApiRequestError && requestError.status === 403) permissionDenied.value = true
+    throw requestError
   }
-  return data as T
 }
 async function run<T>(fn: () => Promise<T>) {
   error.value = ''; feedback.value = ''

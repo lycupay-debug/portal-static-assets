@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 export type NotificationType = 'success' | 'error' | 'warning' | 'info'
-export type PortalNotification = { id: number; type: NotificationType; title: string; message: string }
+type PortalNotification = { id: number; type: NotificationType; title: string; message: string }
 const notifications = ref<PortalNotification[]>([])
 let nextId = 1
 const timers = new Map<number, ReturnType<typeof setTimeout>>()
