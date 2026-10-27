@@ -1,0 +1,36 @@
+/* One persistent return-to-top control replaces footer/page-specific links. */
+.scroll-to-top {
+  position: fixed;
+  right: clamp(18px, 2.2vw, 32px);
+  bottom: clamp(18px, 2.2vw, 32px);
+  z-index: 9500;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, .09);
+  border-radius: 50%;
+  color: #111;
+  background: rgba(255, 255, 255, .76);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  backdrop-filter: blur(22px) saturate(145%);
+  font-size: var(--font-size-21px-dacf9d);
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.scroll-to-top:hover { border-color: rgba(0, 0, 0, .18); background: rgba(255, 255, 255, .96); box-shadow: 0 10px 30px rgba(0, 0, 0, .16); }
+.scroll-to-top:active { transform: translateY(1px); }
+.scroll-to-top:focus-visible { outline: 2px solid rgba(0, 0, 0, .55); outline-offset: 3px; }
+@media (max-width: 1100px) {
+  .education-resource-results-section .knowledge-infinite-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .education-resource-results-section .knowledge-infinite-list { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .education-resource-list-item { min-height: 144px; padding: 15px; }
+  .scroll-to-top { right: 16px; bottom: 16px; width: 44px; height: 44px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .scroll-to-top { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

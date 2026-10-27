@@ -1,0 +1,110 @@
+/* Education resource cards: four columns on desktop, compact two-column tablet and one-column mobile. */
+.education-resource-results-section .knowledge-infinite-list {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 2px 0 14px;
+}
+.education-resource-list-item {
+  position: relative;
+  grid-template-columns: 42px minmax(0, 1fr) 14px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px 11px;
+  min-height: 176px;
+  padding: 17px 15px 13px;
+  border-color: rgba(0, 0, 0, .075);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .68);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .018);
+  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.education-resource-list-item:hover {
+  border-color: rgba(0, 0, 0, .16);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .045);
+}
+.education-resource-file-icon {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+  place-items: center;
+  width: 42px;
+  height: 48px;
+  border: 1px solid rgba(0, 0, 0, .07);
+  border-radius: 11px;
+  color: #252525;
+  background: rgba(0, 0, 0, .035);
+  font-size: var(--font-size-25px-2e6593);
+}
+.education-resource-list-item .knowledge-list-copy {
+  grid-column: 2;
+  grid-row: 1;
+  gap: 6px;
+  padding-top: 1px;
+}
+.education-resource-list-item .knowledge-list-copy strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: var(--font-size-14px-d65225);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.education-resource-list-item .knowledge-list-copy > span:not(.education-resource-meta) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #666;
+  font-size: var(--font-size-12px-min12-093900);
+  line-height: 1.5;
+}
+.education-resource-list-item .education-resource-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+.education-resource-list-item .education-resource-meta b {
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 1px solid rgba(0, 0, 0, .055);
+  border-radius: 5px;
+  color: #454545;
+  background: rgba(0, 0, 0, .035);
+  font-size: var(--font-size-10px-min12-933cc7);
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.education-resource-list-item .education-resource-meta .education-resource-filename {
+  display: block;
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: #858585;
+  font-size: var(--font-size-10px-min12-933cc7);
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.education-resource-list-item time {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+  align-self: end;
+  padding-top: 8px;
+  color: #888;
+  font-size: var(--font-size-11px-min12-4bd46d);
+  white-space: nowrap;
+}
+.education-resource-list-item .knowledge-list-arrow {
+  grid-column: 3;
+  grid-row: 1;
+  padding-top: 2px;
+  color: #777;
+  font-size: var(--font-size-13px-min12-233710);
+}
+.knowledge-list-status { grid-column: 1 / -1; }
+

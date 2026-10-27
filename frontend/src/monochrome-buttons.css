@@ -1,0 +1,24 @@
+/* Single neutral button language. */
+.button-primary, .content-primary-button, .hero .button-primary, .btn-dark,
+.workspace-save-draft, .share-dialog-copy, .auth-submit {
+  color: var(--mono-0) !important; background: var(--mono-900) !important;
+  border-color: var(--mono-900) !important; box-shadow: none !important;
+}
+.button-primary:hover, .content-primary-button:hover, .btn-dark:hover,
+.workspace-save-draft:hover, .share-dialog-copy:hover, .auth-submit:hover {
+  color: var(--mono-0) !important; background: var(--mono-700) !important; border-color: var(--mono-700) !important;
+}
+.btn-outline-secondary, .content-secondary-button, .content-row-actions button,
+.share-dialog-cancel, .empty-search button, .directory-carousel-controls button,
+.content-editor-image-menu > button, .content-editor-image-url button {
+  color: var(--mono-800) !important; background: rgba(255,255,255,.72) !important;
+  border-color: rgba(0,0,0,.14) !important; box-shadow: none !important;
+}
+.btn-outline-secondary:hover, .content-secondary-button:hover, .content-row-actions button:hover,
+.share-dialog-cancel:hover, .empty-search button:hover, .directory-carousel-controls button:hover,
+.content-editor-image-menu > button:hover, .content-editor-image-url button:hover {
+  color: var(--mono-950) !important; background: #eeeeee !important; border-color: rgba(0,0,0,.22) !important;
+}
+.btn-outline-danger, .content-row-actions .content-danger-action { color: var(--mono-700) !important; border-color: rgba(0,0,0,.14) !important; background: rgba(255,255,255,.72) !important; }
+.btn-outline-danger:hover, .content-row-actions .content-danger-action:hover { color: var(--mono-950) !important; background: #e8e8e8 !important; }
+

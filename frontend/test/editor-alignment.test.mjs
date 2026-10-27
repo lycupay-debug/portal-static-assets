@@ -12,7 +12,7 @@ const themeParts = await Promise.all([
   'theme-typography.css',
 ].map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))
 const theme = themeParts.join('\n')
-const appCss = await readFile(new URL('../src/app.css', import.meta.url), 'utf8')
+const appCss = await readFile(new URL('../src/app-foundation.css', import.meta.url), 'utf8')
 const editorTests = await readFile(new URL('./document-editor.test.mjs', import.meta.url), 'utf8')
 
 test('task-list layout aligns checkbox to the first text line without a manual top offset', () => {

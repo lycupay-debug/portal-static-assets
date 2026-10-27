@@ -1,0 +1,4 @@
+/* Bootstrap Icons are bundled locally; these rules standardize icon alignment site-wide. */
+.bi { display: inline-block; line-height: 1; vertical-align: -0.08em; }
+.bi-button-icon { display: inline-flex; align-items: center; justify-content: center; }
+

@@ -1,0 +1,27 @@
+/* Status messages keep meaning through copy and placement, not hue. */
+.form-error, .form-notice, .content-feedback-error, .content-feedback-success,
+.content-workspace-notice, .resource-error, .resource-file-hint, .resource-selected-file,
+.public-article-login-hint, .workspace-status-dot, .portal-notification-icon,
+.portal-notification.is-success .portal-notification-icon,
+.portal-notification.is-error .portal-notification-icon,
+.portal-notification.is-warning .portal-notification-icon,
+.portal-notification.is-info .portal-notification-icon {
+  color: var(--mono-700) !important; background: #ededed !important; border-color: #dedede !important; box-shadow: none !important;
+}
+.portal-notification { color: var(--mono-900) !important; background: rgba(250,250,250,.94) !important; border-color: #dedede !important; box-shadow: 0 12px 32px rgba(0,0,0,.08) !important; }
+.portal-notification-copy p, .portal-notification-close { color: var(--mono-600) !important; }
+.public-article-action.active { color: var(--mono-950) !important; background: #e9e9e9 !important; }
+.public-action-symbol, .public-article-action strong { color: var(--mono-600) !important; }
+.share-dialog-backdrop { background: rgba(0,0,0,.28) !important; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .site-header, .content-workspace-topbar, .account-sidebar, .content-outline-sidebar,
+  .content-tools-sidebar, .section-card, .published-content-card, .directory-tile,
+  .knowledge-list-item, .public-author-card, .glass-panel, .auth-panel, .share-dialog,
+  .content-editor-slash-menu, .content-editor-block-menu, .content-editor-context-menu,
+  .content-editor-image-menu, .virtualized-select-popover, .portal-notification {
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: #fff !important;
+  }
+}
+
+

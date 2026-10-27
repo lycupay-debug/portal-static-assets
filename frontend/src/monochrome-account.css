@@ -1,0 +1,21 @@
+/* Account centre and full-width virtual tables */
+.account-layout, .account-content, .account-content.account-content-table-mode { background: transparent !important; }
+.account-sidebar, .content-outline-sidebar, .content-tools-sidebar, .workspace-sidebar-settings,
+.workspace-tools-panel { color: var(--mono-800) !important; background: rgba(242,242,242,.70) !important; border-color: rgba(0,0,0,.075) !important; }
+.account-sidebar-item, .account-sidebar-home, .sidebar-group-icon, .account-search-empty,
+.workspace-placeholder, .workspace-placeholder-icon { color: var(--mono-700) !important; }
+.account-sidebar-item:hover, .account-sidebar-item.is-active { color: var(--mono-950) !important; background: #e8e8e8 !important; box-shadow: inset 2px 0 #555 !important; }
+.sidebar-group-icon, .workspace-side-icon, .toolbar-item-icon, .context-tool-icon,
+.virtual-table-empty-icon, .workspace-placeholder-icon { background: #ededed !important; border-color: #dedede !important; }
+.account-status, .account-status i, .security-info-icon, .security-info-row strong,
+.security-info-row p, .sidebar-item-dot, .account-sidebar-item.is-active .sidebar-item-dot { color: var(--mono-600) !important; background: #d0d0d0 !important; box-shadow: none !important; }
+.security-info-row { background: rgba(245,245,245,.78) !important; }
+.virtual-table-toolbar, .virtual-table-footnote, .account-field, .account-sidebar-home,
+.notion-document-properties, .notion-document-divider, .notion-document-actions,
+.content-editor-hint, .content-editor-footer, .content-editor-heading { border-color: rgba(0,0,0,.08) !important; }
+.virtual-table-heading h2, .virtual-table-empty strong { color: var(--mono-900) !important; }
+.virtual-table-header { color: var(--mono-600) !important; background: #ededed !important; border-color: #dedede !important; }
+.virtual-table-row { color: var(--mono-800) !important; background: transparent !important; border-color: rgba(0,0,0,.065) !important; }
+.virtual-table-row:hover { background: rgba(0,0,0,.025) !important; }
+.virtual-table-empty p, .virtual-table-footnote { color: var(--mono-500) !important; }
+

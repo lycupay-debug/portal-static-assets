@@ -1,0 +1,137 @@
+/*
+ * Monochrome design system v2
+ * One source of truth for all portal surfaces: paper, graphite and neutral gray.
+ * No colored accent palette, tinted glass, colored focus rings or colored status UI.
+ */
+
+/* Global selector design tokens: change these values once to update every custom dropdown. */
+:root {
+  --portal-select-surface: rgba(255, 255, 255, .92);
+  --portal-select-surface-open: rgba(255, 255, 255, .98);
+  --portal-select-text: #292929;
+  --portal-select-muted: #777777;
+  --portal-select-border: #e1e1e1;
+  --portal-select-border-hover: #a8a8a8;
+  --portal-select-hover: #f2f2f2;
+  --portal-select-selected: #e7e7e7;
+  --portal-select-radius: 10px;
+  --portal-select-popover-radius: 13px;
+  --portal-select-shadow: 0 16px 42px rgba(0, 0, 0, .14);
+  --portal-select-blur: 18px;
+  --portal-select-trigger-height: 40px;
+  --portal-select-popover-z: 1200;
+}
+
+:root {
+  color-scheme: light;
+  --mono-0: #ffffff;
+  --mono-25: #fafafa;
+  --mono-50: #f6f6f6;
+  --mono-100: #eeeeee;
+  --mono-150: #e5e5e5;
+  --mono-200: #d8d8d8;
+  --mono-300: #b8b8b8;
+  --mono-400: #929292;
+  --mono-500: #707070;
+  --mono-600: #555555;
+  --mono-700: #3d3d3d;
+  --mono-800: #292929;
+  --mono-900: #191919;
+  --mono-950: #101010;
+  --ink: var(--mono-900);
+  --muted: var(--mono-600);
+  --subtle: var(--mono-500);
+  --accent: var(--mono-900);
+  --accent-hover: var(--mono-700);
+  --line: rgba(0, 0, 0, .09);
+  --paper: var(--mono-50);
+  --surface: rgba(255, 255, 255, .86);
+  --surface-glass: rgba(255, 255, 255, .68);
+  --glass-border: rgba(0, 0, 0, .07);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, .035);
+  --glass-shadow-hover: 0 10px 30px rgba(0, 0, 0, .055);
+  --glass-motion: 180ms ease;
+  --bs-primary: #191919;
+  --bs-primary-rgb: 25, 25, 25;
+  --bs-link-color: #292929;
+  --bs-link-hover-color: #101010;
+  --bs-body-color: #191919;
+  --bs-body-bg: #f6f6f6;
+  --bs-secondary-color: #666666;
+  --bs-secondary-bg: #eeeeee;
+  --bs-tertiary-bg: #f5f5f5;
+  --bs-border-color: #dedede;
+  --bs-focus-ring-color: rgba(0, 0, 0, .08);
+  --bs-gray-025: #fafafa;
+  --bs-gray-050: #f7f7f7;
+  --bs-gray-100: #eeeeee;
+  --bs-gray-200: #e2e2e2;
+  --bs-gray-300: #d0d0d0;
+  --bs-gray-400: #b8b8b8;
+  --bs-gray-500: #929292;
+  --bs-gray-600: #707070;
+  --bs-gray-700: #555555;
+  --bs-gray-800: #3d3d3d;
+  --bs-gray-900: #292929;
+  --bs-gray-950: #191919;
+  --bs-gray-975: #101010;
+  --bs-primary-base: #292929;
+  --bs-primary-fg: #292929;
+  --bs-primary-fg-emphasis: #101010;
+  --bs-primary-bg: #292929;
+  --bs-primary-bg-subtle: #eeeeee;
+  --bs-primary-bg-muted: #e2e2e2;
+  --bs-primary-border: #d0d0d0;
+  --bs-primary-focus-ring: rgba(0, 0, 0, .08);
+  --bs-primary-contrast: #ffffff;
+  --bs-success-base: #555555;
+  --bs-success-fg: #555555;
+  --bs-success-fg-emphasis: #292929;
+  --bs-success-bg: #707070;
+  --bs-success-bg-subtle: #eeeeee;
+  --bs-success-bg-muted: #e2e2e2;
+  --bs-success-border: #d0d0d0;
+  --bs-success-focus-ring: rgba(0, 0, 0, .08);
+  --bs-success-contrast: #ffffff;
+  --bs-danger-base: #555555;
+  --bs-danger-fg: #555555;
+  --bs-danger-fg-emphasis: #292929;
+  --bs-danger-bg: #707070;
+  --bs-danger-bg-subtle: #eeeeee;
+  --bs-danger-bg-muted: #e2e2e2;
+  --bs-danger-border: #d0d0d0;
+  --bs-danger-focus-ring: rgba(0, 0, 0, .08);
+  --bs-danger-contrast: #ffffff;
+  --bs-warning-base: #707070;
+  --bs-warning-fg: #555555;
+  --bs-warning-fg-emphasis: #292929;
+  --bs-warning-bg: #707070;
+  --bs-warning-bg-subtle: #eeeeee;
+  --bs-warning-bg-muted: #e2e2e2;
+  --bs-warning-border: #d0d0d0;
+  --bs-warning-focus-ring: rgba(0, 0, 0, .08);
+  --bs-warning-contrast: #ffffff;
+  --bs-info-base: #555555;
+  --bs-info-fg: #555555;
+  --bs-info-fg-emphasis: #292929;
+  --bs-info-bg: #707070;
+  --bs-info-bg-subtle: #eeeeee;
+  --bs-info-bg-muted: #e2e2e2;
+  --bs-info-border: #d0d0d0;
+  --bs-info-focus-ring: rgba(0, 0, 0, .08);
+  --bs-info-contrast: #ffffff;
+  --bs-form-valid-color: #555555;
+  --bs-form-valid-border-color: #929292;
+  --bs-form-invalid-color: #555555;
+  --bs-form-invalid-border-color: #929292;
+  color: var(--mono-900);
+  background: var(--mono-50);
+}
+
+html, body, #app, .site-shell { color: var(--mono-900) !important; background: var(--mono-50) !important; }
+body { -webkit-font-smoothing: antialiased; }
+#app { isolation: isolate; }
+::selection { color: var(--mono-950) !important; background: #dcdcdc !important; }
+:focus-visible { outline-color: #777 !important; }
+

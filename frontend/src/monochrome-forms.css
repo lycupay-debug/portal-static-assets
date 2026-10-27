@@ -1,0 +1,38 @@
+/* Forms, selects, menus and focus states */
+.form-control, .field-label input, .content-editor-form input, .content-editor-form select,
+.content-editor-form textarea, .notion-document-properties input, .notion-document-properties select,
+.notion-summary-property textarea, .virtual-table-search, .share-dialog-url,
+.content-editor-slash-search, .virtualized-select-search, .virtualized-select-trigger,
+.resource-file-input, .workspace-properties input, .workspace-properties select,
+.workspace-properties textarea {
+  color: var(--mono-900) !important; background: rgba(255,255,255,.84) !important;
+  border-color: rgba(0,0,0,.13) !important; box-shadow: none !important;
+}
+.form-control::placeholder, input::placeholder, textarea::placeholder { color: var(--mono-400) !important; opacity: 1; }
+.form-control:focus, .field-label input:focus, .content-editor-form input:focus,
+.content-editor-form select:focus, .content-editor-form textarea:focus,
+.notion-document-properties input:focus, .notion-document-properties select:focus,
+.virtual-table-search:focus, .share-dialog-url:focus, .virtualized-select-search:focus,
+.workspace-properties input:focus, .workspace-properties select:focus, .workspace-properties textarea:focus {
+  color: var(--mono-900) !important; border-color: #888 !important;
+  background: #fff !important; box-shadow: 0 0 0 3px rgba(0,0,0,.045) !important; outline: none !important;
+}
+.content-editor-slash-menu, .content-editor-block-menu, .content-editor-context-menu,
+.content-editor-image-menu, .virtualized-select-popover, .share-dialog, .table-cell-detail,
+.knowledge-autocomplete-popper {
+  color: var(--mono-900) !important; background: rgba(250,250,250,.96) !important;
+  border-color: rgba(0,0,0,.10) !important; box-shadow: 0 12px 32px rgba(0,0,0,.09) !important;
+  -webkit-backdrop-filter: blur(22px) !important; backdrop-filter: blur(22px) !important;
+}
+.content-editor-slash-menu button, .content-editor-block-menu button,
+.content-editor-context-menu button, .content-editor-menu-icon, .content-editor-hint>span:first-child,
+.content-outline-list button, .content-toolbar-list button, .context-menu-actions button,
+.context-menu-close, .context-menu-tool-list > button, .virtualized-select-viewport > button,
+.knowledge-autocomplete-option, .knowledge-search-clear { color: var(--mono-800) !important; }
+.content-editor-slash-menu button:hover, .content-editor-slash-menu button.selected,
+.content-editor-block-menu button:hover, .content-editor-context-menu button:hover,
+.content-outline-list button:hover, .content-toolbar-list button:hover,
+.context-menu-actions button:hover, .context-menu-close:hover, .context-menu-tool-list > button:hover,
+.virtualized-select-viewport > button:hover, .virtualized-select-viewport > button.selected,
+.knowledge-autocomplete-option:hover, .knowledge-autocomplete-option.highlighted { color: var(--mono-950) !important; background: #ededed !important; }
+

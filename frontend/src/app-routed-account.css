@@ -1,0 +1,39 @@
+/* Routed account pages; keep the established Liquid Glass palette and type scale. */
+.route-main { min-height: min(78vh, 900px); display: grid; place-items: center; padding: clamp(34px, 7vw, 82px) 24px; }
+.glass-panel { width: min(100%, 560px); padding: clamp(28px, 5vw, 52px); border: 0; border-radius: 28px; background: linear-gradient(145deg, rgba(255, 255, 255, .78), rgba(243, 243, 243, .62)); box-shadow: 0 24px 70px rgba(54, 54, 54, .10); -webkit-backdrop-filter: blur(26px) saturate(145%); backdrop-filter: blur(26px) saturate(145%); }
+.auth-panel h1, .account-panel h1 { margin: 14px 0 12px; font-size: var(--font-size-clamp-36px-4-5vw-52px-659835); line-height: 1.12; letter-spacing: -.045em; }
+.auth-intro { color: var(--muted); line-height: 1.8; font-size: var(--font-size-16px-4678bd); margin: 0 0 28px; }
+.auth-form { display: grid; gap: 18px; }
+.field-label { display: grid; gap: 9px; color: var(--ink); font-weight: 600; font-size: var(--font-size-15px-344c38); }
+.field-label input { width: 100%; min-height: 52px; border: 1px solid rgba(148, 148, 148, .35); border-radius: 14px; padding: 0 16px; outline: none; color: var(--ink); background: rgba(255, 255, 255, .78); transition: border-color .18s, box-shadow .18s; }
+.field-label input:focus { border-color: #929292; box-shadow: 0 0 0 4px rgba(133, 133, 133, .13); }
+.field-help { margin: -8px 0 0; font-size: var(--font-size-14px-d65225); line-height: 1.7; color: var(--muted); }
+.form-error, .form-notice { padding: 12px 14px; border-radius: 12px; margin: 0; font-size: var(--font-size-14px-d65225); line-height: 1.65; }
+.form-error { color: #434343; background: rgba(237, 237, 237, .85); border: 1px solid rgba(110, 110, 110, .2); }
+.form-notice { color: #545454; background: rgba(239, 239, 239, .78); border: 1px solid rgba(124, 124, 124, .2); margin-bottom: 18px; }
+.auth-submit { width: 100%; min-height: 52px; justify-content: center; border: 0; margin-top: 2px; }
+.auth-submit:disabled { opacity: .65; cursor: wait; }
+.auth-switch { margin: 24px 0 0; text-align: center; color: var(--muted); font-size: var(--font-size-14px-d65225); }
+.auth-switch a { color: var(--green); font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
+.back-home { display: inline-block; margin-top: 26px; color: var(--muted); font-size: var(--font-size-14px-d65225); }
+.account-panel { width: min(100%, 650px); }
+.account-details { display: grid; gap: 0; }
+.account-avatar { display: grid; place-items: center; width: 68px; height: 68px; border-radius: 22px; margin: 0 0 20px; color: #ffffff; font-size: var(--font-size-30px-46d0b6); font-weight: 650; background: linear-gradient(145deg, #a1a1a1, #777777); }
+.account-field { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 0; border-bottom: 1px solid rgba(143, 143, 143, .2); }
+.account-field span { color: var(--muted); font-size: var(--font-size-14px-d65225); }
+.account-field strong { color: var(--ink); font-size: var(--font-size-15px-344c38); font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.account-details .auth-submit { margin-top: 28px; }
+.account-loading { padding: 22px 0; color: var(--muted); }
+.main-nav .nav-auth { padding: 11px 19px; border: 1px solid rgba(134, 134, 134, .32); border-radius: 999px; background: rgba(255, 255, 255, .72); color: #4a4a4a; font-weight: 650; box-shadow: 0 4px 14px rgba(74, 74, 74, .06); }
+.main-nav .nav-auth:hover { background: rgba(255, 255, 255, .92); color: #3c3c3c; }
+/* No hover zoom: interactive elements use the pointer cursor only. */
+a, button, [role="button"] { cursor: pointer; }
+a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .main-nav a:hover, .button-primary:hover, .empty-search button:hover { transform: none !important; }
+.section-card:hover { will-change: auto !important; }
+@media (max-width: 700px) {
+  .route-main { min-height: 72vh; padding: 28px 16px 48px; }
+  .glass-panel { border-radius: 22px; padding: 26px 21px; }
+  .account-field { align-items: flex-start; flex-direction: column; gap: 7px; }
+  .account-field strong { text-align: left; }
+}
+

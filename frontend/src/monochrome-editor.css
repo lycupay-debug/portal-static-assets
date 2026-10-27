@@ -1,0 +1,28 @@
+/* Reading and editing: monochrome document palette, including inline color controls. */
+.content-workspace-page { color: var(--mono-900) !important; background: #f1f1f1 !important; }
+.content-workspace-grid { background: #f5f5f5 !important; }
+.workspace-document-name em, .workspace-tag-option, .workspace-tool-group > summary,
+.workspace-fold > summary, .workspace-settings-fold > summary, .workspace-outline-fold > summary,
+.workspace-tools-heading, .workspace-tool-group, .workspace-properties, .workspace-create-actions,
+.workspace-privacy-note { color: var(--mono-700) !important; background: #f7f7f7 !important; border-color: #e1e1e1 !important; box-shadow: none !important; }
+.workspace-tag-option:has(input:checked) { background: #e7e7e7 !important; border-color: #999 !important; }
+.content-editor-document, .content-a4-paper .content-editor-document, .markdown-rendered,
+.public-article-body { color: var(--mono-800) !important; }
+.content-editor-document h1, .content-editor-document h2, .content-editor-document h3,
+.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, .markdown-rendered h4 { color: var(--mono-900) !important; }
+.content-editor-document blockquote, .markdown-rendered blockquote,
+.content-a4-paper .content-editor-document blockquote { color: var(--mono-700) !important; background: #f3f3f3 !important; border-color: #d7d7d7 !important; border-left-color: #8a8a8a !important; box-shadow: none !important; }
+.content-editor-document code, .markdown-rendered code { color: var(--mono-800) !important; background: #ededed !important; }
+.content-editor-document pre, .markdown-rendered pre { color: #f5f5f5 !important; background: #242424 !important; }
+.content-editor-document pre code, .markdown-rendered pre code { color: inherit !important; background: transparent !important; }
+.content-editor-document mark, .markdown-rendered mark { color: inherit !important; background: #dedede !important; }
+.content-editor-document th, .markdown-rendered th { color: var(--mono-800) !important; background: #ededed !important; }
+.content-editor-document th, .content-editor-document td, .markdown-rendered th, .markdown-rendered td { border-color: #dedede !important; }
+.content-editor-document p.is-editor-empty:first-child:before { color: #a0a0a0 !important; }
+.content-editor-bubble-menu { background: #242424 !important; border-color: #333 !important; box-shadow: 0 8px 22px rgba(0,0,0,.12) !important; }
+.content-editor-bubble-menu button { color: #f5f5f5 !important; }
+.content-editor-bubble-menu button:hover, .content-editor-bubble-menu button.active { background: #4a4a4a !important; }
+.content-editor-drag-handle { color: #888 !important; }
+.content-editor-drag-handle:hover { color: #222 !important; background: #ededed !important; }
+.content-editor-image-zoom { background: rgba(0,0,0,.84) !important; }
+

@@ -1,0 +1,23 @@
+/* Global typography defaults, aligned with Bootstrap's local CSS variables. */
+:root {
+  --bs-body-font-family: var(--font-family-base);
+  --bs-body-font-size: 1rem;
+  --bs-body-font-weight: 400;
+  --bs-body-line-height: 1.6;
+  --bs-heading-color: #111111;
+  --bs-body-color: #191919;
+  --bs-link-color: #292929;
+  --bs-link-hover-color: #000000;
+  --portal-type-body: 1rem;
+  --portal-type-small: var(--font-size-base);
+  --portal-type-caption: var(--font-size-base);
+  --portal-type-line-height: 1.6;
+}
+html { font-size: var(--font-size-100-fae31e); }
+body { font-family: var(--bs-body-font-family); font-size: var(--font-size-base); font-weight: var(--bs-body-font-weight); line-height: var(--portal-type-line-height); }
+#app, #app button, #app input, #app select, #app textarea { font-family: var(--bs-body-font-family); }
+h1, h2, h3, h4, h5, h6 { color: var(--bs-heading-color); font-weight: 600; line-height: 1.25; letter-spacing: -.025em; }
+p { line-height: var(--portal-type-line-height); }
+small, .small { font-size: var(--font-size-base); }
+code, kbd, pre, samp { font-family: var(--bs-font-monospace, ui-monospace, SFMono-Regular, Consolas, monospace); }
+

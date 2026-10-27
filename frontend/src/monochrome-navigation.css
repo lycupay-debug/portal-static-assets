@@ -1,0 +1,66 @@
+/* Navigation and landing page */
+.site-header, .content-workspace-topbar {
+  color: var(--mono-900) !important;
+  background: rgba(250, 250, 250, .84) !important;
+  border-color: rgba(0, 0, 0, .08) !important;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, .025) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  backdrop-filter: blur(18px) !important;
+}
+.brand-mark, .workspace-brand-mark, .about-mark, .status-dot, .hero-bottom i, .note-line,
+.public-author-avatar, .account-summary-card .account-avatar {
+  color: var(--mono-0) !important; background: var(--mono-900) !important; box-shadow: none !important;
+}
+.brand-copy strong, .hero h1, .hero h1 span, .section-heading h2, .published-content-heading h2,
+.about-copy h2, .section-card h3, .published-content-card h3, .directory-hero h1,
+.directory-hero h2, .directory-section-heading h2, .directory-tile h3, .auth-panel h1,
+.public-article h1, .account-content h1, .content-editor-heading h2,
+.content-editor-document h1, .content-editor-document h2, .content-editor-document h3,
+.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, .markdown-rendered h4,
+.workspace-brand, .workspace-document-name, .share-dialog h2 { color: var(--mono-900) !important; }
+.brand-copy small, .main-nav, .hero-note, .hero-bottom, .eyebrow, .hero-description,
+.section-intro, .card-description, .card-topline, .card-kicker, .card-bottom,
+.about-copy > p:last-child, .about-meta, .site-footer, .footer-brand, .published-content-card p,
+.published-content-type, .published-content-heading > span, .directory-description,
+.directory-back-link, .directory-section-heading > span, .directory-tile > p,
+.directory-empty, .directory-coming-soon > p:last-child, .public-article-summary,
+.public-article-route-header, .public-article-route-date, .public-author-heading span,
+.public-author-meta, .public-author-card p, .auth-intro, .field-help, .back-home,
+.account-summary-email, .account-field span, .virtual-table-count, .virtual-table-footnote,
+.content-editor-heading p, .content-editor-hint, .notion-save-hint, .workspace-brand small,
+.workspace-document-name, .workspace-document-name em, .share-dialog > p,
+.share-dialog-eyebrow, .share-dialog-label { color: var(--mono-600) !important; }
+.hero, .explore-section, .published-content-section, .public-content-page,
+.content-paper-stage, .content-a4-paper { background: transparent !important; }
+.about-section { background: #eeeeee !important; border-color: #dedede !important; }
+.art-card, .card-front, .card-back { color: var(--mono-900) !important; background: rgba(255,255,255,.76) !important; border-color: rgba(0,0,0,.08) !important; box-shadow: 0 14px 32px rgba(0,0,0,.045) !important; }
+.art-symbol, .art-symbol span, .art-card-label, .art-index, .art-spark, .art-lines i { color: var(--mono-900) !important; background-color: #d8d8d8 !important; }
+.art-orbit, .orbit-two { border-color: #d9d9d9 !important; }
+.search-box, .knowledge-autocomplete, .knowledge-autocomplete-popper {
+  color: var(--mono-900) !important; background: rgba(255,255,255,.82) !important;
+  border-color: rgba(0,0,0,.10) !important; box-shadow: 0 2px 10px rgba(0,0,0,.02) !important;
+  -webkit-backdrop-filter: blur(18px) !important; backdrop-filter: blur(18px) !important;
+}
+.search-box input, .knowledge-autocomplete input { color: var(--mono-900) !important; }
+.search-box input::placeholder, .knowledge-autocomplete input::placeholder { color: var(--mono-400) !important; }
+.search-box kbd, .tag-list span { color: var(--mono-600) !important; background: #f1f1f1 !important; border-color: #e2e2e2 !important; }
+.section-card, .published-content-card, .directory-tile, .directory-coming-soon,
+.knowledge-list-item, .public-author-card, .public-article-actions, .account-summary-card,
+.workspace-placeholder, .security-info-row, .glass-panel, .auth-panel, .content-editor-panel,
+.content-editor-shell, .content-editor-canvas, .content-markdown-preview, .resource-create-dialog {
+  color: var(--mono-900) !important;
+  background: rgba(255,255,255,.76) !important;
+  border-color: rgba(0,0,0,.075) !important;
+  box-shadow: 0 5px 22px rgba(0,0,0,.025) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  backdrop-filter: blur(18px) !important;
+}
+.section-card:hover, .published-content-card:hover, .directory-tile:hover,
+.knowledge-list-item:hover, .public-author-card:hover { background: rgba(255,255,255,.96) !important; border-color: rgba(0,0,0,.13) !important; box-shadow: 0 8px 26px rgba(0,0,0,.045) !important; }
+.section-card, .published-content-card, .directory-tile, .knowledge-list-item,
+.main-nav a, .button-primary, .btn, .account-sidebar-item { transform: none !important; }
+.main-nav a:hover { color: var(--mono-950) !important; background: rgba(0,0,0,.035) !important; }
+.text-link, .published-content-link, .auth-switch a, .markdown-rendered a,
+.content-editor-document a, .content-editor-document a:hover, .public-article-action,
+.public-article-action.active, .public-action-symbol { color: var(--mono-800) !important; }
+

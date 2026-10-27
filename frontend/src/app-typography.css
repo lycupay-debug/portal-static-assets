@@ -1,0 +1,99 @@
+/* Typography scale: Cloudflare-inspired, clearer hierarchy and larger readable text */
+.brand-copy strong { font-size: var(--font-size-14px-d65225); }
+.brand-copy small { font-size: var(--font-size-14px-d65225); }
+.main-nav { font-size: var(--font-size-15px-344c38); }
+.main-nav .nav-contact { padding: 12px 17px; }
+.hero .eyebrow,
+.section-heading .eyebrow,
+.about-copy .eyebrow { font-size: var(--font-size-14px-d65225); }
+.hero h1 { font-size: var(--font-size-clamp-44px-5vw-72px-df2163); line-height: 1.24; }
+.hero-description { max-width: 510px; font-size: var(--font-size-17px-157d8a); line-height: 1.9; }
+.button { min-height: 52px; padding-inline: 22px; font-size: var(--font-size-15px-344c38); }
+.hero-actions { gap: 28px; }
+.text-link { font-size: var(--font-size-15px-344c38); }
+.hero-note { font-size: var(--font-size-14px-d65225); }
+.hero-bottom { font-size: var(--font-size-14px-d65225); }
+.hero-bottom span:last-child { font-size: var(--font-size-14px-d65225); }
+.art-card-label { font-size: var(--font-size-14px-d65225); }
+.art-card-footer { font-size: var(--font-size-14px-d65225); }
+.art-index { font-size: var(--font-size-14px-d65225); }
+.explore-section { padding-top: 100px; padding-bottom: 112px; }
+.section-heading h2 { font-size: var(--font-size-clamp-34px-3-4vw-48px-ca24b4); }
+.section-intro { font-size: var(--font-size-15px-344c38); line-height: 1.85; }
+.search-box { min-height: 60px; }
+.search-box input { font-size: var(--font-size-15px-344c38); }
+.search-box kbd { font-size: var(--font-size-14px-d65225); padding: 5px 7px; }
+.section-grid { gap: 18px; }
+.section-card { min-height: 340px; padding: 25px 22px 0; }
+.card-topline { font-size: var(--font-size-14px-d65225); }
+.card-kicker { font-size: var(--font-size-14px-d65225); margin-top: 28px; }
+.section-card h3 { font-size: var(--font-size-25px-2e6593); }
+.card-description { min-height: 84px; font-size: var(--font-size-14px-d65225); line-height: 1.9; }
+.tag-list { gap: 6px; }
+.tag-list span { padding: 6px 9px; font-size: var(--font-size-14px-d65225); }
+.card-bottom { padding: 15px 0; font-size: var(--font-size-14px-d65225); }
+.card-bottom span:last-child { font-size: var(--font-size-16px-4678bd); }
+.empty-search strong { font-size: var(--font-size-18px-6d27d5); }
+.empty-search p { font-size: var(--font-size-15px-344c38); }
+.empty-search button { padding: 10px 15px; font-size: var(--font-size-14px-d65225); }
+.about-section { padding-top: 72px; padding-bottom: 72px; }
+.about-copy h2 { font-size: var(--font-size-clamp-30px-3-2vw-43px-53ba6d); line-height: 1.4; }
+.about-copy > p:last-child { max-width: 560px; font-size: var(--font-size-15px-344c38); line-height: 1.9; }
+.about-meta { font-size: var(--font-size-14px-d65225); }
+.about-meta span:last-child { font-size: var(--font-size-14px-d65225); }
+.site-footer { font-size: var(--font-size-14px-d65225); }
+.footer-brand { font-size: var(--font-size-14px-d65225); }
+@media (min-width: 1400px) {
+  .section-card { min-height: 355px; padding-inline: 25px; }
+}
+@media (max-width: 1050px) {
+  .hero h1 { font-size: var(--font-size-clamp-42px-5-3vw-60px-069bf8); }
+  .hero-description { font-size: var(--font-size-16px-4678bd); }
+  .section-card { min-height: 310px; }
+  .card-description { min-height: 66px; }
+  .about-copy h2 { font-size: var(--font-size-clamp-30px-3-6vw-40px-beef96); }
+}
+@media (max-width: 700px) {
+  .brand-copy strong { font-size: var(--font-size-14px-d65225); }
+  .brand-copy small { font-size: var(--font-size-14px-d65225); }
+  .main-nav { font-size: var(--font-size-16px-4678bd); }
+  .main-nav a, .main-nav .nav-contact { padding-top: 15px; padding-bottom: 15px; }
+  .hero { padding-top: 62px; }
+  .hero .eyebrow { font-size: var(--font-size-14px-d65225); line-height: 1.6; letter-spacing: .09em; }
+  .hero h1 { font-size: var(--font-size-clamp-36px-8-8vw-50px-ade76b); line-height: 1.3; }
+  .hero-description { font-size: var(--font-size-15px-344c38); line-height: 1.9; }
+  .button { min-height: 49px; padding-inline: 18px; font-size: var(--font-size-14px-d65225); }
+  .hero-actions { gap: 18px; flex-wrap: wrap; }
+  .text-link { font-size: var(--font-size-14px-d65225); }
+  .hero-note { margin-top: 27px; font-size: var(--font-size-14px-d65225); }
+  .hero-bottom { font-size: var(--font-size-14px-d65225); }
+  .hero-bottom span:last-child { font-size: var(--font-size-14px-d65225); }
+  .art-card-label { font-size: var(--font-size-14px-d65225); }
+  .art-card-footer { font-size: var(--font-size-14px-d65225); }
+  .art-index { font-size: var(--font-size-14px-d65225); }
+  .explore-section { padding-top: 70px; padding-bottom: 76px; }
+  .section-heading .eyebrow { font-size: var(--font-size-14px-d65225); }
+  .section-heading h2 { font-size: var(--font-size-clamp-30px-7-4vw-36px-ada4bf); }
+  .section-intro { font-size: var(--font-size-14px-d65225); line-height: 1.85; }
+  .search-box { min-height: 56px; margin-top: 25px; gap: 10px; padding-inline: 14px; }
+  .search-box input { font-size: var(--font-size-14px-d65225); }
+  .section-grid { gap: 13px; }
+  .section-card { min-height: 0; padding: 22px 20px 0; }
+  .card-topline { font-size: var(--font-size-14px-d65225); }
+  .card-kicker { margin-top: 21px; font-size: var(--font-size-14px-d65225); }
+  .section-card h3 { font-size: var(--font-size-24px-b29b53); }
+  .card-description { min-height: 0; margin-top: 11px; margin-bottom: 16px; font-size: var(--font-size-14px-d65225); line-height: 1.85; }
+  .tag-list { margin-bottom: 19px; gap: 6px; }
+  .tag-list span { padding: 6px 9px; font-size: var(--font-size-14px-d65225); }
+  .card-bottom { padding: 13px 0; font-size: var(--font-size-14px-d65225); }
+  .about-section { gap: 21px; padding-top: 45px; padding-bottom: 45px; }
+  .about-copy .eyebrow { font-size: var(--font-size-14px-d65225); }
+  .about-copy h2 { font-size: var(--font-size-clamp-28px-7vw-34px-0a9fe1); line-height: 1.45; }
+  .about-copy > p:last-child { font-size: var(--font-size-14px-d65225); line-height: 1.9; }
+  .about-meta { font-size: var(--font-size-14px-d65225); }
+  .about-meta span:last-child { font-size: var(--font-size-14px-d65225); }
+  .site-footer { font-size: var(--font-size-14px-d65225); }
+  .footer-brand { font-size: var(--font-size-14px-d65225); }
+}
+
+

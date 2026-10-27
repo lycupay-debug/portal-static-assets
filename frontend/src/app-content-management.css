@@ -1,0 +1,54 @@
+/* Content management editor and row actions */
+.content-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+.content-editor-panel { width: 100%; min-width: 0; padding: 18px clamp(12px, 2vw, 28px) 28px; overflow: auto; }
+.content-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
+.content-editor-heading h2 { margin: 0; color: #444444; font-size: var(--font-size-21px-dacf9d); font-weight: 650; }
+.content-editor-heading p { margin: 7px 0 0; color: #828282; font-size: var(--font-size-14px-d65225); line-height: 1.6; }
+.content-editor-form { display: grid; gap: 17px; max-width: 1000px; }
+.notion-content-form { max-width: 1180px; margin: 0 auto; gap: 0; }
+.notion-title-input { margin: 12px 0 22px; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; color: #2d2d2d !important; font-size: var(--font-size-clamp-30px-4vw-42px-981052) !important; font-weight: 720 !important; letter-spacing: -.045em; line-height: 1.25; }
+.notion-title-input::placeholder { color: #bfbfbf; }
+.notion-document-properties { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(160px, .7fr) minmax(250px, 1.6fr); gap: 10px; padding: 0 0 20px; border-bottom: 1px solid #f0f0f0; }
+.notion-document-properties label, .notion-summary-property { display: grid; gap: 7px; min-width: 0; }
+.notion-document-properties label > span, .notion-summary-property > span { color: #858585; font-size: var(--font-size-14px-d65225); font-weight: 600; }
+.notion-document-properties input, .notion-document-properties select { min-height: 36px !important; padding: 7px 9px !important; border: 1px solid #eaeaea !important; border-radius: 6px !important; background: #fcfcfc !important; font-size: var(--font-size-14px-d65225) !important; }
+.notion-document-properties small { font-size: var(--font-size-14px-d65225) !important; }
+.notion-summary-property { padding: 17px 0 14px; }
+.notion-summary-property textarea { min-height: 48px; resize: vertical; border: 0 !important; border-radius: 0 !important; padding: 5px 0 !important; background: transparent !important; box-shadow: none !important; font-size: var(--font-size-14px-d65225) !important; }
+.notion-document-divider { height: 1px; background: #f0f0f0; margin-bottom: 12px; }
+.notion-document-actions { align-items: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+.notion-document-actions > div { display: flex; gap: 8px; }
+.notion-save-hint { color: #959595; font-size: var(--font-size-14px-d65225); }
+.content-editor-form label { display: grid; gap: 8px; color: #535353; font-size: var(--font-size-14px-d65225); font-weight: 650; }
+.content-editor-form input, .content-editor-form select, .content-editor-form textarea { width: 100%; min-width: 0; border: 1px solid rgba(147, 147, 147, .24); border-radius: 11px; padding: 11px 13px; color: #484848; background: rgba(255, 255, 255, .65); font: inherit; font-weight: 400; outline: none; }
+.content-editor-form input, .content-editor-form select { min-height: 42px; }
+.content-editor-form textarea { resize: vertical; line-height: 1.75; }
+.content-editor-form input:focus, .content-editor-form select:focus, .content-editor-form textarea:focus { border-color: rgba(116, 116, 116, .56); box-shadow: 0 0 0 3px rgba(116, 116, 116, .09); }
+.content-editor-form small { color: #8e8e8e; font-size: var(--font-size-14px-d65225); font-weight: 400; }
+.content-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.content-editor-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
+.content-primary-button, .content-secondary-button { flex: 0 0 auto; min-height: 38px; padding: 0 15px; border: 1px solid transparent; border-radius: 10px; font-size: var(--font-size-14px-d65225); font-weight: 650; cursor: pointer; transition: transform .18s, background .18s, box-shadow .18s; }
+.content-primary-button { color: white; background: linear-gradient(135deg, #888888, #585858); box-shadow: 0 5px 14px rgba(90, 90, 90, .16); }
+.content-secondary-button { color: #646464; background: rgba(255, 255, 255, .52); border-color: rgba(147, 147, 147, .2); }
+.content-primary-button:hover, .content-secondary-button:hover { transform: translateY(-1px); }
+.content-primary-button:disabled, .content-secondary-button:disabled, .content-row-actions button:disabled { opacity: .55; cursor: wait; }
+.content-feedback { margin: 0 0 12px; padding: 10px 13px; border-radius: 10px; font-size: var(--font-size-14px-d65225); line-height: 1.65; }
+.content-feedback-error { color: #434343; background: rgba(237, 237, 237, .8); }
+.content-feedback-success { color: #545454; background: rgba(239, 239, 239, .78); }
+.content-row-actions { display: flex; align-items: center; gap: 7px; padding: 0 10px; white-space: nowrap; }
+.content-row-actions button { padding: 5px 8px; border: 1px solid rgba(147, 147, 147, .18); border-radius: 7px; color: #5a5a5a; background: rgba(255, 255, 255, .48); font-size: var(--font-size-14px-d65225); cursor: pointer; }
+.content-row-actions .content-danger-action { color: #5d5d5d; }
+.content-version-list { display: grid; gap: 0; border-top: 1px solid rgba(147, 147, 147, .2); }
+.content-version-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 4px; border-bottom: 1px solid rgba(147, 147, 147, .16); }
+.content-version-row strong { color: #484848; font-size: var(--font-size-14px-d65225); }
+.content-version-row p { margin: 6px 0 0; color: #8e8e8e; font-size: var(--font-size-14px-d65225); }
+@media (max-width: 680px) {
+  .content-version-row { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .content-toolbar-actions { width: 100%; align-items: stretch; flex-direction: column; }
+  .content-toolbar-actions .virtual-table-search { width: 100%; }
+  .content-form-row { grid-template-columns: 1fr; }
+  .content-editor-heading { align-items: flex-start; }
+  .content-row-actions { padding: 0 8px; }
+}
+
+
