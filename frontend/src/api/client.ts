@@ -11,7 +11,7 @@ export class ApiRequestError extends Error {
 }
 
 /** Shared same-origin JSON transport for API components. */
-export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(path: string, init: RequestInit = {}, fallbackMessage?: string): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
     credentials: init.credentials ?? 'same-origin',
@@ -30,7 +30,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   if (!response.ok) {
     const message = payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
       ? payload.error
-      : `请求失败（${response.status}）`
+      : (fallbackMessage || `请求失败（${response.status}）`)
     throw new ApiRequestError(message, response.status, payload)
   }
 

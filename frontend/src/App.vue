@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
+import { apiRequest } from './api/client'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
@@ -455,10 +456,8 @@ async function loadContentList(searchTerm = tableQuery.value) {
     const isTrash = contentViewMode.value === 'trash'
     const params = new URLSearchParams()
     if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const endpoint = isTrash ? '/api/content/trash' : '/api/content'
-    const response = await fetch(`${endpoint}${params.size ? `?${params}` : ''}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { items?: PortalContent[]; error?: string }
-    if (!response.ok) throw new Error(result.error || '读取内容列表失败。')
+    const endpoint = isTrash ? '/content/trash' : '/content'
+    const result = await apiRequest<{ items?: PortalContent[]; error?: string }>(`${endpoint}${params.size ? `?${params}` : ''}`, {}, '读取内容列表失败。')
     if (requestId !== contentListRequestSequence) return
     if (isTrash) contentTrashItems.value = result.items || []
     else contentItems.value = result.items || []
@@ -481,10 +480,8 @@ async function loadTeachingResources(searchTerm = tableQuery.value) {
     const trash = resourceViewMode.value === 'trash'
     const params = new URLSearchParams()
     if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const endpoint = trash ? '/api/resources/trash' : '/api/resources'
-    const response = await fetch(`${endpoint}${params.size ? `?${params}` : ''}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { items?: TeachingResource[]; error?: string }
-    if (!response.ok) throw new Error(result.error || '读取教学资源失败。')
+    const endpoint = trash ? '/resources/trash' : '/resources'
+    const result = await apiRequest<{ items?: TeachingResource[]; error?: string }>(`${endpoint}${params.size ? `?${params}` : ''}`, {}, '读取教学资源失败。')
     if (requestId !== teachingResourceListRequestSequence) return
     if (trash) teachingResourceTrash.value = result.items || []; else teachingResources.value = result.items || []
   } catch (error) { if (requestId === teachingResourceListRequestSequence) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') } }
@@ -844,9 +841,7 @@ async function loadPublicContents(searchTerm = '') {
   try {
     const params = new URLSearchParams()
     if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const response = await fetch(`/api/public/content${params.size ? `?${params}` : ''}`, { headers: { Accept: 'application/json' } })
-    const result = await response.json() as { items?: PublicContentCard[]; error?: string }
-    if (!response.ok) throw new Error(result.error || '读取公开内容失败。')
+    const result = await apiRequest<{ items?: PublicContentCard[]; error?: string }>(`/public/content${params.size ? `?${params}` : ''}`, {}, '读取公开内容失败。')
     if (requestId !== publicContentListSequence) return
     publicContents.value = result.items || []
     knowledgeVisibleCount.value = knowledgePageSize
@@ -863,9 +858,7 @@ async function loadPublicTeachingResources(searchTerm = '') {
   try {
     const params = new URLSearchParams()
     if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const response = await fetch(`/api/public/resources${params.size ? `?${params}` : ''}`, { headers: { Accept: 'application/json' } })
-    const result = await response.json() as { items?: PublicTeachingResource[]; error?: string }
-    if (!response.ok) throw new Error(result.error || '读取公开教育资源失败。')
+    const result = await apiRequest<{ items?: PublicTeachingResource[]; error?: string }>(`/public/resources${params.size ? `?${params}` : ''}`, {}, '读取公开教育资源失败。')
     if (requestId !== publicResourceListSequence) return
     publicTeachingResources.value = result.items || []
     knowledgeVisibleCount.value = knowledgePageSize
