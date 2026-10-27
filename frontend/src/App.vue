@@ -11,6 +11,7 @@ import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
+import { useScrollRestoration } from './composables/useScrollRestoration'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
@@ -627,24 +628,7 @@ function setRouteFromLocation() {
     activeSidebarButton.value = section
   }
 }
-const scrollStorageKey = (path = route.value) => `portal:scroll:${path}`
-function saveScrollPosition() {
-  try {
-    const read = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.scrollTop || 0
-    sessionStorage.setItem(scrollStorageKey(), JSON.stringify({ windowY: window.scrollY, accountContent: read('.account-content'), accountSidebar: read('.account-sidebar'), table: read('.virtual-table-scroll') }))
-  } catch { /* Storage may be unavailable. */ }
-}
-async function restoreScrollPosition() {
-  await nextTick()
-  try {
-    const saved = sessionStorage.getItem(scrollStorageKey())
-    if (!saved) return
-    const state = JSON.parse(saved) as { windowY?: number; accountContent?: number; accountSidebar?: number; table?: number }
-    window.scrollTo({ top: state.windowY || 0, behavior: 'auto' })
-    const write = (selector: string, value?: number) => { const el = document.querySelector(selector) as HTMLElement | null; if (el && typeof value === 'number') el.scrollTop = value }
-    write('.account-content', state.accountContent); write('.account-sidebar', state.accountSidebar); write('.virtual-table-scroll', state.table)
-  } catch { /* Ignore malformed state. */ }
-}
+const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route)
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 async function loadPublicContents(searchTerm = '') {
   const requestId = ++publicContentListSequence
