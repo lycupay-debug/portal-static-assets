@@ -7,10 +7,9 @@ const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOp
 const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
-import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
 import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, normalizeKnowledgeTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
+import { filterKnowledgeItems } from './utils/knowledgeFiltering'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
-import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import { educationResourceSearchRank } from './utils/resourceSearch'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
@@ -19,7 +18,8 @@ import { routeAliases, routeSections, sectionRoutes } from './navigation/portalR
 import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { contentStatusLabels, contentTypeLabels, tableDefinitions } from './config/accountTables'
 import { homeSections } from './config/homeSections'
-import { knowledgeCategoryMenus, knowledgeCategorySearchTerms } from './config/knowledgeCategories'
+import { knowledgeCategoryMenus } from './config/knowledgeCategories'
+import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
@@ -225,24 +225,7 @@ const knowledgeCategory = ref('recent')
 const knowledgeSubcategory = ref('')
 const knowledgeSearchQuery = ref('')
 const highlightedKnowledgeSuggestion = ref(-1)
-const knowledgeFilteredItems = computed(() => {
-  const items = [...directoryContentItems.value]
-  let filtered = items
-  if (knowledgeCategory.value !== 'recent') {
-    const selected = knowledgeSubcategory.value || knowledgeCategoryMenus.find(item => item.value === knowledgeCategory.value)?.label || ''
-    const keywords = (knowledgeSubcategory.value ? [knowledgeSubcategory.value] : [selected, ...(knowledgeCategorySearchTerms[knowledgeCategory.value] || [])]).filter(Boolean).map(value => value.toLocaleLowerCase())
-    filtered = filtered.filter(item => {
-      const category = knowledgeCategoryMenus.find(category => category.value === knowledgeCategory.value)
-      const categoryLabel = category?.label || ''
-      if (matchesKnowledgeTaxonomy(item, categoryLabel, category?.children || [], knowledgeSubcategory.value)) return true
-      if (item.tags?.length || item.parentCategory || item.childCategory) return false
-      return keywords.some(keyword => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, keyword))
-    })
-  }
-  const searchTerm = knowledgeSearchQuery.value.trim().toLocaleLowerCase()
-  if (searchTerm) filtered = filtered.filter(item => knowledgeFuzzyMatch(`${item.title} ${item.summary || ''}`, searchTerm))
-  return filtered.sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime())
-})
+const knowledgeFilteredItems = computed(() => filterKnowledgeItems(directoryContentItems.value, knowledgeCategory.value, knowledgeSubcategory.value, knowledgeSearchQuery.value))
 const knowledgeSearchSuggestions = computed(() => {
   const term = knowledgeSearchQuery.value.trim().toLocaleLowerCase()
   if (!term) return []
