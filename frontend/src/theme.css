@@ -1337,7 +1337,7 @@ body, #app { font-family: var(--font-family-base); font-size: var(--font-size-ba
 .content-editor-document :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, table) {
   scroll-margin-block: 1.5em;
 }
-.content-editor-document > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table, hr, figure) {
+.content-editor-document > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table, hr, figure, img, [data-callout="true"]) {
   margin-block-start: 0;
   margin-block-end: 0.75em;
 }
@@ -1424,6 +1424,12 @@ body, #app { font-family: var(--font-family-base); font-size: var(--font-size-ba
   padding-block: 0.15em;
   line-height: var(--editor-line-height);
 }
+.content-editor-document > [data-callout="true"] {
+  margin-block: 0 0.75em;
+  line-height: var(--editor-line-height);
+}
+.content-editor-document > [data-callout="true"] > :first-child { margin-block-start: 0; }
+.content-editor-document > [data-callout="true"] > :last-child { margin-block-end: 0; }
 .content-editor-document pre {
   line-height: 1.6;
   tab-size: 2;

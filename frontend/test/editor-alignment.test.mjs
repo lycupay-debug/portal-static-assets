@@ -24,6 +24,8 @@ test('alignment rules preserve first-line anchoring for multiline and nested lis
 test('editor block rhythm covers regular lists and common block tools', () => {
   assert.match(theme, /ul:not\(\[data-type="taskList"\]\), ol/)
   assert.match(theme, /content-editor-document blockquote/)
+  assert.match(theme, /content-editor-document > \[data-callout=\"true\"\]/)
+  assert.match(theme, /figure, img, \[data-callout=\"true\"\]/)
   assert.match(theme, /content-editor-document pre/)
   assert.match(theme, /content-editor-document table :is\(th, td\)/)
 })
