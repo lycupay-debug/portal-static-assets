@@ -527,8 +527,8 @@ a:hover, button:hover, .section-card:hover, .section-card:hover .card-arrow, .ma
 .content-version-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 4px; border-bottom: 1px solid rgba(147, 147, 147, .16); }
 .content-version-row strong { color: #484848; font-size: var(--font-size-14px-d65225); }
 .content-version-row p { margin: 6px 0 0; color: #8e8e8e; font-size: var(--font-size-14px-d65225); }
-@media (max-width: 680px) { .content-version-row { align-items: flex-start; flex-direction: column; gap: 10px; } }
 @media (max-width: 680px) {
+  .content-version-row { align-items: flex-start; flex-direction: column; gap: 10px; }
   .content-toolbar-actions { width: 100%; align-items: stretch; flex-direction: column; }
   .content-toolbar-actions .virtual-table-search { width: 100%; }
   .content-form-row { grid-template-columns: 1fr; }

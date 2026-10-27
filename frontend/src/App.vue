@@ -9,7 +9,8 @@ const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOp
 const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
-import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, normalizeKnowledgeTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
+import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
+import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
@@ -161,41 +162,23 @@ const emptyContentForm = (): ContentForm => ({
   title: '', slug: '', contentType: 'article', tags: [], summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
-const knowledgeTagDialogOpen = ref(false)
-const knowledgeTagTrigger = ref<HTMLButtonElement | null>(null)
-const knowledgeTagDialog = ref<HTMLElement | null>(null)
-const knowledgeTagDraft = ref<string[]>([])
-const expandedKnowledgeTagGroups = ref<string[]>(['教育'])
-const selectedKnowledgeTagCount = computed(() => contentForm.value.tags.filter(tag => !taxonomyParentNames.has(tag)).length)
-const knowledgeTagDraftCount = computed(() => knowledgeTagDraft.value.filter(tag => !taxonomyParentNames.has(tag)).length)
-const isKnowledgeTagSelected = (tag: string) => knowledgeTagDraft.value.includes(tag)
-const openKnowledgeTagDialog = async () => {
-  if (contentBusy.value) return
-  knowledgeTagDraft.value = normalizeKnowledgeTags(contentForm.value.tags)
-  knowledgeTagDialogOpen.value = true
-  await nextTick()
-  knowledgeTagDialog.value?.focus()
-}
-const closeKnowledgeTagDialog = (apply = false) => {
-  if (apply) contentForm.value.tags = normalizeKnowledgeTags(knowledgeTagDraft.value)
-  knowledgeTagDialogOpen.value = false
-  nextTick(() => knowledgeTagTrigger.value?.focus())
-}
-const toggleKnowledgeTagGroup = (category: string) => {
-  expandedKnowledgeTagGroups.value = expandedKnowledgeTagGroups.value.includes(category)
-    ? expandedKnowledgeTagGroups.value.filter(item => item !== category)
-    : [...expandedKnowledgeTagGroups.value, category]
-}
-const toggleKnowledgeTag = (tag: string, checked: boolean) => {
-  const selected = knowledgeTagDraft.value.filter(item => !taxonomyParentNames.has(item))
-  const next = checked ? [...selected, tag] : selected.filter(item => item !== tag)
-  knowledgeTagDraft.value = normalizeKnowledgeTags(next)
-}
-const clearKnowledgeTags = () => { knowledgeTagDraft.value = [] }
-const removeSelectedKnowledgeTag = (tag: string) => {
-  contentForm.value.tags = normalizeKnowledgeTags(contentForm.value.tags.filter(item => item !== tag))
-}
-const clearSelectedKnowledgeTags = () => { contentForm.value.tags = [] }
+const {
+  dialogOpen: knowledgeTagDialogOpen,
+  trigger: knowledgeTagTrigger,
+  dialog: knowledgeTagDialog,
+  draft: knowledgeTagDraft,
+  expandedGroups: expandedKnowledgeTagGroups,
+  selectedCount: selectedKnowledgeTagCount,
+  draftCount: knowledgeTagDraftCount,
+  isSelected: isKnowledgeTagSelected,
+  open: openKnowledgeTagDialog,
+  close: closeKnowledgeTagDialog,
+  toggleGroup: toggleKnowledgeTagGroup,
+  toggleTag: toggleKnowledgeTag,
+  clearDraft: clearKnowledgeTags,
+  removeSelected: removeSelectedKnowledgeTag,
+  clearSelected: clearSelectedKnowledgeTags,
+} = useKnowledgeTagSelection(contentForm, contentBusy)
 const publicContents = ref<PublicContentCard[]>([])
 const publicTeachingResources = ref<PublicTeachingResource[]>([])
 const educationResourceLoading = ref(false)
