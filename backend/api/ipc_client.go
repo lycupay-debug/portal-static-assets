@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -217,4 +218,14 @@ func (c IPCClient) sendEventCommand(ctx context.Context, command, eventID, event
 		return fmt.Errorf("unexpected IPC %s response %q", command, strings.TrimSpace(line))
 	}
 	return nil
+}
+
+func (a *portalAPI) notifyEvent(parent context.Context, id, typ string) {
+	// The database event is already committed; detach only cancellation while
+	// retaining a strict timeout for this best-effort IPC wakeup.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
+	defer cancel()
+	if err := a.ipc.PublishEvent(ctx, id, typ); err != nil {
+		fmt.Fprintf(os.Stderr, "event_core_notification_failed event_id=%s event_type=%s error=%v\n", id, typ, err)
+	}
 }

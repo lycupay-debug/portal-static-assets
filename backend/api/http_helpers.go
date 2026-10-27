@@ -3,8 +3,11 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -37,3 +40,12 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) erro
 	return nil
 }
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
+
+func (a *portalAPI) dbError(w http.ResponseWriter, err error, message string) {
+	fmt.Fprintf(os.Stderr, "portal_api_error operation=%q error=%v\n", message, err)
+	if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {
+		writeError(w, 409, "别名或唯一字段已被使用，请检查后重试。", nil)
+		return
+	}
+	writeError(w, 500, "服务暂时不可用，请稍后再试。", nil)
+}

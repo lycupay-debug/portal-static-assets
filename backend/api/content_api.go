@@ -1,16 +1,13 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
-	"time"
 )
 
 func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
@@ -446,21 +443,4 @@ func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *po
 		return
 	}
 	writeJSON(w, 200, map[string]any{"item": item, "eventId": eid})
-}
-func (a *portalAPI) notifyEvent(parent context.Context, id, typ string) {
-	// The database event is already committed; detach only cancellation while
-	// retaining a strict timeout for this best-effort IPC wakeup.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
-	defer cancel()
-	if err := a.ipc.PublishEvent(ctx, id, typ); err != nil {
-		fmt.Fprintf(os.Stderr, "event_core_notification_failed event_id=%s event_type=%s error=%v\n", id, typ, err)
-	}
-}
-func (a *portalAPI) dbError(w http.ResponseWriter, err error, message string) {
-	fmt.Fprintf(os.Stderr, "portal_api_error operation=%q error=%v\n", message, err)
-	if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {
-		writeError(w, 409, "别名或唯一字段已被使用，请检查后重试。", nil)
-		return
-	}
-	writeError(w, 500, "服务暂时不可用，请稍后再试。", nil)
 }
