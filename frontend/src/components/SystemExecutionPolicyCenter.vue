@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { apiRequest } from '../api/client'
 
 type Mode = 'developer' | 'stable'
 type PolicyResponse = { mode: Mode; updatedAt: string; changedBy: string; enforcement: 'policy_source_only' | 'executor_connected' | 'executor_disconnected'; executorStatus: string; executorLastSeen?: string }
@@ -21,13 +22,7 @@ let taskRefreshTimer: ReturnType<typeof setInterval> | undefined
 const isDirty = computed(() => policy.value !== null && selectedMode.value !== policy.value.mode)
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    ...init, credentials: 'same-origin', cache: 'no-store',
-    headers: { Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
-  })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body?.error || `请求失败（${response.status}）`)
-  return body as T
+  return apiRequest<T>(path, { cache: 'no-store', ...init })
 }
 async function loadPolicy() {
   loading.value = true; error.value = ''

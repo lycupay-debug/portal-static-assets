@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { apiRequest } from '../api/client'
 
 type PortalUser = { id: string; email: string; displayName: string; isAdmin: boolean; isCopyrightReviewer: boolean; createdAt: string; roles: string[] }
 type PortalRole = { roleKey: string; displayName: string; description: string; isSystem: boolean; permissions: string[] }
@@ -24,15 +25,7 @@ const filteredUsers = computed(() => {
 const role = computed(() => roles.value.find(item => item.roleKey === selectedRole.value) || null)
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    credentials: 'same-origin',
-    cache: 'no-store',
-    headers: { Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
-    ...init,
-  })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body?.error || `请求失败（${response.status}）`)
-  return body as T
+  return apiRequest<T>(path, { cache: 'no-store', ...init })
 }
 async function refresh() {
   loading.value = true

@@ -118,6 +118,56 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	for _, path := range []string{"/compliance/overview", "/compliance/assets?limit=5", "/compliance/licenses", "/compliance/documents", "/compliance/scans", "/compliance/audit"} {
 		requestJSON(t, api, http.MethodGet, path, nil, sessionCookie, http.StatusOK)
 	}
+	policyDraft := requestJSON(t, api, http.MethodPatch, "/compliance/documents/privacy-policy", map[string]any{
+		"bodyMarkdown":       "Integration-test draft update.",
+		"missingInformation": []string{},
+		"factualAssumptions": []string{"Integration-test assumption"},
+		"legalBasis":         []map[string]string{{"title": "Integration reference", "reference": "https://example.invalid/legal"}},
+		"changeNote":         "Exercise parameterized JSONB update.",
+	}, sessionCookie, http.StatusOK)
+	if !bytes.Contains(policyDraft.Body.Bytes(), []byte("version")) {
+		t.Fatalf("legal document JSONB update response mismatch: %s", policyDraft.Body.String())
+	}
+	var policyBodyBeforeAuditFailure string
+	var policyVersionBeforeAuditFailure int
+	if err := db.QueryRowContext(ctx, `SELECT body_markdown,version FROM portal.compliance_legal_documents WHERE slug='privacy-policy'`).Scan(&policyBodyBeforeAuditFailure, &policyVersionBeforeAuditFailure); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE OR REPLACE FUNCTION portal.test_reject_compliance_audit()
+		RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.object_type = 'legal_document' THEN
+				RAISE EXCEPTION 'injected compliance audit failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$;
+		CREATE TRIGGER test_reject_compliance_audit
+		BEFORE INSERT ON portal.compliance_audit_log
+		FOR EACH ROW EXECUTE FUNCTION portal.test_reject_compliance_audit();
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, api, http.MethodPatch, "/compliance/documents/privacy-policy", map[string]any{
+		"bodyMarkdown": "This update must roll back when its audit record fails.",
+		"changeNote":   "Injected audit failure test.",
+	}, sessionCookie, http.StatusInternalServerError)
+	if _, err := db.ExecContext(ctx, `DROP TRIGGER test_reject_compliance_audit ON portal.compliance_audit_log; DROP FUNCTION portal.test_reject_compliance_audit();`); err != nil {
+		t.Fatal(err)
+	}
+	var policyBodyAfterAuditFailure string
+	var policyVersionAfterAuditFailure int
+	if err := db.QueryRowContext(ctx, `SELECT body_markdown,version FROM portal.compliance_legal_documents WHERE slug='privacy-policy'`).Scan(&policyBodyAfterAuditFailure, &policyVersionAfterAuditFailure); err != nil {
+		t.Fatal(err)
+	}
+	if policyBodyAfterAuditFailure != policyBodyBeforeAuditFailure || policyVersionAfterAuditFailure != policyVersionBeforeAuditFailure {
+		t.Fatalf("legal document mutation was not rolled back after audit failure: before=(version %d, body %q) after=(version %d, body %q)", policyVersionBeforeAuditFailure, policyBodyBeforeAuditFailure, policyVersionAfterAuditFailure, policyBodyAfterAuditFailure)
+	}
+	assetExport := requestJSON(t, api, http.MethodGet, "/compliance/export/assets.csv", nil, sessionCookie, http.StatusOK)
+	if !strings.Contains(assetExport.Header().Get("Content-Type"), "text/csv") || !bytes.HasPrefix(assetExport.Body.Bytes(), []byte("\xef\xbb\xbf")) || !bytes.Contains(assetExport.Body.Bytes(), []byte("asset_id,asset_type")) {
+		t.Fatalf("compliance CSV export contract mismatch: headers=%v body_prefix=%q", assetExport.Header(), assetExport.Body.String()[:min(len(assetExport.Body.String()), 120)])
+	}
 	var testLicenseID string
 	if err := db.QueryRowContext(ctx, "INSERT INTO portal.compliance_license_catalog(spdx_id,license_name,license_version,license_family,canonical_url,full_text,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status) VALUES('GO-API-TEST','MIT test','', 'permissive','https://example.invalid/license','MIT test license text',TRUE,TRUE,TRUE,TRUE,FALSE,'unreviewed') RETURNING license_id::text").Scan(&testLicenseID); err != nil {
 		t.Fatal(err)
@@ -189,6 +239,32 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/unpublish", map[string]any{}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPatch, "/content/"+contentID, map[string]any{"body": "A changed revision after publication."}, sessionCookie, http.StatusOK)
 	requestJSON(t, api, http.MethodPost, "/content/"+contentID+"/publish", map[string]any{}, sessionCookie, http.StatusOK)
+
+	publicArticle := requestJSON(t, api, http.MethodGet, "/public/content/"+slug, nil, nil, http.StatusOK)
+	if !bytes.Contains(publicArticle.Body.Bytes(), []byte(slug)) {
+		t.Fatalf("published article was not available through the public API: %s", publicArticle.Body.String())
+	}
+	interaction := func(kind string) map[string]any {
+		t.Helper()
+		response := requestJSON(t, api, http.MethodPost, "/public/content/"+slug+"/interactions", map[string]any{"type": kind}, sessionCookie, http.StatusOK)
+		var result map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	likeAdded := interaction("like")
+	if likeAdded["active"] != true || likeAdded["likeCount"] != float64(1) {
+		t.Fatalf("like activation result mismatch: %#v", likeAdded)
+	}
+	favoriteAdded := interaction("favorite")
+	if favoriteAdded["active"] != true || favoriteAdded["favoriteCount"] != float64(1) || favoriteAdded["likeCount"] != float64(1) {
+		t.Fatalf("favorite activation result mismatch: %#v", favoriteAdded)
+	}
+	likeRemoved := interaction("like")
+	if likeRemoved["active"] != false || likeRemoved["likeCount"] != float64(0) || likeRemoved["favoriteCount"] != float64(1) {
+		t.Fatalf("like removal result mismatch: %#v", likeRemoved)
+	}
 
 	resource := requestJSON(t, api, http.MethodPost, "/resources", map[string]any{"title": "Unit 5 URL-only resource", "description": "integration", "type": "电子书", "url": "https://example.com/material"}, sessionCookie, http.StatusCreated)
 	var resourceEnvelope struct {

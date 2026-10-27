@@ -8,11 +8,19 @@ if [ -z "$stamp" ]; then
 fi
 
 test_mode="${PERSONAL_PORTAL_ROLLBACK_TEST_MODE:-0}"
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+. "$repo/deploy/freebsd/deploy-policy.sh"
+if [ "$test_mode" != "1" ]; then
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "Run as root." >&2
+    exit 1
+  fi
+  personal_portal_require_service_restart_authorization
+fi
 bin_dir="${PERSONAL_PORTAL_BIN_DIR:-/usr/local/libexec/personal-portal}"
 caddy_file="${PERSONAL_PORTAL_CADDYFILE:-/usr/local/etc/caddy/Caddyfile}"
 backup_dir="${PERSONAL_PORTAL_BACKUP_DIR:-/var/backups/personal-portal}"
 www_base="${PERSONAL_PORTAL_WWW_BASE:-/usr/local/www/personal-portal}"
-legacy_node_dir="${PERSONAL_PORTAL_LEGACY_NODE_DIR:-/opt/personal-portal-legacy-node}"
 api_backup="$bin_dir/api.pre-go-cutover-$stamp"
 core_backup="$bin_dir/event-core.pre-go-cutover-$stamp"
 caddy_backup="$caddy_file.pre-go-cutover-$stamp"

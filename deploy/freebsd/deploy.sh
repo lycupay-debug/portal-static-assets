@@ -11,7 +11,6 @@ bin_dir="/usr/local/libexec/personal-portal"
 www_base="/usr/local/www/personal-portal"
 caddy_file="/usr/local/etc/caddy/Caddyfile"
 backup_dir="/var/backups/personal-portal"
-legacy_node_dir="${PERSONAL_PORTAL_LEGACY_NODE_DIR:-/opt/personal-portal-legacy-node}"
 go_bin="${PERSONAL_PORTAL_GO_BIN:-}"
 if [ -z "$go_bin" ]; then
   go_bin=$(command -v go || command -v go127 || true)
@@ -24,6 +23,7 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 work="/var/tmp/personal-portal-deploy-$stamp"
 deployment_changed=0
 . "$repo/deploy/freebsd/deploy-policy.sh"
+personal_portal_require_service_restart_authorization
 release_mode="${PERSONAL_PORTAL_RELEASE_MODE:-development}"
 mkdir -p "$work" "$backup_dir"
 chmod 0700 "$work" "$backup_dir"
@@ -71,8 +71,12 @@ npm run type-check
 npm test
 npm run build
 
+# Run the PostgreSQL integration suite against a fresh, isolated database
+# built from the repository migrations. Do not silently skip DB integration
+# tests during a production release preflight.
+sh "$repo/scripts/ops/test-postgres-integration.sh" "$repo" "$go_bin"
+
 cd "$repo/backend"
-"$go_bin" test -race ./...
 "$go_bin" vet ./...
 "$go_bin" build -trimpath -ldflags="-s -w" -o "$work/api" ./api
 

@@ -1,5 +1,5 @@
 /** Local Bootstrap Icons mapping shared by public and workspace resource lists. */
-export const RESOURCE_FILE_ICON_MAP: Readonly<Record<string, string>> = Object.freeze({
+const RESOURCE_FILE_ICON_MAP: Readonly<Record<string, string>> = Object.freeze({
   doc: 'bi-file-earmark-word', docx: 'bi-file-earmark-word', odt: 'bi-file-earmark-word', rtf: 'bi-file-earmark-word',
   xls: 'bi-file-earmark-excel', xlsx: 'bi-file-earmark-excel', ods: 'bi-file-earmark-excel', csv: 'bi-file-earmark-excel',
   ppt: 'bi-file-earmark-ppt', pptx: 'bi-file-earmark-ppt', odp: 'bi-file-earmark-ppt', key: 'bi-file-earmark-ppt',

@@ -14,7 +14,6 @@ export const portalTaxonomy: TaxonomyCategory[] = [
   { value: '软件工具', children: ['效率工具', '开发工具', '文档工具', 'AI 工具', '自动化工具'] },
 ]
 
-export const taxonomyParentOptions = portalTaxonomy.map(({ value }) => ({ label: value, value }))
 export const taxonomyChildren = (parent: string) => portalTaxonomy.find(category => category.value === parent)?.children ?? []
 export const taxonomyChildOptions = (parent: string) => taxonomyChildren(parent).map(value => ({ label: value, value }))
 export const taxonomyParentForChild = (child: ChildCategory) => portalTaxonomy.find(category => category.children.includes(child))?.value ?? ''

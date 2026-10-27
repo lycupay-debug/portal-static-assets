@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { apiRequest } from '../api/client'
 const SystemExecutionPolicyCenter = defineAsyncComponent(() => import('./SystemExecutionPolicyCenter.vue'))
 const PermissionManagement = defineAsyncComponent(() => import('./PermissionManagement.vue'))
 const policyView = ref<'execution' | 'permissions'>('execution')
@@ -39,10 +40,7 @@ const sourceTitle = computed(() => activeSource.value === 'server' ? '服务器�
 const stateLabel = computed(() => ({ connecting: '正在连接', live: '实时连接中', paused: '已暂停', offline: '连接中断' })[connectionState.value])
 
 async function api<T>(path: string): Promise<T> {
-  const response = await fetch(`/api${path}`, { credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store' })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body?.error || `请求失败（${response.status}）`)
-  return body as T
+  return apiRequest<T>(path, { cache: 'no-store' })
 }
 function closeStream() {
   stream?.close()

@@ -54,6 +54,7 @@ static struct client clients[MAX_CLIENTS];
 static int kq = -1;
 static int listener = -1;
 static int stopping;
+static int socket_path_created;
 static unsigned long notification_sequence;
 static const char *socket_path = DEFAULT_SOCKET_PATH;
 
@@ -466,6 +467,49 @@ expire_clients(void)
 }
 
 static int
+prepare_socket_path(const struct sockaddr_un *address)
+{
+    struct stat path_stat;
+    if (lstat(socket_path, &path_stat) == -1) {
+        if (errno == ENOENT)
+            return 0;
+        return -1;
+    }
+
+    /* Never unlink regular files, symlinks, or another service's path. */
+    if (!S_ISSOCK(path_stat.st_mode)) {
+        errno = EEXIST;
+        return -1;
+    }
+
+    int probe = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (probe == -1)
+        return -1;
+    int connect_result = connect(probe, (const struct sockaddr *)address,
+        sizeof(*address));
+    int connect_error = errno;
+    (void)close(probe);
+
+    if (connect_result == 0) {
+        errno = EADDRINUSE;
+        return -1;
+    }
+    if (connect_error == ENOENT)
+        return 0;
+    if (connect_error != ECONNREFUSED) {
+        errno = connect_error;
+        return -1;
+    }
+
+    /* A stale socket may be removed only by the same service identity. */
+    if (path_stat.st_uid != geteuid()) {
+        errno = EACCES;
+        return -1;
+    }
+    return unlink(socket_path);
+}
+
+static int
 start_listener(void)
 {
     struct sockaddr_un address;
@@ -476,19 +520,21 @@ start_listener(void)
         return -1;
     }
 
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    memcpy(address.sun_path, socket_path, strlen(socket_path) + 1);
+    if (prepare_socket_path(&address) == -1)
+        return -1;
+
     listener = socket(AF_UNIX, SOCK_STREAM, 0);
     if (listener == -1)
         return -1;
     if (set_nonblocking(listener) == -1)
         return -1;
 
-    memset(&address, 0, sizeof(address));
-    address.sun_family = AF_UNIX;
-    memcpy(address.sun_path, socket_path, strlen(socket_path) + 1);
-
-    (void)unlink(socket_path);
     if (bind(listener, (struct sockaddr *)&address, sizeof(address)) == -1)
         return -1;
+    socket_path_created = 1;
     if (chmod(socket_path, S_IRUSR | S_IWUSR) == -1)
         return -1;
     if (listen(listener, 32) == -1)
@@ -510,8 +556,10 @@ cleanup(void)
         close(kq);
         kq = -1;
     }
-    if (socket_path != NULL)
+    if (socket_path_created && socket_path != NULL) {
         (void)unlink(socket_path);
+        socket_path_created = 0;
+    }
 }
 
 int
