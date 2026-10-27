@@ -10,6 +10,7 @@ import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import { educationResourceSearchRank } from './utils/resourceSearch'
+import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
@@ -51,12 +52,7 @@ watch(selectedEducationResource, (resource, previous) => {
     educationResourcePreviousBodyOverflow = ''
   }
 }, { flush: 'sync' })
-function formatResourceFileSize(size?: number | null) {
-  if (size == null || !Number.isFinite(size) || size < 0) return ''
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
+
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
   document.querySelectorAll<HTMLElement>('.account-content, .account-sidebar, .virtual-table-scroll, .content-workspace-page, .content-outline-sidebar, .content-tools-sidebar, .content-editor-document').forEach((element) => {
@@ -603,8 +599,7 @@ async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 
 }
 function switchResourceView() { resourceViewMode.value = resourceViewMode.value === 'active' ? 'trash' : 'active'; tableQuery.value = ''; void loadTeachingResources() }
 function downloadTeachingResource(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item?.url) window.open(item.url, '_blank', 'noopener,noreferrer'); else window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
-function formatFileSize(size: number) { return size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB` }
-const resourceFileExtensions = new Set(['ppt', 'pptx', 'mp3', 'pdf', 'doc', 'docx', 'txt'])
+
 function handleResourcePaste(event: ClipboardEvent) {
   if (resourceBusy.value || resourceUploadDone.value) return
   const clipboard = event.clipboardData
