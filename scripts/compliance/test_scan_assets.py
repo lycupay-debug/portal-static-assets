@@ -53,6 +53,32 @@ class ScanAssetsTests(unittest.TestCase):
             self.assertFalse(scan_assets.path_is_within_root(root, link))
             self.assertTrue(scan_assets.path_is_within_root(root, root / "new-file.svg"))
 
+    def test_license_symlink_outside_package_is_not_accepted_as_evidence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            package = Path(temp) / "frontend/node_modules/demo"
+            package.mkdir(parents=True)
+            outside = Path(temp) / "outside-license.txt"
+            outside.write_text("must not be read as package license", encoding="utf-8")
+            link = package / "LICENSE"
+            try:
+                link.symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+            self.assertIsNone(scan_assets.find_license_file(package))
+
+    def test_symlink_loops_are_rejected_without_crashing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "scan-root"
+            root.mkdir()
+            first, second = root / "first", root / "second"
+            try:
+                first.symlink_to(second)
+                second.symlink_to(first)
+            except OSError as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+            self.assertFalse(scan_assets.path_is_within_root(root, first))
+            self.assertIsNone(scan_assets.find_license_file(root))
+
     def test_end_to_end_inventory_records_escaping_symlink_without_reading_target(self):
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp) / "repo"

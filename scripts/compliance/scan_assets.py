@@ -35,11 +35,21 @@ def package_name(lock_path):
     return '/'.join(bits[:2]) if bits and bits[0].startswith('@') and len(bits)>1 else bits[0]
 def path_is_within_root(root: Path, candidate: Path):
     try:
-        root_path=Path(root).resolve()
-        candidate_path=Path(candidate).resolve()
-    except OSError:
+        root_path=Path(root).resolve(strict=True)
+        candidate_path=Path(candidate)
+        if candidate_path.exists() or candidate_path.is_symlink():
+            candidate_resolved=candidate_path.resolve(strict=True)
+        else:
+            missing_parts=[]
+            ancestor=candidate_path
+            while not ancestor.exists() and not ancestor.is_symlink():
+                missing_parts.append(ancestor.name)
+                ancestor=ancestor.parent
+            ancestor_resolved=ancestor.resolve(strict=True)
+            candidate_resolved=ancestor_resolved.joinpath(*reversed(missing_parts))
+    except (OSError, RuntimeError):
         return False
-    return candidate_path.is_relative_to(root_path)
+    return candidate_resolved.is_relative_to(root_path)
 def safe_package_directory(frontend_root: Path, lock_path: str):
     relative=PurePosixPath(lock_path)
     if relative.is_absolute() or '..' in relative.parts or '\\' in lock_path:
@@ -82,8 +92,13 @@ def production_closure(lock):
             for dep in meta.get(group,{}): todo.append((key,dep))
     return packages, seen
 def find_license_file(pkgdir: Path):
-    try: files=[p for p in pkgdir.iterdir() if p.is_file() and p.name.lower() in LICENSE_NAMES]
-    except OSError: return None
+    try:
+        files = [
+            p for p in pkgdir.iterdir()
+            if p.name.lower() in LICENSE_NAMES and p.is_file() and path_is_within_root(pkgdir, p)
+        ]
+    except (OSError, RuntimeError):
+        return None
     files.sort(key=lambda p:(0 if p.name.lower() in ('license','license.md','license.txt') else 1,len(p.name)))
     return files[0] if files else None
 def license_family(expr):
@@ -144,7 +159,7 @@ def main():
             elif typ=='source_file' and path_label.startswith('frontend/src/'):
                 own='original'; risk='unknown'; meta['source_role']='first_party_project_source'; notes='Project source file; legal rights holder and contributor chain not independently verified.'
             assets.append(make_asset(asset_type=typ,asset_name=p.name,asset_path=path_label,ownership_basis=own,license_key=lic_key,permission_status=perm,distribution_status=distribution,review_status='pending',risk_level=risk,sha256=sha,file_size_bytes=st.st_size,discovered_by=discovered,published_or_active=active,metadata=meta,notes=notes))
-        except OSError as e:
+        except (OSError, RuntimeError) as e:
             assets.append(make_asset(asset_name=p.name,asset_path=path_label,discovered_by=discovered,metadata={'scan_error':str(e)},notes='File could not be fully inspected; requires manual follow-up.'))
     # Project-owned active source files; exclude historical .bak copies from active asset counts.
     src=repo/'frontend/src'
@@ -176,7 +191,7 @@ def main():
         licfile=find_license_file(pkgdir); lictext=''
         if licfile:
             try: lictext=licfile.read_text(errors='replace')[:200000]
-            except OSError: lictext=''
+            except (OSError, RuntimeError): lictext=''
         if not expr:
             missing_metadata.append(f'{name}@{ver}')
             expr='LicenseRef:'+name
