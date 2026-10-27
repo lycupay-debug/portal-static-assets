@@ -19,7 +19,7 @@ import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { contentStatusLabels, contentTypeLabels, tableDefinitions } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
-import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
+import { buildKnowledgeSearchSuggestions, knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
@@ -226,17 +226,11 @@ const knowledgeSubcategory = ref('')
 const knowledgeSearchQuery = ref('')
 const highlightedKnowledgeSuggestion = ref(-1)
 const knowledgeFilteredItems = computed(() => filterKnowledgeItems(directoryContentItems.value, knowledgeCategory.value, knowledgeSubcategory.value, knowledgeSearchQuery.value))
-const knowledgeSearchSuggestions = computed(() => {
-  const term = knowledgeSearchQuery.value.trim().toLocaleLowerCase()
-  if (!term) return []
-  const themes = knowledgeCategoryMenus.flatMap(category => [
-    { label: category.label, kind: 'theme' as const },
-    ...category.children.map(child => ({ label: child, kind: 'theme' as const })),
-  ])
-  const articles = directoryContentItems.value.map(item => ({ label: item.title, kind: 'article' as const, slug: item.slug, summary: item.summary || '' }))
-  const matches = [...themes, ...articles].filter(item => knowledgeFuzzyMatch(`${item.label} ${'summary' in item ? item.summary : ''}`, term))
-  return matches.filter((item, index) => matches.findIndex(other => other.label === item.label) === index).slice(0, 8)
-})
+const knowledgeSearchSuggestions = computed(() => buildKnowledgeSearchSuggestions(
+  knowledgeCategoryMenus,
+  directoryContentItems.value.map(item => ({ label: item.title, slug: item.slug, summary: item.summary || '' })),
+  knowledgeSearchQuery.value,
+))
 function chooseKnowledgeSuggestion(suggestion: (typeof knowledgeSearchSuggestions.value)[number]) {
   if (suggestion.kind === 'article' && 'slug' in suggestion) {
     navigate(`/content/${suggestion.slug}`)

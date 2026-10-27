@@ -37,3 +37,34 @@ export function knowledgeFuzzyMatch(source: string, query: string) {
   }
   return false
 }
+
+export type KnowledgeSearchCategory = {
+  label: string
+  children: string[]
+}
+
+export type KnowledgeArticleSuggestion = {
+  label: string
+  slug: string
+  summary?: string | null
+}
+
+export type KnowledgeSearchSuggestion =
+  | { label: string; kind: 'theme' }
+  | { label: string; kind: 'article'; slug: string; summary: string }
+
+export function buildKnowledgeSearchSuggestions(
+  categories: KnowledgeSearchCategory[],
+  articles: KnowledgeArticleSuggestion[],
+  query: string,
+): KnowledgeSearchSuggestion[] {
+  const term = query.trim().toLocaleLowerCase()
+  if (!term) return []
+  const themes = categories.flatMap(category => [
+    { label: category.label, kind: 'theme' as const },
+    ...category.children.map(child => ({ label: child, kind: 'theme' as const })),
+  ])
+  const articleSuggestions = articles.map(item => ({ label: item.label, kind: 'article' as const, slug: item.slug, summary: item.summary || '' }))
+  const matches = [...themes, ...articleSuggestions].filter(item => knowledgeFuzzyMatch(`${item.label} ${'summary' in item ? item.summary : ''}`, term))
+  return matches.filter((item, index) => matches.findIndex(other => other.label === item.label) === index).slice(0, 8)
+}
