@@ -14,6 +14,7 @@ const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { buildSearchableTableRecords, filterAccountTableRecords } from './utils/accountTableFiltering'
 import { buildAccountTableRecords } from './utils/accountTableRecords'
+import { buildTableColumnTemplate, tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
@@ -253,47 +254,15 @@ const virtualTableStart = computed(() => {
 })
 const virtualTableEnd = computed(() => Math.max(virtualTableStart.value, Math.min(filteredTableRecords.value.length, Math.ceil((tableScrollTop.value + virtualTableViewportHeight) / virtualTableRowHeight) + virtualTableOverscan)))
 const visibleTableRecords = computed(() => filteredTableRecords.value.slice(virtualTableStart.value, virtualTableEnd.value))
-function tableCellValue(record: TableRecord, columnKey: string): string {
-  return String(record[columnKey] || (columnKey === 'title' ? '未命名内容' : '—'))
-}
-function tableCellPreview(value: string): string {
-  const chars = Array.from(value)
-  return chars.length > 10 ? chars.slice(0, 10).join('') + '…' : value
-}
 function openTableCell(label: string, value: string) {
   selectedTableCell.value = { label, value }
 }
-const tableColumnTemplate = computed(() => {
-  const columns = activeTableDefinition.value?.columns || []
-  if (!columns.length) return '100%'
-  // Virtualization limits rendered rows, but column sizing must also avoid scanning
-  // the entire dataset. A bounded sample keeps widths useful without doing O(rows × columns)
-  // string processing every time the table data or search results change.
-  const records = filteredTableRecords.value.slice(0, 20)
-  const available = Math.max(320, virtualTableViewportWidth.value || window.innerWidth * 0.75)
-  const actionIndex = columns.findIndex((column) => column.key === 'actions')
-  const widths = columns.map((column) => {
-    if (column.key === 'actions') return 330
-    let maxChars = Math.max(1, Array.from(column.label).length)
-    for (const record of records) {
-      const preview = tableCellPreview(tableCellValue(record, column.key))
-      maxChars = Math.max(maxChars, Array.from(preview).length)
-    }
-    return Math.max(72, maxChars * 14 + 32)
-  })
-  const naturalTotal = widths.reduce((sum, width) => sum + width, 0)
-  if (naturalTotal > available) {
-    const cap = Math.max(72, Math.floor(available * 0.15))
-    return widths.map((width, index) => index === actionIndex ? 'minmax(330px, max-content)' : `${Math.min(width, cap)}px`).join(' ')
-  }
-  const flexibleWidth = Math.max(0, available - (actionIndex >= 0 ? (widths[actionIndex] ?? 0) : 0))
-  const naturalFlexibleTotal = widths.reduce((sum, width, index) => sum + (index === actionIndex ? 0 : width), 0)
-  return widths.map((width, index) => {
-    if (index === actionIndex) return 'minmax(330px, max-content)'
-    const proportional = naturalFlexibleTotal ? flexibleWidth * width / naturalFlexibleTotal : flexibleWidth / columns.length
-    return `${Math.max(72, Math.floor(proportional))}px`
-  }).join(' ')
-})
+const tableColumnTemplate = computed(() => buildTableColumnTemplate(
+  activeTableDefinition.value?.columns || [],
+  filteredTableRecords.value,
+  virtualTableViewportWidth.value,
+  window.innerWidth * 0.75,
+))
 function observeVirtualTableWidth() {
   tableResizeObserver?.disconnect()
   const element = virtualTableScrollElement.value
