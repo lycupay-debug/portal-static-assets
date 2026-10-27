@@ -5,6 +5,7 @@ import { buildKnowledgeSearchSuggestions, knowledgeEditDistance, knowledgeFuzzyM
 test('edit distance counts insertions, deletions and substitutions', () => {
   assert.equal(knowledgeEditDistance('kitten', 'sitting'), 3)
   assert.equal(knowledgeEditDistance('portal', 'portal'), 0)
+  assert.equal(knowledgeEditDistance('猫🐈', '猫狗'), 1)
 })
 
 test('knowledge fuzzy matching normalizes Unicode width, case and whitespace', () => {
@@ -20,6 +21,12 @@ test('knowledge fuzzy matching supports ordered Chinese partial phrases and smal
 
 test('an empty fuzzy query matches without filtering', () => {
   assert.equal(knowledgeFuzzyMatch('anything', ''), true)
+})
+
+test('bounded typo matching finds late matches in long source text', () => {
+  const source = '无关内容'.repeat(5000) + 'the database migration guide'
+  assert.equal(knowledgeFuzzyMatch(source, 'databse migration'), true)
+  assert.equal(knowledgeFuzzyMatch(source, 'zzzz'), false)
 })
 
 test('knowledge suggestions merge themes and articles, deduplicate labels and cap results', () => {
