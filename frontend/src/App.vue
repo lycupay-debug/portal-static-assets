@@ -731,6 +731,14 @@ const { toggleInteraction: togglePublicInteraction, shareArticle: sharePublicArt
   shareUrl,
   navigate,
 })
+function loadRouteData(): void {
+  if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
+  if (route.value === '/education-resources') void loadPublicTeachingResources()
+  if (isContentEditorPage.value) void initializeContentEditorRoute()
+  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
+  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
+}
+
 async function navigate(target: string) {
   saveScrollPosition()
   closeMenu()
@@ -748,13 +756,9 @@ async function navigate(target: string) {
       return
     }
   }
-  if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
-  if (route.value === '/education-resources') void loadPublicTeachingResources()
   if (route.value === '/content-management') await loadContentList()
   if (route.value === '/education/teaching-resources') await loadTeachingResources()
-  if (isContentEditorPage.value) void initializeContentEditorRoute()
-  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
-  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
+  loadRouteData()
   if (route.value === '/' && window.location.hash) {
     await nextTick()
     document.querySelector(window.location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -817,14 +821,10 @@ function onPopState() {
   setRouteFromLocation()
   closeMenu()
   authError.value = ''
-  if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
-  if (route.value === '/education-resources') void loadPublicTeachingResources()
-  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
-  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
+  loadRouteData()
   if (route.value === '/content-management') void loadContentList()
   if (route.value === '/education/teaching-resources') void loadTeachingResources()
   if (isProtectedPage.value) void loadSession().then((valid) => { if (!valid) void navigate('/login') })
-  if (isContentEditorPage.value) void initializeContentEditorRoute()
   void restoreScrollPosition()
 }
 onMounted(() => {
@@ -833,10 +833,7 @@ onMounted(() => {
   window.addEventListener('popstate', onPopState)
   document.addEventListener('scroll', onScrollCapture, true)
   window.addEventListener('beforeunload', saveScrollPosition)
-  if (route.value === '/' || (isPublicDirectoryPage.value && route.value !== '/education-resources')) void loadPublicContents()
-  if (route.value === '/education-resources') void loadPublicTeachingResources()
-  if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
-  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
+  loadRouteData()
   void loadPublishedLegalDocuments()
   void loadSession().then((valid) => {
     if (isProtectedPage.value && !valid) {
@@ -847,7 +844,6 @@ onMounted(() => {
   })
   if (isAccountPage.value && activeAccountSection.value === 'content-management') void loadContentList()
   if (isAccountPage.value && activeAccountSection.value === 'teaching-resources') void loadTeachingResources()
-  if (isContentEditorPage.value) void initializeContentEditorRoute()
   void restoreScrollPosition()
 })
 onBeforeUnmount(() => {

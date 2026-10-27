@@ -496,7 +496,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .content-editor-image-cancel { justify-self: end; }
 .content-editor-document td img, .content-editor-document th img { width: auto !important; }
 .content-editor-image-error { margin: 0; color: #434343; font-size: var(--font-size-14px-d65225); line-height: 1.5; }
-.content-editor-image-error { margin: 0; color: #434343; font-size: var(--font-size-14px-d65225); line-height: 1.5; }
 
 
 /* Cursor-anchored editor controls, image zoom affordance, and functional links. */
@@ -1277,7 +1276,7 @@ html, body { color: #111111; background: #ffffff; }
 /* Resource detail actions stay in the dialog content; close is a small, unboxed top-right X. */
 .education-resource-detail-backdrop { overscroll-behavior: contain; }
 .education-resource-detail-dialog { position: relative; display: block; max-height: min(88vh, 820px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; -ms-overflow-style: none; padding-top: 30px; }
-.education-resource-detail-dialog::-webkit-scrollbar { display: none; width: 0; height: 0; }
+/* Scrollbar hiding is defined above; keep the detail dialog rule single-sourced. */
 .education-resource-detail-dialog > .share-dialog-eyebrow, .education-resource-detail-dialog > h2 { padding-right: 26px; }
 .education-resource-detail-close { position: absolute; top: 13px; right: 14px; display: grid; place-items: center; width: 26px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 0; color: #666; background: transparent; line-height: 1; cursor: pointer; }
 .education-resource-detail-close i { font-size: var(--font-size-15px-344c38); }
