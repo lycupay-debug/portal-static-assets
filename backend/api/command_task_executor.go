@@ -145,14 +145,33 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 		return true
 	}
 	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-	_, _ = x.DB.ExecContext(persistCtx, `UPDATE portal.command_tasks SET process_id=$2,updated_at=now() WHERE task_id=$1::uuid AND status='running' AND worker_id=$3`, task.ID, cmd.Process.Pid, x.WorkerID)
+	persistResult, persistErr := x.DB.ExecContext(persistCtx, `UPDATE portal.command_tasks SET process_id=$2,updated_at=now() WHERE task_id=$1::uuid AND status='running' AND worker_id=$3`, task.ID, cmd.Process.Pid, x.WorkerID)
+	if persistErr == nil {
+		var affected int64
+		affected, persistErr = persistResult.RowsAffected()
+		if persistErr == nil && affected != 1 {
+			persistErr = errors.New("task is no longer owned by this worker")
+		}
+	}
 	persistCancel()
+	if persistErr != nil {
+		log.Printf("command_task_process_id_persist_failed task_id=%s error=%v", task.ID, persistErr)
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		time.Sleep(250 * time.Millisecond)
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+		x.finish(task.ID, 125, boundedOutput(stdout.Bytes()), boundedOutput(stderr.Bytes()), "persist process id: "+persistErr.Error())
+		return true
+	}
 	monitorDone := make(chan struct{})
 	monitorStop := make(chan struct{})
+	leaseFailure := make(chan error, 1)
+	cancelRequestedByMonitor := make(chan struct{}, 1)
 	go func() {
 		defer close(monitorDone)
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
+		consecutiveLeaseFailures := 0
 		for {
 			select {
 			case <-commandCtx.Done():
@@ -164,7 +183,25 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 				qctx, qcancel := context.WithTimeout(commandCtx, time.Second)
 				err := x.DB.QueryRowContext(qctx, `UPDATE portal.command_tasks SET lease_until=now()+interval '45 seconds',updated_at=now() WHERE task_id=$1::uuid AND status='running' AND worker_id=$2 RETURNING cancel_requested`, task.ID, x.WorkerID).Scan(&cancelRequested)
 				qcancel()
-				if err == nil && cancelRequested {
+				if err != nil {
+					consecutiveLeaseFailures++
+					log.Printf("command_task_lease_renewal_failed task_id=%s consecutive_failures=%d error=%v", task.ID, consecutiveLeaseFailures, err)
+					if consecutiveLeaseFailures >= 3 {
+						select {
+						case leaseFailure <- err:
+						default:
+						}
+						stop()
+						return
+					}
+					continue
+				}
+				consecutiveLeaseFailures = 0
+				if cancelRequested {
+					select {
+					case cancelRequestedByMonitor <- struct{}{}:
+					default:
+					}
 					stop()
 					return
 				}
@@ -176,6 +213,11 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 	stop()
 	close(monitorStop)
 	<-monitorDone
+	var leaseErr error
+	select {
+	case leaseErr = <-leaseFailure:
+	default:
+	}
 	if cancelledOrTimedOut {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 		time.Sleep(250 * time.Millisecond)
@@ -201,8 +243,20 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 	}
 	var cancelRequested bool
 	checkCtx, checkCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-	_ = x.DB.QueryRowContext(checkCtx, `SELECT cancel_requested FROM portal.command_tasks WHERE task_id=$1::uuid`, task.ID).Scan(&cancelRequested)
+	checkErr := x.DB.QueryRowContext(checkCtx, `SELECT cancel_requested FROM portal.command_tasks WHERE task_id=$1::uuid`, task.ID).Scan(&cancelRequested)
 	checkCancel()
+	if checkErr != nil {
+		log.Printf("command_task_cancel_state_read_failed task_id=%s error=%v", task.ID, checkErr)
+	}
+	select {
+	case <-cancelRequestedByMonitor:
+		cancelRequested = true
+	default:
+	}
+	if leaseErr != nil && ctx.Err() == nil {
+		exitCode = 125
+		failure = "task lease renewal failed; process group terminated: " + leaseErr.Error()
+	}
 	if cancelRequested {
 		exitCode = 130
 		failure = "task cancelled by administrator"
