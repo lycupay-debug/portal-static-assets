@@ -215,6 +215,7 @@ func (a *portalAPI) updateComplianceAsset(w http.ResponseWriter, r *http.Request
 		return
 	}
 	args = append(args, id)
+	// #nosec G701 G202 -- every column identifier is a compile-time literal; request data is passed only as $n parameters.
 	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.compliance_assets SET `+strings.Join(sets, ",")+fmt.Sprintf(" WHERE asset_id=$%d", len(args)), args...); err != nil {
 		a.dbError(w, err, "无法更新资产台账。")
 		return
@@ -310,9 +311,13 @@ func (a *portalAPI) exportAssetsCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="copyright-asset-ledger.csv"`)
 	w.Header().Set("Cache-Control", "no-store")
-	w.Write([]byte("\xef\xbb\xbf"))
+	if _, err := w.Write([]byte("\xef\xbb\xbf")); err != nil {
+		return
+	}
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"asset_id", "asset_type", "asset_name", "asset_path", "source_url", "rightsholder", "ownership_basis", "license_spdx", "permission_status", "use_scope", "distribution_status", "review_status", "risk_level", "sha256", "file_size_bytes", "active", "notes"})
+	if err := cw.Write([]string{"asset_id", "asset_type", "asset_name", "asset_path", "source_url", "rightsholder", "ownership_basis", "license_spdx", "permission_status", "use_scope", "distribution_status", "review_status", "risk_level", "sha256", "file_size_bytes", "active", "notes"}); err != nil {
+		return
+	}
 	for rows.Next() {
 		var record []string
 		var id, typ, name, path, source, rightsholder, ownership, license, permission, scope, distribution, status, risk, sha, notes string

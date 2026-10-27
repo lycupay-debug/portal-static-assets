@@ -80,8 +80,12 @@ func fileCleanupEventHandler(ctx context.Context, event EventInput) (json.RawMes
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(filepath.Clean(dir), payload.Filename)
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	root, err := os.OpenRoot(filepath.Clean(dir))
+	if err != nil {
+		return nil, fmt.Errorf("open managed file directory: %w", err)
+	}
+	defer root.Close()
+	if err := root.Remove(payload.Filename); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("remove managed file %q: %w", payload.Filename, err)
 	}
 	return json.RawMessage(`{"removed":true}`), nil

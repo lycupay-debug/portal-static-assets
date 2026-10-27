@@ -163,6 +163,7 @@ func parseServerLogTimeWithCutover(line, cutoverPath string) string {
 			// Logs written before the host timezone was changed were stamped in UTC.
 			// The cutover marker lets us convert those legacy prefixes without
 			// shifting new Asia/Shanghai syslog timestamps a second time.
+			// #nosec G304 -- cutoverPath is a fixed, server-owned configuration path.
 			if raw, readErr := os.ReadFile(cutoverPath); readErr == nil {
 				if cutover, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(string(raw))); parseErr == nil && parsed.Before(cutover) {
 					parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), 0, time.UTC).In(time.Local)
@@ -176,6 +177,7 @@ func parseServerLogTimeWithCutover(line, cutoverPath string) string {
 
 // readSystemLog reads only a bounded tail for a new viewer and only appended bytes for a live cursor.
 func readSystemLog(path, source string, after int64, limit int) (logReadResult, error) {
+	// #nosec G304 -- path is selected by systemLogPath from a fixed server-owned allowlist.
 	f, err := os.Open(path)
 	if err != nil {
 		return logReadResult{}, err

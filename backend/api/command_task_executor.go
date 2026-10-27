@@ -249,8 +249,10 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 	defer stop()
 	var cmd *exec.Cmd
 	if task.ShellMode {
+		// #nosec G204 -- task claim enforces the execution-mode policy; shell-mode commands are audited and time-limited.
 		cmd = exec.CommandContext(commandCtx, task.Executable, "-c", strings.Join(task.Arguments, " "))
 	} else {
+		// #nosec G204 -- executable/arguments are persisted task inputs guarded by the class allowlist/approval policy and a per-task timeout.
 		cmd = exec.CommandContext(commandCtx, task.Executable, task.Arguments...)
 	}
 	cmd.Dir = task.WorkingDir
@@ -272,14 +274,18 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 	// mode deliberately runs as root, matching the administrator's explicit mode.
 	runAsRoot := task.Mode == systemModeDeveloper || (task.Approved && (task.Class == taskDeploy || task.Class == taskRestart || task.Class == taskDatabaseChange || task.Class == taskDestructive || task.Class == taskCodeChange || task.Class == taskSystemAdmin))
 	if !runAsRoot {
-		if u, err := user.Lookup("personalportal"); err == nil {
-			uid, _ := strconv.Atoi(u.Uid)
-			gid, _ := strconv.Atoi(u.Gid)
-			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{uint32(gid)}}
-		} else {
-			x.finish(task.ID, 125, "", "", "cannot drop privileges in stable mode: "+err.Error())
+		u, lookupErr := user.Lookup("personalportal")
+		if lookupErr != nil {
+			x.finish(task.ID, 125, "", "", "cannot drop privileges in stable mode: "+lookupErr.Error())
 			return true
 		}
+		uid, uidErr := strconv.ParseUint(u.Uid, 10, 32)
+		gid, gidErr := strconv.ParseUint(u.Gid, 10, 32)
+		if uidErr != nil || gidErr != nil {
+			x.finish(task.ID, 125, "", "", "cannot drop privileges in stable mode: invalid service account UID/GID")
+			return true
+		}
+		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{uint32(gid)}}
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedBuffer{buffer: &stdout, limit: commandTaskMaxOutput}
@@ -288,7 +294,9 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 		x.finish(task.ID, 127, stdout.String(), stderr.String(), "start command: "+err.Error())
 		return true
 	}
-	_, _ = x.DB.ExecContext(context.Background(), `UPDATE portal.command_tasks SET process_id=$2,updated_at=now() WHERE task_id=$1::uuid AND status='running' AND worker_id=$3`, task.ID, cmd.Process.Pid, x.WorkerID)
+	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	_, _ = x.DB.ExecContext(persistCtx, `UPDATE portal.command_tasks SET process_id=$2,updated_at=now() WHERE task_id=$1::uuid AND status='running' AND worker_id=$3`, task.ID, cmd.Process.Pid, x.WorkerID)
+	persistCancel()
 	monitorDone := make(chan struct{})
 	monitorStop := make(chan struct{})
 	go func() {
@@ -303,7 +311,7 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 				return
 			case <-ticker.C:
 				var cancelRequested bool
-				qctx, qcancel := context.WithTimeout(context.Background(), time.Second)
+				qctx, qcancel := context.WithTimeout(commandCtx, time.Second)
 				err := x.DB.QueryRowContext(qctx, `UPDATE portal.command_tasks SET lease_until=now()+interval '45 seconds',updated_at=now() WHERE task_id=$1::uuid AND status='running' AND worker_id=$2 RETURNING cancel_requested`, task.ID, x.WorkerID).Scan(&cancelRequested)
 				qcancel()
 				if err == nil && cancelRequested {
@@ -342,7 +350,7 @@ func (x privilegedTaskExecutor) processOne(ctx context.Context) bool {
 		failure = "executor shutting down; process group terminated"
 	}
 	var cancelRequested bool
-	checkCtx, checkCancel := context.WithTimeout(context.Background(), time.Second)
+	checkCtx, checkCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	_ = x.DB.QueryRowContext(checkCtx, `SELECT cancel_requested FROM portal.command_tasks WHERE task_id=$1::uuid`, task.ID).Scan(&cancelRequested)
 	checkCancel()
 	if cancelRequested {
@@ -465,7 +473,7 @@ func runCommandTaskExecutor(ctx context.Context, db *sql.DB) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				qctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				qctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 				_, e := db.ExecContext(qctx, `UPDATE portal.command_executor_heartbeat SET status='ready',last_seen_at=now(),last_error='' WHERE singleton=TRUE AND worker_id=$1`, workerID)
 				cancel()
 				if e != nil {

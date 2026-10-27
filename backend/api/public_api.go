@@ -4,10 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -66,11 +65,21 @@ func (a *portalAPI) publicContent(w http.ResponseWriter, r *http.Request) {
 		if e == nil {
 			for rows.Next() {
 				var v string
-				if rows.Scan(&v) == nil {
-					likes = append(likes, v)
+				if scanErr := rows.Scan(&v); scanErr != nil {
+					e = scanErr
+					break
 				}
+				likes = append(likes, v)
 			}
-			rows.Close()
+			if e == nil {
+				e = rows.Err()
+			}
+			if closeErr := rows.Close(); closeErr != nil && e == nil {
+				e = closeErr
+			}
+			if e != nil {
+				log.Printf("public_content_interactions_read_failed")
+			}
 		}
 	}
 	item["viewerLiked"] = contains(likes, "like")
@@ -244,7 +253,7 @@ func (a *portalAPI) publicResources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "公开资源不存在。", nil)
 			return
 		}
-		f, err := os.Open(filepath.Join(a.resourceDir, filepath.Base(stored.String)))
+		f, err := openManagedFile(a.resourceDir, stored.String)
 		if err != nil {
 			writeError(w, 404, "资源文件缺失。", nil)
 			return

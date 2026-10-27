@@ -117,18 +117,25 @@ func (a *portalAPI) systemOps(w http.ResponseWriter, r *http.Request) {
 			var eventType string
 			var count int
 			if err := rows.Scan(&eventType, &count); err != nil {
-				rows.Close()
+				if closeErr := rows.Close(); closeErr != nil {
+					err = errors.Join(err, closeErr)
+				}
 				a.dbError(w, err, "无法读取系统事件状态。")
 				return
 			}
 			items = append(items, systemLogEntry{Source: "server", Level: "error", Time: now.Format(time.RFC3339), Action: "event_dead_lettered", Message: fmt.Sprintf("事件类型 %s 有 %d 个处理失败的事件，需要核验。", eventType, count), Details: map[string]any{"eventType": eventType, "count": count}})
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			if closeErr := rows.Close(); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
 			a.dbError(w, err, "无法读取系统事件状态。")
 			return
 		}
-		rows.Close()
+		if err := rows.Close(); err != nil {
+			a.dbError(w, err, "无法关闭系统事件状态查询。")
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items, "failedFileCleanupEvents": failedCleanup, "checkedAt": now.Format(time.RFC3339)})
 	case r.URL.Path == "/system-ops/stream" && r.Method == http.MethodGet:
 		a.streamSystemLog(w, r)

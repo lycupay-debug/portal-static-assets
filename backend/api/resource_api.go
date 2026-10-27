@@ -27,8 +27,7 @@ func (a *portalAPI) serveResourceMP3Preview(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "MP3 资源不存在或无权访问。", nil)
 		return
 	}
-	filePath := filepath.Join(a.resourceDir, filepath.Base(stored.String))
-	f, err := os.Open(filePath)
+	f, err := openManagedFile(a.resourceDir, stored.String)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "资源文件缺失。", nil)
 		return
@@ -140,7 +139,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 		err = a.db.QueryRowContext(r.Context(), `INSERT INTO portal.teaching_resources(owner_id,title,description,resource_type,grade,is_public,resource_url,original_filename,stored_filename,mime_type,file_size) VALUES($1,$2,$3,$4,$5,COALESCE($6,FALSE),$7,$8,$9,$10,$11) RETURNING resource_id::text`, u.ID, strings.TrimSpace(b.Title), strings.TrimSpace(b.Description), resourceType(b.Type), nullableString(resourceGrade(b.Grade)), b.IsPublic, urlAny, filenameAny, storedAny, mimeAny, fileSize).Scan(&resourceID)
 		if err != nil {
 			if stored != "" {
-				_ = os.Remove(filepath.Join(a.resourceDir, stored))
+				_ = removeManagedFile(a.resourceDir, stored)
 			}
 			a.dbError(w, err, "资源保存失败。")
 			return
@@ -178,8 +177,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "该资源仅提供外部链接，请使用资源 URL。", nil)
 			return
 		}
-		path := filepath.Join(a.resourceDir, filepath.Base(stored.String))
-		f, err := os.Open(path)
+		f, err := openManagedFile(a.resourceDir, stored.String)
 		if err != nil {
 			writeError(w, 404, "资源文件缺失。", nil)
 			return
@@ -249,7 +247,7 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if cleanupEventID != "" {
-			go a.notifyEvent(cleanupEventID, fileCleanupEventType)
+			go a.notifyEvent(r.Context(), cleanupEventID, fileCleanupEventType)
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return
@@ -365,7 +363,7 @@ func (a *portalAPI) storeResourceFile(data []byte, filename string) (string, err
 	if err := os.MkdirAll(a.resourceDir, 0750); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(a.resourceDir, name), data, 0640); err != nil {
+	if err := writeManagedFile(a.resourceDir, name, data, 0640); err != nil {
 		return "", err
 	}
 	return name, nil
@@ -418,7 +416,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 	}
 	if len(data) > 0 {
 		if old.Valid && old.String != "" && name == currentFilename.String {
-			currentData, readErr := os.ReadFile(filepath.Join(a.resourceDir, filepath.Base(old.String)))
+			currentData, readErr := readManagedFile(a.resourceDir, old.String)
 			if readErr != nil {
 				a.dbError(w, readErr, "读取现有资源文件失败，未保存任何修改。")
 				return
@@ -457,7 +455,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 	res, err := a.db.ExecContext(r.Context(), `UPDATE portal.teaching_resources SET title=$3,description=$4,resource_type=$5,grade=$6,is_public=COALESCE($7,is_public),resource_url=$8,original_filename=COALESCE($9,original_filename),stored_filename=$10,mime_type=COALESCE($11,mime_type),file_size=COALESCE($12,file_size),updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL`, id, u.ID, b.Title, b.Description, b.Type, nullableString(b.Grade), b.IsPublic, urlValue, fileNameValue, nullableString(stored), mimeValue, sizeValue)
 	if err != nil {
 		if newStored != "" {
-			_ = os.Remove(filepath.Join(a.resourceDir, newStored))
+			_ = removeManagedFile(a.resourceDir, newStored)
 		}
 		a.dbError(w, err, "资源更新失败。")
 		return
@@ -468,7 +466,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		return
 	}
 	if newStored != "" && old.Valid {
-		_ = os.Remove(filepath.Join(a.resourceDir, filepath.Base(old.String)))
+		_ = removeManagedFile(a.resourceDir, old.String)
 	}
 	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 	if err != nil {

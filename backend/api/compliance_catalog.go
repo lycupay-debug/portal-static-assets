@@ -88,6 +88,7 @@ func (a *portalAPI) complianceLicenseByID(w http.ResponseWriter, r *http.Request
 		return
 	}
 	args = append(args, id)
+	// #nosec G701 G202 -- every column identifier is a compile-time literal; request data is passed only as $n parameters.
 	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.compliance_license_catalog SET `+strings.Join(sets, ",")+fmt.Sprintf(" WHERE license_id=$%d", len(args)), args...); err != nil {
 		a.dbError(w, err, "无法更新许可证记录。")
 		return

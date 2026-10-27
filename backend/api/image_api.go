@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -53,15 +52,14 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := randomUUID() + "." + ext
-	fullPath := filepath.Join(a.uploadDir, name)
-	if err = os.WriteFile(fullPath, data, 0640); err != nil {
+	if err = writeManagedFile(a.uploadDir, name, data, 0640); err != nil {
 		writeError(w, 500, "图片保存失败。", nil)
 		return
 	}
 	sum := sha256.Sum256(data)
 	_, err = a.db.ExecContext(r.Context(), `INSERT INTO portal.uploaded_images(filename,uploader_id,mime_type,sha256,file_size_bytes) VALUES($1,$2::uuid,$3,$4,$5)`, name, u.ID, mime, hex.EncodeToString(sum[:]), len(data))
 	if err != nil {
-		_ = os.Remove(fullPath)
+		_ = removeManagedFile(a.uploadDir, name)
 		a.dbError(w, err, "图片登记失败。")
 		return
 	}
@@ -95,7 +93,7 @@ func (a *portalAPI) serveUploadedImage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	f, err := os.Open(filepath.Join(a.uploadDir, name))
+	f, err := openManagedFile(a.uploadDir, name)
 	if err != nil {
 		http.NotFound(w, r)
 		return

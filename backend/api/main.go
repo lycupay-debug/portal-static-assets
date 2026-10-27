@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,9 +33,27 @@ func loadDatabaseURL() (string, error) {
 	if path == "" {
 		path = defaultDatabaseURLFile
 	}
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	root, err := os.OpenRoot(filepath.Dir(cleanPath))
+	if err != nil {
+		return "", fmt.Errorf("open database URL directory: %w", err)
+	}
+	f, err := root.Open(filepath.Base(cleanPath))
+	rootErr := root.Close()
 	if err != nil {
 		return "", fmt.Errorf("read database URL file: %w", err)
+	}
+	if rootErr != nil {
+		_ = f.Close()
+		return "", fmt.Errorf("close database URL directory: %w", rootErr)
+	}
+	data, readErr := io.ReadAll(f)
+	closeErr := f.Close()
+	if readErr != nil {
+		return "", fmt.Errorf("read database URL file: %w", readErr)
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("close database URL file: %w", closeErr)
 	}
 	value := strings.TrimSpace(string(data))
 	if value == "" {

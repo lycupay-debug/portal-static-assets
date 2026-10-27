@@ -310,7 +310,7 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		// Durable events are committed with the content deletion. The C core
 		// notification is only a wakeup; PostgreSQL recovery scans cover misses.
 		for _, eventID := range cleanupEventIDs {
-			go a.notifyEvent(eventID, fileCleanupEventType)
+			go a.notifyEvent(r.Context(), eventID, fileCleanupEventType)
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return
@@ -482,6 +482,7 @@ func (a *portalAPI) patchContent(w http.ResponseWriter, r *http.Request, u *port
 	}
 	q := `UPDATE portal.portal_content SET ` + strings.Join(sets, ",") + `,updated_at=now() WHERE content_id=$1 AND author_id=$2 RETURNING content_id::text`
 	var savedID string
+	// #nosec G701 -- column names are selected only from the compile-time contentColumns allowlist; all user values use SQL parameters.
 	if err = tx.QueryRowContext(r.Context(), q, args...).Scan(&savedID); err != nil {
 		a.dbError(w, err, "保存失败。")
 		return
@@ -556,7 +557,7 @@ func (a *portalAPI) restoreVersion(w http.ResponseWriter, r *http.Request, u *po
 		return
 	}
 	if eid, ok := eventID.(string); ok {
-		go a.notifyEvent(eid, "portal.content.validate")
+		go a.notifyEvent(r.Context(), eid, "portal.content.validate")
 	}
 	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, id)
 	if err != nil {
@@ -622,7 +623,7 @@ func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *po
 		a.dbError(w, err, "发布失败。")
 		return
 	}
-	go a.notifyEvent(eid, "portal.content.validate")
+	go a.notifyEvent(r.Context(), eid, "portal.content.validate")
 	item, err = oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, id)
 	if err != nil {
 		a.dbError(w, err, "读取发布结果失败。")
@@ -644,8 +645,10 @@ func stringSlice(v any) []string {
 	}
 	return out
 }
-func (a *portalAPI) notifyEvent(id, typ string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func (a *portalAPI) notifyEvent(parent context.Context, id, typ string) {
+	// The database event is already committed; detach only cancellation while
+	// retaining a strict timeout for this best-effort IPC wakeup.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
 	defer cancel()
 	if err := a.ipc.PublishEvent(ctx, id, typ); err != nil {
 		fmt.Fprintf(os.Stderr, "event_core_notification_failed event_id=%s event_type=%s error=%v\n", id, typ, err)

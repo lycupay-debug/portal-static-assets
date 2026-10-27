@@ -44,4 +44,3 @@ func oneJSON(ctx context.Context, db interface {
 	err := json.Unmarshal(raw, &item)
 	return item, err
 }
-func contentJSONSelect() string { return "to_jsonb(c)" }

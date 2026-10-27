@@ -131,19 +131,30 @@ func (a *portalAPI) complianceReviewerUsers(w http.ResponseWriter, r *http.Reque
 	for afterRoles.Next() {
 		var roleKey string
 		if err = afterRoles.Scan(&roleKey); err != nil {
-			afterRoles.Close()
+			if closeErr := afterRoles.Close(); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
 			a.dbError(w, err, "无法读取更新后的角色。")
 			return
 		}
 		roleKeys = append(roleKeys, roleKey)
 	}
 	if err = afterRoles.Err(); err != nil {
-		afterRoles.Close()
+		if closeErr := afterRoles.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 		a.dbError(w, err, "无法读取更新后的角色。")
 		return
 	}
-	afterRoles.Close()
-	afterJSON, _ := json.Marshal(roleKeys)
+	if err = afterRoles.Close(); err != nil {
+		a.dbError(w, err, "无法关闭更新后的角色查询。")
+		return
+	}
+	afterJSON, err := json.Marshal(roleKeys)
+	if err != nil {
+		a.dbError(w, err, "无法序列化更新后的角色。")
+		return
+	}
 	_, err = tx.ExecContext(r.Context(), `INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,'update_user_roles','portal_user',$2::uuid,jsonb_build_object('email',$3::text,'roles',$4::jsonb),jsonb_build_object('email',$3::text,'roles',$5::jsonb))`, u.Email, id, email, string(beforeRoles), string(afterJSON))
 	if err != nil {
 		a.dbError(w, err, "无法记录审核人员权限审计。")
