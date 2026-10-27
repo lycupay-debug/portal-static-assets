@@ -1,11 +1,9 @@
 name: CI
 
+# Automatic CI is disabled while GitHub Actions quota is exhausted.
+# Runs can only be started manually from the Actions tab.
 on:
-  pull_request:
-  push:
-    branches:
-      - main
-      - integration/portal-cleanup-2026-10
+  workflow_dispatch:
 
 permissions:
   contents: read
