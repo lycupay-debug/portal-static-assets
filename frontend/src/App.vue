@@ -13,6 +13,7 @@ import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, normalizeKnowledgeTag
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { buildSearchableTableRecords, filterAccountTableRecords } from './utils/accountTableFiltering'
+import { buildAccountTableRecords } from './utils/accountTableRecords'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
@@ -227,22 +228,17 @@ const virtualTableRowHeight = 44
 const virtualTableViewportHeight = 440
 const virtualTableOverscan = 6
 const activeTableDefinition = computed(() => tableDefinitions[activeAccountSection.value] || null)
-const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value === 'content-management'
-  ? (contentViewMode.value === 'trash' ? contentTrashItems.value : contentItems.value).map((item) => ({
-      id: item.id,
-      title: item.title,
-      type: item.tags?.length ? item.tags.join(' · ') : contentTypeLabels[item.contentType],
-      status: contentStatusLabels[item.status],
-      visibility: item.visibility === 'public' ? '公开' : '仅自己可见',
-      updatedAt: new Date(contentViewMode.value === 'trash' && 'deletedAt' in item ? String(item.deletedAt) : item.updatedAt).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }),
-      likeCount: item.likeCount ?? 0,
-      favoriteCount: item.favoriteCount ?? 0,
-      actions: contentViewMode.value === 'trash' ? '已删除' : item.status === 'published' ? '已发布' : '待发布',
-      searchText: [item.title, item.slug, item.summary, item.body, ...(item.tags || []), item.parentCategory, item.childCategory].filter(Boolean).join(' '),
-    }))
-  : activeAccountSection.value === 'teaching-resources'
-    ? (resourceViewMode.value === 'trash' ? teachingResourceTrash.value : teachingResources.value).map((item) => ({ id: item.id, title: item.title, filename: item.filename || '—', type: item.type || '其他', grade: item.grade || '不限定年级', visibility: item.isPublic ? '公开' : '仅自己可见', description: item.description || '—', updatedAt: new Date(resourceViewMode.value === 'trash' ? (item.deletedAt || item.createdAt) : (item.updatedAt || item.createdAt)).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' }), actions: resourceViewMode.value === 'trash' ? '已删除' : '可用', searchText: [item.title, item.filename, item.description, item.type, item.grade, item.url].filter(Boolean).join(' ') }))
-    : [])
+const tableRecords = computed<TableRecord[]>(() => buildAccountTableRecords({
+  section: activeAccountSection.value,
+  contentViewMode: contentViewMode.value,
+  contentItems: contentItems.value,
+  contentTrashItems: contentTrashItems.value,
+  resourceViewMode: resourceViewMode.value,
+  teachingResources: teachingResources.value,
+  teachingResourceTrash: teachingResourceTrash.value,
+  contentTypeLabels,
+  contentStatusLabels,
+}))
 // Build each record's normalized search text once per data change, rather than
 // converting every cell to lowercase on every keystroke. Action/status helper fields
 // are excluded because they are UI-only and do not add useful search content.
