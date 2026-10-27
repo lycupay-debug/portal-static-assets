@@ -341,7 +341,10 @@ func (a *portalAPI) patchContent(w http.ResponseWriter, r *http.Request, u *port
 		}
 	}
 	if len(changed) == 0 {
-		_ = tx.Commit()
+		if err = tx.Commit(); err != nil {
+			a.dbError(w, err, "保存失败。")
+			return
+		}
 		writeJSON(w, 200, map[string]any{"item": cur, "versionCreated": false})
 		return
 	}

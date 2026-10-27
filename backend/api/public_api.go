@@ -123,7 +123,11 @@ func (a *portalAPI) publicInteraction(w http.ResponseWriter, r *http.Request, sl
 		a.dbError(w, err, "互动操作失败。")
 		return
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		a.dbError(w, err, "互动操作失败。")
+		return
+	}
 	active := n == 0
 	if active {
 		_, err = tx.ExecContext(r.Context(), `INSERT INTO portal.portal_content_interactions(content_id,user_id,interaction_type) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, id, u.ID, b.Type)
@@ -133,7 +137,10 @@ func (a *portalAPI) publicInteraction(w http.ResponseWriter, r *http.Request, sl
 		}
 	}
 	var likes, favs int
-	_ = tx.QueryRowContext(r.Context(), `SELECT count(*) FILTER(WHERE interaction_type='like')::int,count(*) FILTER(WHERE interaction_type='favorite')::int FROM portal.portal_content_interactions WHERE content_id=$1`, id).Scan(&likes, &favs)
+	if err = tx.QueryRowContext(r.Context(), `SELECT count(*) FILTER(WHERE interaction_type='like')::int,count(*) FILTER(WHERE interaction_type='favorite')::int FROM portal.portal_content_interactions WHERE content_id=$1`, id).Scan(&likes, &favs); err != nil {
+		a.dbError(w, err, "互动操作失败。")
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		a.dbError(w, err, "互动操作失败。")
 		return
