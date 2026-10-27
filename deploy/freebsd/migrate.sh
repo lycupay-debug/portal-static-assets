@@ -45,6 +45,10 @@ for key, value in values.items():
 PY
 )"
 export PGDATABASE="$db_name"
+# All schema changes run as the local PostgreSQL administrator. The runtime
+# connection configured in database-url remains a least-privilege app role.
+PERSONAL_PORTAL_MIGRATION_AS_POSTGRES=1
+export PERSONAL_PORTAL_MIGRATION_AS_POSTGRES
 
 for migration in "$migration_dir"/[0-9][0-9][0-9]_*.sql; do
   version=$(basename "$migration" | cut -d_ -f1)
@@ -72,5 +76,9 @@ for migration in "$migration_dir"/[0-9][0-9][0-9]_*.sql; do
   echo "APPLY migration $version: $(basename "$migration")"
   personal_portal_apply_migration "$psql_bin" "$db_name" "$migration"
 done
+
+# Normalize any legacy migration that explicitly assigns objects to the app
+# role. Keep schema/table/function ownership separate from runtime DML rights.
+su -m postgres -c "env -u PGHOST -u PGPORT -u PGUSER -u PGPASSWORD -u PGSSLMODE '$psql_bin' -v ON_ERROR_STOP=1 -d '$db_name' -f -" < "$repo/deploy/freebsd/normalize-db-ownership.sql"
 
 "$psql_bin" -v ON_ERROR_STOP=1 -d "$db_name" -c 'SELECT version,name,applied_at FROM portal.schema_migrations ORDER BY version;'

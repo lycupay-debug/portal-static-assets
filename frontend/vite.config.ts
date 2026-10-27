@@ -9,4 +9,8 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    // The editor is intentionally loaded asynchronously; warn only above 3 MB.
+    chunkSizeWarningLimit: 3000,
+  },
 })

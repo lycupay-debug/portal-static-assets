@@ -29,8 +29,11 @@ func TestRateLimitUsesForwardedClientIPOnlyBehindLoopbackProxy(t *testing.T) {
 	otherClient := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
 	otherClient.RemoteAddr = "127.0.0.1:65001"
 	otherClient.Header.Set("X-Forwarded-For", "203.0.113.11")
-	if api.rateLimited(httptest.NewRecorder(), otherClient) {
-		t.Fatal("different forwarded client IP should have an independent limit")
+	forgedForwardedClient := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	forgedForwardedClient.RemoteAddr = "127.0.0.1:65002"
+	forgedForwardedClient.Header.Set("X-Forwarded-For", "203.0.113.12")
+	if rateLimitClientIP(otherClient) != rateLimitClientIP(forgedForwardedClient) {
+		t.Fatal("direct loopback callers must not bypass rate limiting by forging X-Forwarded-For")
 	}
 }
 
