@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
-import { apiRequest } from './api/client'
+import { ApiRequestError, apiRequest } from './api/client'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
@@ -870,9 +870,8 @@ async function loadPublicArticle(slug: string) {
   publicArticle.value = null
   publicArticleHtml.value = ''
   try {
-    const response = await fetch(apiPath, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { item?: PublicContent; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '内容不存在或尚未公开。')
+    const result = await apiRequest<{ item?: PublicContent; error?: string }>(apiPath.slice('/api'.length), {}, '内容不存在或尚未公开。')
+    if (!result.item) throw new Error(result.error || '内容不存在或尚未公开。')
     if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
     const { renderMarkdown } = await import('./utils/markdown')
     if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
@@ -886,9 +885,7 @@ async function loadPublicArticle(slug: string) {
 }
 async function loadPublishedLegalDocuments() {
   try {
-    const response = await fetch('/api/public/legal', { headers: { Accept: 'application/json' } })
-    if (!response.ok) return
-    const result = await response.json() as { items?: Array<{ slug: string; title: string; documentType: string }> }
+    const result = await apiRequest<{ items?: Array<{ slug: string; title: string; documentType: string }> }>('/public/legal')
     publishedLegalDocuments.value = result.items || []
   } catch { /* Footer policy links stay hidden until published documents are available. */ }
 }
@@ -899,9 +896,8 @@ async function loadLegalDocument(slug: string) {
   legalDocument.value = null
   legalDocumentHtml.value = ''
   try {
-    const response = await fetch(`/api/public/legal/${encodeURIComponent(slug)}`, { headers: { Accept: 'application/json' } })
-    const result = await response.json() as { item?: { slug: string; title: string; bodyMarkdown: string; effectiveAt?: string | null }; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '政策文件不存在或尚未发布。')
+    const result = await apiRequest<{ item?: { slug: string; title: string; bodyMarkdown: string; effectiveAt?: string | null }; error?: string }>(`/public/legal/${encodeURIComponent(slug)}`, {}, '政策文件不存在或尚未发布。')
+    if (!result.item) throw new Error(result.error || '政策文件不存在或尚未发布。')
     if (requestId !== legalDocumentRequestSequence || route.value !== `/legal/${slug}`) return
     const { renderMarkdown } = await import('./utils/markdown')
     legalDocumentHtml.value = renderMarkdown(result.item.bodyMarkdown)
@@ -917,17 +913,10 @@ async function togglePublicInteraction(type: 'like' | 'favorite') {
   if (!publicArticle.value || publicInteractionBusy.value) return
   publicInteractionBusy.value = true
   try {
-    const response = await fetch(`/api/public/content/${encodeURIComponent(publicArticle.value.slug)}/interactions`, {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    const result = await apiRequest<{ active?: boolean; likeCount?: number; favoriteCount?: number; error?: string }>(`/public/content/${encodeURIComponent(publicArticle.value.slug)}/interactions`, {
+      method: 'POST',
       body: JSON.stringify({ type }),
-    })
-    const result = await response.json() as { active?: boolean; likeCount?: number; favoriteCount?: number; error?: string }
-    if (response.status === 401) {
-      authNotice.value = '请先登录，再进行点赞或收藏。'
-      await navigate('/login')
-      return
-    }
-    if (!response.ok) throw new Error(result.error || '操作失败，请稍后重试。')
+    }, '操作失败，请稍后重试。')
     publicArticle.value = { ...publicArticle.value,
       likeCount: result.likeCount ?? publicArticle.value.likeCount,
       favoriteCount: result.favoriteCount ?? publicArticle.value.favoriteCount,
@@ -935,6 +924,11 @@ async function togglePublicInteraction(type: 'like' | 'favorite') {
     }
     portalNotify.success(type === 'like' ? (result.active ? '已点赞' : '已取消点赞') : (result.active ? '已收藏' : '已取消收藏'))
   } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      authNotice.value = '请先登录，再进行点赞或收藏。'
+      await navigate('/login')
+      return
+    }
     portalNotify.error(error instanceof Error ? error.message : '操作失败。')
   } finally { publicInteractionBusy.value = false }
 }
@@ -1002,9 +996,7 @@ async function navigate(target: string) {
 async function loadSession(): Promise<boolean> {
   authLoading.value = true
   try {
-    const response = await fetch('/api/auth/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    if (!response.ok) { user.value = null; return false }
-    const result = await response.json() as { user: PortalUser }
+    const result = await apiRequest<{ user: PortalUser }>('/auth/me')
     user.value = result.user
     return true
   } catch {
@@ -1021,13 +1013,11 @@ async function submitAuth() {
     const payload: RegisterRequest | LoginRequest = isRegister.value
       ? { displayName: authForm.value.displayName.trim(), email: authForm.value.email.trim(), password: authForm.value.password }
       : { email: authForm.value.email.trim(), password: authForm.value.password }
-    const response = await fetch(endpoint, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    const result = await apiRequest<{ user?: PortalUser; error?: string }>(endpoint.slice('/api'.length), {
+      method: 'POST',
       body: JSON.stringify(payload),
-    })
-    const result = await response.json() as { user?: PortalUser; error?: string }
-    if (!response.ok || !result.user) throw new Error(result.error || '操作失败，请稍后再试。')
+    }, '操作失败，请稍后再试。')
+    if (!result.user) throw new Error(result.error || '操作失败，请稍后再试。')
     user.value = result.user
     authForm.value.password = ''
     await navigate('/account')
@@ -1039,7 +1029,7 @@ async function submitAuth() {
 async function logout() {
   authBusy.value = true
   try {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+    await apiRequest<unknown>('/auth/logout', { method: 'POST' })
   } finally {
     user.value = null
     authBusy.value = false
