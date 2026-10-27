@@ -12,6 +12,7 @@ import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, normalizeKnowledgeTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
+import { buildSearchableTableRecords, filterAccountTableRecords } from './utils/accountTableFiltering'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
@@ -245,22 +246,8 @@ const tableRecords = computed<TableRecord[]>(() => activeAccountSection.value ==
 // Build each record's normalized search text once per data change, rather than
 // converting every cell to lowercase on every keystroke. Action/status helper fields
 // are excluded because they are UI-only and do not add useful search content.
-const searchableTableRecords = computed<TableRecord[]>(() => tableRecords.value.map((record): TableRecord => ({
-  ...record,
-  _searchText: Object.entries(record)
-    .filter(([key, value]) => key !== 'actions' && (typeof value === 'string' || typeof value === 'number'))
-    .map(([, value]) => String(value))
-    .join(' ')
-    .toLowerCase(),
-})))
-const filteredTableRecords = computed(() => {
-  const keyword = debouncedTableQuery.value.toLowerCase().trim()
-  if (!keyword) return searchableTableRecords.value
-  return searchableTableRecords.value.filter((record) => {
-    const text = record['_searchText'] as string
-    return text.includes(keyword) || text.replace(/\s/g, '').includes(keyword.replace(/\s/g, ''))
-  })
-})
+const searchableTableRecords = computed(() => buildSearchableTableRecords(tableRecords.value))
+const filteredTableRecords = computed(() => filterAccountTableRecords(searchableTableRecords.value, debouncedTableQuery.value))
 const virtualTableStart = computed(() => {
   const count = filteredTableRecords.value.length
   // A previous table can leave a large scrollTop behind when switching to a
