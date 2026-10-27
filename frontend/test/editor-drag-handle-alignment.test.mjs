@@ -11,8 +11,11 @@ test('drag handle anchors to the first visible text line of multiline blocks', (
   assert.match(component, /getReferencedVirtualElement:\s*\(\)\s*=>/)
   assert.match(component, /:scope > li > div > p:first-child/)
   assert.match(component, /const listRect = root\.getBoundingClientRect\(\)/)
-  assert.match(component, /new DOMRect\(listRect\.left, rect\.top, listRect\.width, rect\.height\)/)
-  assert.match(component, /Place the handle left of the list's marker\/checkbox column/)
+  assert.match(component, /const handleHeight = 32/)
+  assert.match(component, /const alignedTop = rect\.top \+ \(rect\.height - handleHeight\) \/ 2/)
+  assert.match(component, /new DOMRect\(rect\.left, alignedTop, rect\.width, rect\.height\)/)
+  assert.match(component, /new DOMRect\(listRect\.left, alignedTop, listRect\.width, rect\.height\)/)
+  assert.match(component, /For lists, anchor horizontally to the list container's outer edge/)
 })
 
 test('drag handle uses a larger six-dot icon and an accessible 30 by 32 pixel hit area', () => {

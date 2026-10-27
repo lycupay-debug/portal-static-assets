@@ -67,11 +67,16 @@ const editor = useEditor({
         return {
           getBoundingClientRect: () => {
             const rect = target.getBoundingClientRect()
-            if (!root.matches('ul, ol')) return rect
-            // Place the handle left of the list's marker/checkbox column, while retaining
-            // the first text line's vertical position for consistent baseline alignment.
+            // Floating UI's `left-start` aligns the handle's top edge with this virtual rect.
+            // Shift the anchor by half the height difference so the handle's center sits on
+            // the first line's center (text baseline, checkbox, number, or bullet row).
+            const handleHeight = 32
+            const alignedTop = rect.top + (rect.height - handleHeight) / 2
+            if (!root.matches('ul, ol')) return new DOMRect(rect.left, alignedTop, rect.width, rect.height)
+            // For lists, anchor horizontally to the list container's outer edge so the
+            // handle stays in the gutter, clear of markers and task checkboxes.
             const listRect = root.getBoundingClientRect()
-            return new DOMRect(listRect.left, rect.top, listRect.width, rect.height)
+            return new DOMRect(listRect.left, alignedTop, listRect.width, rect.height)
           },
         }
       },
