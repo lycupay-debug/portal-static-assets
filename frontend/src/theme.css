@@ -1328,3 +1328,121 @@ body, #app { font-family: var(--font-family-base); font-size: var(--font-size-ba
 @keyframes resource-drawer-in { from { transform: translateX(18px); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
 @media (max-width: 560px) { .resource-detail-drawer { width: 100%; } .resource-detail-drawer-heading { padding: 20px 18px 16px; } .resource-detail-drawer-body { padding: 20px 18px 26px; } .resource-detail-fields > div { grid-template-columns: 94px minmax(0, 1fr); gap: 10px; } }
 @media (prefers-reduced-motion: reduce) { .resource-detail-drawer { animation: none; } }
+
+/* Editor block rhythm and first-line alignment: keep visual controls centered on the text line. */
+.content-editor-document {
+  --editor-line-height: 1.85;
+  line-height: var(--editor-line-height);
+}
+.content-editor-document :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, table) {
+  scroll-margin-block: 1.5em;
+}
+.content-editor-document > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table, hr, figure) {
+  margin-block-start: 0;
+  margin-block-end: 0.75em;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) {
+  padding-inline-start: 1.7em;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) > li {
+  padding-inline-start: 0.08em;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) > li > :first-child,
+.content-editor-document ul[data-type="taskList"] > li > div > :first-child {
+  margin-block-start: 0;
+}
+.content-editor-document :is(ul:not([data-type="taskList"]), ol) > li > :last-child,
+.content-editor-document ul[data-type="taskList"] > li > div > :last-child {
+  margin-block-end: 0;
+}
+.content-editor-document ul[data-type="taskList"] {
+  display: grid;
+  gap: 0.25em;
+  list-style: none;
+  margin-block: 0 0.75em;
+  padding: 0;
+}
+.content-editor-document ul[data-type="taskList"] > li {
+  display: grid;
+  grid-template-columns: 1.25em minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.45em;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+.content-editor-document ul[data-type="taskList"] > li > label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: start;
+  width: 1.25em;
+  min-height: calc(var(--editor-line-height) * 1em);
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  cursor: pointer;
+}
+.content-editor-document ul[data-type="taskList"] > li > label input[type="checkbox"] {
+  display: block;
+  flex: 0 0 1em;
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  padding: 0;
+  accent-color: #333333;
+  cursor: pointer;
+}
+.content-editor-document ul[data-type="taskList"] > li > div {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  line-height: var(--editor-line-height);
+  overflow-wrap: anywhere;
+}
+.content-editor-document ul[data-type="taskList"] > li > div > p {
+  min-height: calc(var(--editor-line-height) * 1em);
+  margin-block: 0 0.5em;
+  line-height: inherit;
+}
+.content-editor-document ul[data-type="taskList"] > li > div > p:last-child {
+  margin-block-end: 0;
+}
+.content-editor-document ul[data-type="taskList"] > li[data-checked="true"] > div {
+  color: #888888;
+}
+.content-editor-document ul[data-type="taskList"] > li[data-checked="true"] > div > p {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(0, 0, 0, 0.28);
+}
+.content-editor-document :is(blockquote, pre, table, img, hr) {
+  max-width: 100%;
+}
+.content-editor-document blockquote {
+  margin-block: 0.75em;
+  padding-block: 0.15em;
+  line-height: var(--editor-line-height);
+}
+.content-editor-document pre {
+  line-height: 1.6;
+  tab-size: 2;
+}
+.content-editor-document table :is(th, td) {
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.content-editor-document :is(input, button, a, [contenteditable="false"]):focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.55);
+  outline-offset: 2px;
+}
+.content-editor-document ul[data-type="taskList"] > li > label:hover input[type="checkbox"] {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.055);
+}
+.content-a4-paper .content-editor-document {
+  --editor-line-height: 1.9;
+}
+@media (max-width: 680px) {
+  .content-editor-document :is(ul:not([data-type="taskList"]), ol) { padding-inline-start: 1.45em; }
+  .content-editor-document ul[data-type="taskList"] > li { column-gap: 0.35em; }
+}
