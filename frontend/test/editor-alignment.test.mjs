@@ -4,10 +4,11 @@ import { readFile } from 'node:fs/promises'
 
 const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
 const theme = await readFile(new URL('../src/theme.css', import.meta.url), 'utf8')
+const appCss = await readFile(new URL('../src/app.css', import.meta.url), 'utf8')
 const editorTests = await readFile(new URL('./document-editor.test.mjs', import.meta.url), 'utf8')
 
 test('task-list layout aligns checkbox to the first text line without a manual top offset', () => {
-  assert.doesNotMatch(app, /ul\[data-type=taskList\]>li>label\{margin-top:\s*5px\}/)
+  assert.doesNotMatch(appCss, /ul\[data-type=taskList\]>li>label\{margin-top:\s*5px\}/)
   assert.match(theme, /ul\[data-type="taskList"\]\s*>\s*li\s*\{[^}]*display:\s*grid/s)
   assert.match(theme, /grid-template-columns:\s*1\.25em minmax\(0,\s*1fr\)/)
   assert.match(theme, /ul\[data-type="taskList"\]\s*>\s*li\s*>\s*label\s*\{[^}]*align-items:\s*center/s)
@@ -28,4 +29,10 @@ test('editor block rhythm covers regular lists and common block tools', () => {
   assert.match(theme, /figure, img, \[data-callout=\"true\"\]/)
   assert.match(theme, /content-editor-document pre/)
   assert.match(theme, /content-editor-document table :is\(th, td\)/)
+})
+
+test('App component CSS lives in a dedicated stylesheet in the original style order', () => {
+  assert.match(app, /<style src=\"\.\/app\.css\"><\/style>/)
+  assert.match(app, /<style src=\"\.\/theme\.css\"><\/style>/)
+  assert.match(appCss, /\.site-shell\s*\{/ )
 })
