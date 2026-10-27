@@ -64,7 +64,16 @@ const editor = useEditor({
           ? root.querySelector(':scope > li > div > p:first-child, :scope > li > p:first-child, :scope > p:first-child, :scope > h1:first-child, :scope > h2:first-child, :scope > h3:first-child')
           : null
         const target = firstLine instanceof HTMLElement ? firstLine : root
-        return { getBoundingClientRect: () => target.getBoundingClientRect() }
+        return {
+          getBoundingClientRect: () => {
+            const rect = target.getBoundingClientRect()
+            if (!root.matches('ul, ol')) return rect
+            // Place the handle left of the list's marker/checkbox column, while retaining
+            // the first text line's vertical position for consistent baseline alignment.
+            const listRect = root.getBoundingClientRect()
+            return new DOMRect(listRect.left, rect.top, listRect.width, rect.height)
+          },
+        }
       },
     }),
   ],

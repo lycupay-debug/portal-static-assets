@@ -10,7 +10,9 @@ test('drag handle anchors to the first visible text line of multiline blocks', (
   assert.match(component, /currentEditor\.view\.nodeDOM\(pos\)/)
   assert.match(component, /getReferencedVirtualElement:\s*\(\)\s*=>/)
   assert.match(component, /:scope > li > div > p:first-child/)
-  assert.match(component, /getBoundingClientRect:\s*\(\)\s*=> target\.getBoundingClientRect\(\)/)
+  assert.match(component, /const listRect = root\.getBoundingClientRect\(\)/)
+  assert.match(component, /new DOMRect\(listRect\.left, rect\.top, listRect\.width, rect\.height\)/)
+  assert.match(component, /Place the handle left of the list's marker\/checkbox column/)
 })
 
 test('drag handle has a stable line-sized hit area without inherited button baseline drift', () => {
