@@ -1452,3 +1452,21 @@ body, #app { font-family: var(--font-family-base); font-size: var(--font-size-ba
   .content-editor-document :is(ul:not([data-type="taskList"]), ol) { padding-inline-start: 1.45em; }
   .content-editor-document ul[data-type="taskList"] > li { column-gap: 0.35em; }
 }
+
+/* Keep the drag affordance centered on the first visible line of the active block. */
+.content-editor-drag-handle {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+}
+.content-editor-drag-handle > span {
+  display: block;
+  line-height: 1;
+  transform: translateY(-1px);
+  user-select: none;
+}
