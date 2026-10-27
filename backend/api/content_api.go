@@ -94,102 +94,6 @@ func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
 		a.contentByID(w, r, u)
 	}
 }
-func validateContentInput(in portalContentInput, partial bool) (map[string]any, []string) {
-	v := map[string]any{}
-	errs := []string{}
-	setString := func(key string, p *string, maxLen int, required bool) {
-		if p == nil {
-			if required && !partial {
-				errs = append(errs, key+"为必填项。")
-			}
-			return
-		}
-		s := strings.TrimSpace(*p)
-		if required && s == "" {
-			errs = append(errs, key+"为必填项。")
-		}
-		if runeLen(s) > maxLen {
-			errs = append(errs, key+"长度超出限制。")
-		}
-		v[key] = s
-	}
-	setString("title", in.Title, 200, true)
-	setString("slug", in.Slug, 100, true)
-	if s, ok := v["slug"].(string); ok && (s == "" || !portalSlug.MatchString(s)) {
-		errs = append(errs, "别名必须由小写字母、数字和单个连字符组成。")
-	}
-	setString("contentType", in.ContentType, 20, true)
-	if s, ok := v["contentType"].(string); ok && !portalTypes[s] {
-		errs = append(errs, "内容类型不正确。")
-	}
-	if in.Tags == nil {
-		if !partial {
-			errs = append(errs, "请至少选择一个知识广场标签。")
-			v["tags"] = []string{}
-		}
-	} else {
-		tags := append([]string{}, (*in.Tags)...)
-		if len(tags) > 40 {
-			errs = append(errs, "标签最多 40 个。")
-		}
-		seen := map[string]bool{}
-		for _, t := range tags {
-			if !portalTags[t] || seen[t] {
-				errs = append(errs, "知识广场标签不正确，请从现有标签中选择。")
-				break
-			}
-			seen[t] = true
-		}
-		v["tags"] = tags
-	}
-	setString("summary", in.Summary, 500, false)
-	if _, ok := v["summary"]; !ok && !partial {
-		v["summary"] = ""
-	}
-	setString("body", in.Body, 100000, true)
-	setString("visibility", in.Visibility, 20, false)
-	if s, ok := v["visibility"].(string); ok && s != "public" && s != "private" {
-		errs = append(errs, "可见范围不正确。")
-	} else if !ok && !partial {
-		v["visibility"] = "private"
-	}
-	if in.ParentCategorySet || in.ParentCategory != nil {
-		if in.ParentCategory == nil {
-			v["parentCategory"] = nil
-		} else {
-			s := strings.TrimSpace(*in.ParentCategory)
-			if s == "" {
-				v["parentCategory"] = nil
-			} else {
-				v["parentCategory"] = s
-			}
-		}
-	}
-	if in.ChildCategorySet || in.ChildCategory != nil {
-		if in.ChildCategory == nil {
-			v["childCategory"] = nil
-		} else {
-			s := strings.TrimSpace(*in.ChildCategory)
-			if s == "" {
-				v["childCategory"] = nil
-			} else {
-				v["childCategory"] = s
-			}
-		}
-	}
-	p, pok := v["parentCategory"].(string)
-	c, cok := v["childCategory"].(string)
-	taxonomyPairSupplied := (!partial && (pok || cok)) || (in.ParentCategorySet && in.ChildCategorySet)
-	if taxonomyPairSupplied {
-		if (pok != cok) || (pok && (p == "" || !hasKey(portalTaxonomy, p))) || (cok && (c == "" || !contains(portalTaxonomy[p], c))) {
-			errs = append(errs, "子类必须属于当前选择的父类，且父类和子类必须同时填写。")
-		}
-	}
-	if pok && !hasKey(portalTaxonomy, p) {
-		errs = append(errs, "父类分类不正确。")
-	}
-	return v, errs
-}
 func contains(ss []string, s string) bool {
 	for _, v := range ss {
 		if v == s {
@@ -198,7 +102,6 @@ func contains(ss []string, s string) bool {
 	}
 	return false
 }
-func hasKey(m map[string][]string, k string) bool { _, ok := m[k]; return ok }
 func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *portalUser) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 2 || parts[0] != "content" || !portalUUID.MatchString(parts[1]) {
@@ -384,25 +287,6 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 	}
 	writeError(w, 405, "不支持的请求方式。", nil)
 }
-func saveContentVersion(ctx context.Context, tx *sql.Tx, item map[string]any, userID string) error {
-	var n int
-	err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version_number),0)+1 FROM portal.portal_content_versions WHERE content_id=$1`, item["id"]).Scan(&n)
-	if err != nil {
-		return err
-	}
-	snap := map[string]any{}
-	for _, k := range []string{"id", "title", "slug", "contentType", "tags", "parentCategory", "childCategory", "summary", "body", "visibility", "status", "publishedAt", "createdAt", "updatedAt"} {
-		if v, ok := item[k]; ok {
-			snap[k] = v
-		}
-	}
-	raw, err := json.Marshal(snap)
-	if err != nil {
-		return err
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO portal.portal_content_versions(content_id,author_id,version_number,snapshot) VALUES($1,$2,$3,$4::jsonb)`, item["id"], userID, n, string(raw))
-	return err
-}
 func (a *portalAPI) patchContent(w http.ResponseWriter, r *http.Request, u *portalUser, id string) {
 	var in portalContentInput
 	if err := decodeJSON(w, r, maxContentBody, &in); err != nil {
@@ -498,74 +382,6 @@ func (a *portalAPI) patchContent(w http.ResponseWriter, r *http.Request, u *port
 	}
 	writeJSON(w, 200, map[string]any{"item": item, "versionCreated": true})
 }
-func jsonEqual(a, b any) bool {
-	x, _ := json.Marshal(a)
-	y, _ := json.Marshal(b)
-	return string(x) == string(y)
-}
-func (a *portalAPI) restoreVersion(w http.ResponseWriter, r *http.Request, u *portalUser, id, versionID string) {
-	tx, err := a.db.BeginTx(r.Context(), nil)
-	if err != nil {
-		a.dbError(w, err, "恢复版本失败。")
-		return
-	}
-	defer tx.Rollback()
-	cur, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1 AND c.author_id=$2 AND c.deleted_at IS NULL FOR UPDATE) x`, id, u.ID)
-	if err != nil {
-		writeError(w, 404, "内容不存在或无权访问。", nil)
-		return
-	}
-
-	var snapshotRaw []byte
-	err = tx.QueryRowContext(r.Context(), `SELECT snapshot FROM portal.portal_content_versions WHERE version_id=$1 AND content_id=$2 AND author_id=$3`, versionID, id, u.ID).Scan(&snapshotRaw)
-	if err != nil {
-		writeError(w, 404, "历史版本不存在。", nil)
-		return
-	}
-	var snap map[string]any
-	if err = json.Unmarshal(snapshotRaw, &snap); err != nil {
-		writeError(w, 400, "历史版本数据未通过校验，无法恢复。", nil)
-		return
-	}
-	if err = saveContentVersion(r.Context(), tx, cur, u.ID); err != nil {
-		a.dbError(w, err, "恢复版本失败。")
-		return
-	}
-	tags := stringSlice(snap["tags"])
-	vis, _ := snap["visibility"].(string)
-	if cur["status"] == "published" {
-		vis = "public"
-	}
-	_, err = tx.ExecContext(r.Context(), `UPDATE portal.portal_content SET title=$3,slug=$4,content_type=$5,tags=$6,parent_category=$7,child_category=$8,summary=$9,body=$10,visibility=$11,updated_at=now() WHERE content_id=$1 AND author_id=$2`, id, u.ID, snap["title"], snap["slug"], snap["contentType"], tags, snap["parentCategory"], snap["childCategory"], snap["summary"], snap["body"], vis)
-	if err != nil {
-		a.dbError(w, err, "恢复版本失败。")
-		return
-	}
-	var eventID any
-	if cur["status"] == "published" {
-		eid := randomUUID()
-		payload, _ := json.Marshal(map[string]any{"title": snap["title"], "slug": snap["slug"], "content_type": snap["contentType"], "tags": tags, "visibility": vis, "summary": snap["summary"], "body": snap["body"]})
-		_, err = tx.ExecContext(r.Context(), `INSERT INTO portal.event_inbox(event_id,event_type,payload) VALUES($1::uuid,'portal.content.validate',$2::jsonb)`, eid, string(payload))
-		if err != nil {
-			a.dbError(w, err, "恢复版本事件登记失败。")
-			return
-		}
-		eventID = eid
-	}
-	if err = tx.Commit(); err != nil {
-		a.dbError(w, err, "恢复版本失败。")
-		return
-	}
-	if eid, ok := eventID.(string); ok {
-		go a.notifyEvent(r.Context(), eid, "portal.content.validate")
-	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, id)
-	if err != nil {
-		a.dbError(w, err, "读取恢复结果失败。")
-		return
-	}
-	writeJSON(w, 200, map[string]any{"item": item, "eventId": eventID})
-}
 func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *portalUser, id string) {
 	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -630,20 +446,6 @@ func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *po
 		return
 	}
 	writeJSON(w, 200, map[string]any{"item": item, "eventId": eid})
-}
-func stringSlice(v any) []string {
-	out := []string{}
-	switch x := v.(type) {
-	case []string:
-		return x
-	case []any:
-		for _, i := range x {
-			if s, ok := i.(string); ok {
-				out = append(out, s)
-			}
-		}
-	}
-	return out
 }
 func (a *portalAPI) notifyEvent(parent context.Context, id, typ string) {
 	// The database event is already committed; detach only cancellation while
