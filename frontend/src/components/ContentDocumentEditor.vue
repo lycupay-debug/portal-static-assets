@@ -40,7 +40,7 @@ const editor = useEditor({
         button.title = '拖动排序'
         button.setAttribute('aria-label', '块操作菜单')
         button.setAttribute('draggable', 'true')
-        button.innerHTML = '<span aria-hidden="true">⠿</span>'
+        button.innerHTML = '<svg class="content-editor-drag-icon" aria-hidden="true" viewBox="0 0 20 20" focusable="false"><circle cx="6" cy="4" r="1.65"/><circle cx="14" cy="4" r="1.65"/><circle cx="6" cy="10" r="1.65"/><circle cx="14" cy="10" r="1.65"/><circle cx="6" cy="16" r="1.65"/><circle cx="14" cy="16" r="1.65"/></svg>'
         return button
       },
       computePositionConfig: { placement: 'left-start', strategy: 'absolute' },

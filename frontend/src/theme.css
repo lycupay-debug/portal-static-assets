@@ -1453,20 +1453,29 @@ body, #app { font-family: var(--font-family-base); font-size: var(--font-size-ba
   .content-editor-document ul[data-type="taskList"] > li { column-gap: 0.35em; }
 }
 
-/* Keep the drag affordance centered on the first visible line of the active block. */
+/* A larger, crisp six-dot grip makes block dragging easier to discover and target. */
 .content-editor-drag-handle {
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: 25px;
-  height: 28px;
+  width: 30px;
+  height: 32px;
   margin: 0;
   padding: 0;
   line-height: 1;
+  border-radius: 6px;
+  transition: color 120ms ease, background-color 120ms ease;
 }
-.content-editor-drag-handle > span {
+.content-editor-drag-handle > .content-editor-drag-icon {
   display: block;
-  line-height: 1;
-  transform: translateY(-1px);
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  flex: none;
+  pointer-events: none;
   user-select: none;
+}
+.content-editor-drag-handle:focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.55);
+  outline-offset: 1px;
 }

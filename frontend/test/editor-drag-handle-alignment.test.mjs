@@ -15,8 +15,10 @@ test('drag handle anchors to the first visible text line of multiline blocks', (
   assert.match(component, /Place the handle left of the list's marker\/checkbox column/)
 })
 
-test('drag handle has a stable line-sized hit area without inherited button baseline drift', () => {
-  assert.match(theme, /\.content-editor-drag-handle\s*\{[^}]*height:\s*28px/s)
-  assert.match(theme, /\.content-editor-drag-handle\s*>\s*span\s*\{[^}]*line-height:\s*1/s)
-  assert.match(theme, /transform:\s*translateY\(-1px\)/)
+test('drag handle uses a larger six-dot icon and an accessible 30 by 32 pixel hit area', () => {
+  assert.match(theme, /\.content-editor-drag-handle\s*\{[^}]*width:\s*30px/s)
+  assert.match(theme, /\.content-editor-drag-handle\s*\{[^}]*height:\s*32px/s)
+  assert.match(theme, /\.content-editor-drag-icon\s*\{[^}]*width:\s*20px/s)
+  assert.match(component, /viewBox=\"0 0 20 20\"/ )
+  assert.match(component, /<circle cx=\"6\" cy=\"4\"/)
 })
