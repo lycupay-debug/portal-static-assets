@@ -1,13 +1,13 @@
 # FreeBSD 部署与服务管理
 
-目标系统：FreeBSD 15.1-RELEASE-p4 / amd64。生产业务 API 只使用 Go。Node.js 后端源码已从 Git 项目移除，紧急回滚副本单独保存在 `/opt/personal-portal-legacy-node`，正常生产流量不会经过 Node.js。
+目标系统：FreeBSD 15.1-RELEASE-p6 / amd64。生产业务 API 只使用 Go。Node.js 后端源码已从 Git 项目移除；当前部署和回滚流程不再依赖或启用旧 Node.js API，正常生产流量不会经过 Node.js。
 
 ## 生产拓扑
 
 - Caddy 负责 HTTPS、静态前端、上传文件与反向代理；公共静态站点配置 `nosniff`、禁止 iframe 嵌入、严格跨源 Referrer Policy 与限制摄像头/麦克风/定位的 Permissions Policy。
 - 网站由 Cloudflare 代理时，Caddy 只信任 Cloudflare 官方 IPv4/IPv6 CIDR，并只从 `CF-Connecting-IP` 解析客户端地址；Go 只接受 Caddy 通过 `X-Portal-Client-IP` 注入的已解析地址。Cloudflare 更新 IP 段时应同步更新 Caddyfile 并验证，不要信任任意来源的转发头。
 - /api/* 去除 /api 前缀后代理至 127.0.0.1:8081 的唯一 Go API。
-- `/editor/` 是独立 Vue/Vite 构建入口，静态文件位于每个 release 的 `editor/` 子目录；它与门户同源，复用 `/api/auth/me`、`/api/content`、`/api/uploads` 及现有 HttpOnly、Secure、SameSite=Strict 会话 Cookie。Caddy 对 `/editor/` 使用独立 SPA fallback，避免落入门户首页；编辑器静态资源采用不可变缓存，HTML 不缓存。
+- 内容管理编辑器已集成到门户自身的 Vue 应用与 `/content-management/new`、`/content-management/:id` 路由，不再发布独立的 `/editor/` SPA。旧 `/editor/` URL 仅保留兼容跳转；构建和部署不会再复制独立编辑器应用。
 - Caddy 明确拒绝公网访问 /api/events、/api/dbz、/api/readyz 和 /api/metrics。这些控制端点只供本机部署、健康检查与监控使用。
 - Go 使用 database/sql + pgx，负责认证、会话、内容、历史版本、回收站、资源文件、公开内容互动、事件接收、分发、租约、重试和业务处理。
 - C 事件核心仅使用 FreeBSD kqueue/kevent 和 Unix Socket 传送事件 ID/type 元数据；业务 payload、持久化、租约与处理结果只由 Go/PostgreSQL 处理。
@@ -17,19 +17,19 @@
 
 ## 一键部署
 
-部署脚本要求仓库干净且所有变更已经提交。脚本会执行 OpenAPI 校验与类型生成检查、前端构建和测试、独立编辑器构建、Go race tests/vet/build、C 编译与 IPC 测试；然后创建完整 PostgreSQL 备份、执行未应用的迁移、安装 Go/C 二进制、将门户与独立编辑器一并写入 release、切换静态前端与 Caddy 路由，最后运行生产健康检查。
+部署脚本要求仓库干净且所有变更已经提交。脚本会执行许可证/资产预检、OpenAPI lint 与类型生成一致性检查、前端类型检查/测试/生产构建；随后创建独立临时 PostgreSQL 数据库，按顺序应用迁移 001–030 并运行所有 PostgreSQL 集成测试与 Go race tests，结束后自动删除测试数据库。之后运行 Go vet/build、C 事件核心编译与 IPC 测试，创建完整生产 PostgreSQL 备份并执行尚未应用的迁移，再安装 Go/C 二进制、切换门户静态 release 与 Caddy 配置，最后执行线上健康检查。
 
     cd /opt/personal-portal
     git status --short
     ./deploy/freebsd/deploy.sh
 
-部署过程会在 /var/backups/personal-portal/ 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用 personal_portal_auth_api 服务；Caddy 不再将任何业务 API 转发到 8082。回滚脚本会临时将该服务指向 `/opt/personal-portal-legacy-node/backend/auth-api`。
+部署过程会在 `/var/backups/personal-portal/` 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用已退役的 `personal_portal_auth_api` 服务；Caddy 不再将任何业务 API 转发到 8082。完整回滚只恢复上一版 Go/C 二进制、Caddyfile 与前端 release，不会重新启用 Node.js API，也不会自动恢复数据库。
 
 **数据库迁移安全：** 发布前先生成并保留完整 PostgreSQL dump。迁移按版本顺序执行；包含显式 `BEGIN/COMMIT` 的迁移由自身控制事务，历史上没有显式事务的迁移由 `psql --single-transaction` 包裹，避免单个迁移中途失败留下半套 DDL。迁移采用向前兼容优先的策略，不在部署失败时自动执行反向 SQL，也不会自动恢复整库 dump；恢复数据库属于单独的人工恢复决策，必须先评估发布后新增数据是否会丢失。
 
 **部署期保护规则：自动回退入口已全局禁用。** 无论 `PERSONAL_PORTAL_RELEASE_MODE`、`PERSONAL_PORTAL_AUTO_ROLLBACK` 如何设置，部署失败后都不会自动调用 `rollback.sh`；脚本只输出诊断目录与人工恢复提示，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。自动回退策略函数始终返回禁用，Shell 测试覆盖 development/stable/production 与多种环境变量组合。手动回退脚本保留，只有操作者明确执行时才会恢复旧 Go/C 二进制、Caddyfile 与前端 release。数据库备份与迁移前置检查仍然执行；手动回退不等于数据库反向迁移。
 
-**独立编辑器静态发布回退：** 静态编辑器发布不重启 Go/C 服务。每次发布保存旧 release 指针与 Caddyfile 备份；如需撤销本次独立编辑器发布，执行 `./deploy/freebsd/rollback-editor-static.sh DEPLOYMENT-STAMP`。该脚本只恢复静态 release 和 Caddyfile，并 reload Caddy，不会调用完整 Go/C 回退脚本；它会拒绝回退到非当前活动 release，防止覆盖后续部署。
+**旧编辑器 URL 兼容：** Caddy 将旧 `/editor/` 地址重定向到门户内置编辑器路由，不再提供独立编辑器静态文件，也不存在独立编辑器发布回退脚本。
 
 ## 数据库迁移规则
 
@@ -63,7 +63,7 @@
 
     ./deploy/freebsd/rollback.sh DEPLOYMENT-STAMP
 
-回滚会恢复旧 Go/C 二进制、Caddyfile 和前端 release，重启服务，并将 Node.js 回滚服务指向 `/opt/personal-portal-legacy-node` 中的归档副本。回滚不会自动恢复数据库，因为这会丢失备份时间点之后的新数据；如确实需要数据库恢复，应先评估影响并单独执行。
+回滚会恢复旧 Go/C 二进制、Caddyfile 和前端 release，并重新启动 Go API、C 事件核心与任务执行器。Node.js API 保持禁用。回滚不会自动恢复数据库，因为这会丢失备份时间点之后的新数据；如确实需要数据库恢复，应先评估影响并单独执行。生产部署和回滚会改变在线服务，必须在取得单独授权后设置 `PERSONAL_PORTAL_ALLOW_SERVICE_RESTART=1` 执行。
 
 ## 生产验证覆盖
 

@@ -11,7 +11,6 @@ bin_dir="/usr/local/libexec/personal-portal"
 www_base="/usr/local/www/personal-portal"
 caddy_file="/usr/local/etc/caddy/Caddyfile"
 backup_dir="/var/backups/personal-portal"
-legacy_node_dir="${PERSONAL_PORTAL_LEGACY_NODE_DIR:-/opt/personal-portal-legacy-node}"
 go_bin="${PERSONAL_PORTAL_GO_BIN:-}"
 if [ -z "$go_bin" ]; then
   go_bin=$(command -v go || command -v go127 || true)
