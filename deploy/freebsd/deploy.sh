@@ -24,6 +24,7 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 work="/var/tmp/personal-portal-deploy-$stamp"
 deployment_changed=0
 . "$repo/deploy/freebsd/deploy-policy.sh"
+personal_portal_require_service_restart_authorization
 release_mode="${PERSONAL_PORTAL_RELEASE_MODE:-development}"
 mkdir -p "$work" "$backup_dir"
 chmod 0700 "$work" "$backup_dir"

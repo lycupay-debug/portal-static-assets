@@ -22,4 +22,14 @@ if personal_portal_auto_rollback_enabled; then
   exit 1
 fi
 
-echo 'PASS: automatic rollback is disabled for all environment configurations.'
+unset PERSONAL_PORTAL_ALLOW_SERVICE_RESTART
+if personal_portal_require_service_restart_authorization >/dev/null 2>&1; then
+  echo 'FAIL: production service restart was authorized without an explicit flag' >&2
+  exit 1
+fi
+PERSONAL_PORTAL_ALLOW_SERVICE_RESTART=1
+export PERSONAL_PORTAL_ALLOW_SERVICE_RESTART
+personal_portal_require_service_restart_authorization
+unset PERSONAL_PORTAL_ALLOW_SERVICE_RESTART
+
+echo 'PASS: automatic rollback is disabled and production service changes require explicit authorization.'
