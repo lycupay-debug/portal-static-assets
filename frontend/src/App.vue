@@ -9,6 +9,7 @@ import { portalNotify } from './utils/notification'
 import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
+import { educationResourceSearchRank } from './utils/resourceSearch'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
@@ -218,23 +219,7 @@ const educationResourceGrade = ref('全部年级')
 const educationResourceSearch = ref('')
 const educationResourceTypes = ['全部资源', ...resourceTypeOptions]
 const educationResourceGrades = ['全部年级', ...taxonomyChildOptions('年级').map(option => option.value)]
-function educationResourceSearchRank(item: PublicTeachingResource, query: string): number {
-  const rawTerm = query.normalize('NFKC').toLocaleLowerCase().trim()
-  const compact = (value: string) => value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, '')
-  const compactTerm = compact(rawTerm)
-  const filename = (item.filename || '').normalize('NFKC').toLocaleLowerCase().trim()
-  const compactFilename = compact(filename)
-  const title = (item.title || '').normalize('NFKC').toLocaleLowerCase().trim()
-  const compactTitle = compact(title)
-  if (filename === rawTerm) return 0
-  if (compactFilename === compactTerm) return 1
-  if (title === rawTerm) return 2
-  if (filename.includes(rawTerm)) return 3
-  if (compactFilename.includes(compactTerm)) return 4
-  if (title.includes(rawTerm)) return 5
-  if (compactTitle.includes(compactTerm)) return 6
-  return 7
-}
+
 const filteredEducationResources = computed(() => {
   const term = educationResourceSearch.value.trim()
   return publicTeachingResources.value.filter(item => {
