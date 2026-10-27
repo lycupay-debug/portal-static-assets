@@ -128,6 +128,42 @@ func TestPortalAPIEndToEnd(t *testing.T) {
 	if !bytes.Contains(policyDraft.Body.Bytes(), []byte("version")) {
 		t.Fatalf("legal document JSONB update response mismatch: %s", policyDraft.Body.String())
 	}
+	var policyBodyBeforeAuditFailure string
+	var policyVersionBeforeAuditFailure int
+	if err := db.QueryRowContext(ctx, `SELECT body_markdown,version FROM portal.compliance_legal_documents WHERE slug='privacy-policy'`).Scan(&policyBodyBeforeAuditFailure, &policyVersionBeforeAuditFailure); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE OR REPLACE FUNCTION portal.test_reject_compliance_audit()
+		RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.object_type = 'legal_document' THEN
+				RAISE EXCEPTION 'injected compliance audit failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$;
+		CREATE TRIGGER test_reject_compliance_audit
+		BEFORE INSERT ON portal.compliance_audit_log
+		FOR EACH ROW EXECUTE FUNCTION portal.test_reject_compliance_audit();
+	`); err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, api, http.MethodPatch, "/compliance/documents/privacy-policy", map[string]any{
+		"bodyMarkdown": "This update must roll back when its audit record fails.",
+		"changeNote":   "Injected audit failure test.",
+	}, sessionCookie, http.StatusInternalServerError)
+	if _, err := db.ExecContext(ctx, `DROP TRIGGER test_reject_compliance_audit ON portal.compliance_audit_log; DROP FUNCTION portal.test_reject_compliance_audit();`); err != nil {
+		t.Fatal(err)
+	}
+	var policyBodyAfterAuditFailure string
+	var policyVersionAfterAuditFailure int
+	if err := db.QueryRowContext(ctx, `SELECT body_markdown,version FROM portal.compliance_legal_documents WHERE slug='privacy-policy'`).Scan(&policyBodyAfterAuditFailure, &policyVersionAfterAuditFailure); err != nil {
+		t.Fatal(err)
+	}
+	if policyBodyAfterAuditFailure != policyBodyBeforeAuditFailure || policyVersionAfterAuditFailure != policyVersionBeforeAuditFailure {
+		t.Fatalf("legal document mutation was not rolled back after audit failure: before=(version %d, body %q) after=(version %d, body %q)", policyVersionBeforeAuditFailure, policyBodyBeforeAuditFailure, policyVersionAfterAuditFailure, policyBodyAfterAuditFailure)
+	}
 	assetExport := requestJSON(t, api, http.MethodGet, "/compliance/export/assets.csv", nil, sessionCookie, http.StatusOK)
 	if !strings.Contains(assetExport.Header().Get("Content-Type"), "text/csv") || !bytes.HasPrefix(assetExport.Body.Bytes(), []byte("\xef\xbb\xbf")) || !bytes.Contains(assetExport.Body.Bytes(), []byte("asset_id,asset_type")) {
 		t.Fatalf("compliance CSV export contract mismatch: headers=%v body_prefix=%q", assetExport.Header(), assetExport.Body.String()[:min(len(assetExport.Body.String()), 120)])

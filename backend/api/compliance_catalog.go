@@ -41,7 +41,13 @@ func (a *portalAPI) complianceLicenseByID(w http.ResponseWriter, r *http.Request
 		writeError(w, 400, "许可证类型不正确。", nil)
 		return
 	}
-	before, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_license_catalog WHERE license_id=$1) x`, id)
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		a.dbError(w, err, "无法更新许可证记录。")
+		return
+	}
+	defer tx.Rollback()
+	before, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_license_catalog WHERE license_id=$1) x`, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			writeError(w, 404, "许可证记录不存在。", nil)
@@ -89,11 +95,18 @@ func (a *portalAPI) complianceLicenseByID(w http.ResponseWriter, r *http.Request
 	}
 	args = append(args, id)
 	// #nosec G701 G202 -- every column identifier is a compile-time literal; request data is passed only as $n parameters.
-	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.compliance_license_catalog SET `+strings.Join(sets, ",")+fmt.Sprintf(" WHERE license_id=$%d", len(args)), args...); err != nil {
+	if _, err = tx.ExecContext(r.Context(), `UPDATE portal.compliance_license_catalog SET `+strings.Join(sets, ",")+fmt.Sprintf(" WHERE license_id=$%d", len(args)), args...); err != nil {
 		a.dbError(w, err, "无法更新许可证记录。")
 		return
 	}
-	a.logComplianceChange(r, u, "update", "license", id, before)
+	if err = a.logComplianceChangeTx(r.Context(), tx, r, u, "update", "license", id, before); err != nil {
+		a.dbError(w, err, "无法写入合规审计日志，许可证变更未提交。")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		a.dbError(w, err, "许可证变更提交失败。")
+		return
+	}
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -122,7 +135,13 @@ func (a *portalAPI) complianceDocumentBySlug(w http.ResponseWriter, r *http.Requ
 		writeError(w, 400, "请求格式不正确。", nil)
 		return
 	}
-	before, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_legal_documents WHERE slug=$1) x`, slug)
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		a.dbError(w, err, "无法更新政策草稿。")
+		return
+	}
+	defer tx.Rollback()
+	before, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_legal_documents WHERE slug=$1) x`, slug)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			writeError(w, 404, "政策文档不存在。", nil)
@@ -211,14 +230,21 @@ func (a *portalAPI) complianceDocumentBySlug(w http.ResponseWriter, r *http.Requ
 	query := `UPDATE portal.compliance_legal_documents SET ` + strings.Join(sets, ",") + ` WHERE slug=$1 RETURNING document_id::text,version,body_markdown,status`
 	var docID, newBody, status string
 	var version int
-	if err = a.db.QueryRowContext(r.Context(), query, args...).Scan(&docID, &version, &newBody, &status); err != nil {
+	if err = tx.QueryRowContext(r.Context(), query, args...).Scan(&docID, &version, &newBody, &status); err != nil {
 		a.dbError(w, err, "无法更新政策草稿。")
 		return
 	}
-	if _, err = a.db.ExecContext(r.Context(), `INSERT INTO portal.compliance_legal_document_versions(document_id,version,body_markdown,status,changed_by,change_note) VALUES($1,$2,$3,$4,$5,$6)`, docID, version, newBody, status, u.DisplayName, b.ChangeNote); err != nil {
-		a.dbError(w, err, "政策已更新，但版本历史写入失败。")
+	if _, err = tx.ExecContext(r.Context(), `INSERT INTO portal.compliance_legal_document_versions(document_id,version,body_markdown,status,changed_by,change_note) VALUES($1,$2,$3,$4,$5,$6)`, docID, version, newBody, status, u.DisplayName, b.ChangeNote); err != nil {
+		a.dbError(w, err, "无法保存政策版本历史，变更未提交。")
 		return
 	}
-	a.logComplianceChange(r, u, "update", "legal_document", docID, before)
+	if err = a.logComplianceChangeTx(r.Context(), tx, r, u, "update", "legal_document", docID, before); err != nil {
+		a.dbError(w, err, "无法写入合规审计日志，政策变更未提交。")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		a.dbError(w, err, "政策变更提交失败。")
+		return
+	}
 	writeJSON(w, 200, map[string]any{"id": docID, "version": version, "status": status})
 }

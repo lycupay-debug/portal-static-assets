@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -159,7 +160,13 @@ func (a *portalAPI) updateComplianceAsset(w http.ResponseWriter, r *http.Request
 		writeError(w, 400, "许可证目录 ID 不正确。", nil)
 		return
 	}
-	before, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x`, id)
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		a.dbError(w, err, "无法更新资产台账。")
+		return
+	}
+	defer tx.Rollback()
+	before, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x`, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			writeError(w, 404, "资产不存在。", nil)
@@ -217,14 +224,21 @@ func (a *portalAPI) updateComplianceAsset(w http.ResponseWriter, r *http.Request
 	}
 	args = append(args, id)
 	// #nosec G701 G202 -- every column identifier is a compile-time literal; request data is passed only as $n parameters.
-	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.compliance_assets SET `+strings.Join(sets, ",")+fmt.Sprintf(" WHERE asset_id=$%d", len(args)), args...); err != nil {
+	if _, err = tx.ExecContext(r.Context(), `UPDATE portal.compliance_assets SET `+strings.Join(sets, ",")+fmt.Sprintf(" WHERE asset_id=$%d", len(args)), args...); err != nil {
 		a.dbError(w, err, "无法更新资产台账。")
 		return
 	}
-	a.logComplianceChange(r, u, "update", "asset", id, before)
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x`, id)
+	if err = a.logComplianceChangeTx(r.Context(), tx, r, u, "update", "asset", id, before); err != nil {
+		a.dbError(w, err, "无法写入合规审计日志，资产变更未提交。")
+		return
+	}
+	item, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x`, id)
 	if err != nil {
 		a.dbError(w, err, "资产已更新，但读取结果失败。")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		a.dbError(w, err, "资产变更提交失败。")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"item": item})
@@ -248,18 +262,35 @@ func (a *portalAPI) addComplianceEvidence(w http.ResponseWriter, r *http.Request
 		writeError(w, 400, "证据字段不正确或超出长度限制。", nil)
 		return
 	}
-	var assetExists bool
-	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_id=$1)`, id).Scan(&assetExists); err != nil || !assetExists {
-		writeError(w, 404, "资产不存在。", nil)
-		return
-	}
-	var evidenceID string
-	err := a.db.QueryRowContext(r.Context(), `INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,sha256,verified,verified_by,verified_at,notes) VALUES($1,$2,$3,$4,$5,FALSE,'',NULL,$6) RETURNING evidence_id::text`, id, b.Type, strings.TrimSpace(b.URI), b.Text, b.SHA256, b.Notes).Scan(&evidenceID)
+	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		a.dbError(w, err, "无法保存证据。")
 		return
 	}
-	a.logComplianceChange(r, u, "create", "asset_evidence", evidenceID, nil)
+	defer tx.Rollback()
+	var assetExists bool
+	if err := tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_id=$1)`, id).Scan(&assetExists); err != nil {
+		a.dbError(w, err, "无法检查资产是否存在。")
+		return
+	}
+	if !assetExists {
+		writeError(w, 404, "资产不存在。", nil)
+		return
+	}
+	var evidenceID string
+	err = tx.QueryRowContext(r.Context(), `INSERT INTO portal.compliance_asset_evidence(asset_id,evidence_type,evidence_uri,evidence_text,sha256,verified,verified_by,verified_at,notes) VALUES($1,$2,$3,$4,$5,FALSE,'',NULL,$6) RETURNING evidence_id::text`, id, b.Type, strings.TrimSpace(b.URI), b.Text, b.SHA256, b.Notes).Scan(&evidenceID)
+	if err != nil {
+		a.dbError(w, err, "无法保存证据。")
+		return
+	}
+	if err = a.logComplianceChangeTx(r.Context(), tx, r, u, "create", "asset_evidence", evidenceID, nil); err != nil {
+		a.dbError(w, err, "无法写入合规审计日志，证据未提交。")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		a.dbError(w, err, "证据提交失败。")
+		return
+	}
 	writeJSON(w, 201, map[string]any{"id": evidenceID})
 }
 
@@ -280,25 +311,46 @@ func (a *portalAPI) addComplianceReview(w http.ResponseWriter, r *http.Request, 
 		writeError(w, 400, "审核字段不正确。", nil)
 		return
 	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		a.dbError(w, err, "无法保存审核记录。")
+		return
+	}
+	defer tx.Rollback()
 	var exists bool
-	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_id=$1)`, id).Scan(&exists); err != nil || !exists {
+	if err := tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM portal.compliance_assets WHERE asset_id=$1)`, id).Scan(&exists); err != nil {
+		a.dbError(w, err, "无法检查资产是否存在。")
+		return
+	}
+	if !exists {
 		writeError(w, 404, "资产不存在。", nil)
 		return
 	}
 	actions, _ := json.Marshal(b.RequiredActions)
 	var reviewID string
-	err := a.db.QueryRowContext(r.Context(), `INSERT INTO portal.compliance_asset_reviews(asset_id,reviewer,review_type,decision,risk_level,findings,required_actions,follow_up_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING review_id::text`, id, u.DisplayName, b.Type, b.Decision, b.RiskLevel, b.Findings, string(actions), b.FollowUpAt).Scan(&reviewID)
+	err = tx.QueryRowContext(r.Context(), `INSERT INTO portal.compliance_asset_reviews(asset_id,reviewer,review_type,decision,risk_level,findings,required_actions,follow_up_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING review_id::text`, id, u.DisplayName, b.Type, b.Decision, b.RiskLevel, b.Findings, string(actions), b.FollowUpAt).Scan(&reviewID)
 	if err != nil {
 		a.dbError(w, err, "无法保存审核记录。")
 		return
 	}
 	status := map[string]string{"approved": "approved", "approved_with_conditions": "approved_with_conditions", "pending_evidence": "pending", "replace": "replace_or_remove", "remove": "blocked", "blocked": "blocked", "escalate": "in_review"}[b.Decision]
-	before, _ := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x`, id)
-	if _, err = a.db.ExecContext(r.Context(), `UPDATE portal.compliance_assets SET review_status=$1,risk_level=$2,updated_at=now() WHERE asset_id=$3`, status, b.RiskLevel, id); err != nil {
+	before, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x`, id)
+	if err != nil {
+		a.dbError(w, err, "无法读取资产审核状态。")
+		return
+	}
+	if _, err = tx.ExecContext(r.Context(), `UPDATE portal.compliance_assets SET review_status=$1,risk_level=$2,updated_at=now() WHERE asset_id=$3`, status, b.RiskLevel, id); err != nil {
 		a.dbError(w, err, "审核已登记，但资产状态更新失败。")
 		return
 	}
-	a.logComplianceChange(r, u, "review", "asset", id, before)
+	if err = a.logComplianceChangeTx(r.Context(), tx, r, u, "review", "asset", id, before); err != nil {
+		a.dbError(w, err, "无法写入合规审计日志，审核变更未提交。")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		a.dbError(w, err, "审核提交失败。")
+		return
+	}
 	writeJSON(w, 201, map[string]any{"reviewId": reviewID, "reviewStatus": status, "note": "审核记录已保存；本操作不会自动删除、下架或修改公开内容。"})
 }
 
@@ -346,15 +398,18 @@ func (a *portalAPI) exportAssetsCSV(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *portalAPI) logComplianceChange(r *http.Request, u *portalUser, action, objectType, objectID string, before map[string]any) {
-	redact := func(state map[string]any) map[string]any {
-		copyState := map[string]any{}
+func (a *portalAPI) logComplianceChangeTx(ctx context.Context, tx *sql.Tx, r *http.Request, u *portalUser, action, objectType, objectID string, before map[string]any) error {
+	copyState := func(state map[string]any) map[string]any {
+		copy := map[string]any{}
 		for key, value := range state {
-			copyState[key] = value
+			copy[key] = value
 		}
-		return copyState
+		return copy
 	}
-	beforeJSON, _ := json.Marshal(redact(before))
+	beforeJSON, err := json.Marshal(copyState(before))
+	if err != nil {
+		return err
+	}
 	queries := map[string]string{
 		"asset":          "SELECT to_jsonb(x) FROM (SELECT * FROM portal.compliance_assets WHERE asset_id=$1) x",
 		"license":        "SELECT to_jsonb(x) FROM (SELECT license_id,spdx_id,license_name,license_version,license_family,canonical_url,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status,reviewed_at,notes,updated_at FROM portal.compliance_license_catalog WHERE license_id=$1) x",
@@ -362,17 +417,23 @@ func (a *portalAPI) logComplianceChange(r *http.Request, u *portalUser, action, 
 		"asset_evidence": "SELECT to_jsonb(x) FROM (SELECT evidence_id,asset_id,evidence_type,evidence_uri,sha256,verified,verified_by,verified_at,captured_at,notes FROM portal.compliance_asset_evidence WHERE evidence_id=$1) x",
 		"portal_user":    "SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS displayName,is_admin AS isAdmin,is_copyright_reviewer AS isCopyrightReviewer FROM portal.portal_users WHERE user_id=$1::uuid) x",
 	}
-	after := map[string]any{}
-	var readErr error
-	if query := queries[objectType]; query != "" {
-		after, readErr = oneJSON(r.Context(), a.db, query, objectID)
+	query := queries[objectType]
+	if query == "" {
+		return fmt.Errorf("unsupported compliance audit object type %q", objectType)
 	}
-	if readErr != nil || after == nil {
-		after = map[string]any{"request_path": r.URL.Path, "state_read_error": readErr != nil}
+	after, err := oneJSON(ctx, tx, query, objectID)
+	if err != nil {
+		return fmt.Errorf("read post-change compliance state: %w", err)
 	}
-	after = redact(after)
+	after = copyState(after)
 	after["actor_display_name"] = u.DisplayName
 	after["request_path"] = r.URL.Path
-	afterJSON, _ := json.Marshal(after)
-	_, _ = a.db.ExecContext(r.Context(), "INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)", u.DisplayName, action, objectType, objectID, string(beforeJSON), string(afterJSON))
+	afterJSON, err := json.Marshal(after)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO portal.compliance_audit_log(actor,action,object_type,object_id,before_state,after_state) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)", u.DisplayName, action, objectType, objectID, string(beforeJSON), string(afterJSON)); err != nil {
+		return fmt.Errorf("write compliance audit record: %w", err)
+	}
+	return nil
 }
