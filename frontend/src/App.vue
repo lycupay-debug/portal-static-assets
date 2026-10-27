@@ -11,7 +11,7 @@ import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, normalizeKnowledgeTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
-import { educationResourceSearchRank } from './utils/resourceSearch'
+import { filterEducationResources } from './utils/resourceFiltering'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
@@ -205,20 +205,12 @@ const educationResourceSearch = ref('')
 const educationResourceTypes = ['全部资源', ...resourceTypeOptions]
 const educationResourceGrades = ['全部年级', ...taxonomyChildOptions('年级').map(option => option.value)]
 
-const filteredEducationResources = computed(() => {
-  const term = educationResourceSearch.value.trim()
-  return publicTeachingResources.value.filter(item => {
-    if (educationResourceCategory.value !== '全部资源' && item.type !== educationResourceCategory.value) return false
-    if (educationResourceGrade.value !== '全部年级' && item.grade !== educationResourceGrade.value) return false
-    return !term || knowledgeFuzzyMatch(`${item.title} ${item.description || ''} ${item.type} ${item.grade || ''} ${item.filename || ''}`, term)
-  }).sort((a, b) => {
-    if (term) {
-      const relevance = educationResourceSearchRank(a, term) - educationResourceSearchRank(b, term)
-      if (relevance !== 0) return relevance
-    }
-    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
-  })
-})
+const filteredEducationResources = computed(() => filterEducationResources(
+  publicTeachingResources.value,
+  educationResourceCategory.value,
+  educationResourceGrade.value,
+  educationResourceSearch.value,
+))
 const visibleEducationResources = computed(() => filteredEducationResources.value.slice(0, knowledgeVisibleCount.value))
 
 const publicArticle = ref<PublicContent | null>(null)
