@@ -7,8 +7,16 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+const (
+	defaultSocket   = "/var/run/personal-portal/event.sock"
+	protocolVersion = "v2"
+)
+
+var requestSequence atomic.Uint64
 
 type IPCClient struct {
 	SocketPath string
