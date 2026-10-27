@@ -552,9 +552,7 @@ async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 
   resourceBusy.value = true
   try {
     const suffix = action === 'restore' ? '/restore' : action === 'permanent' ? '/permanent' : ''
-    const response = await fetch(`/api/resources/${encodeURIComponent(id)}${suffix}`, { method: action === 'restore' ? 'POST' : 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { error?: string }
-    if (!response.ok) throw new Error(result.error || '资源操作失败。')
+    await apiRequest<unknown>(`/resources/${encodeURIComponent(id)}${suffix}`, { method: action === 'restore' ? 'POST' : 'DELETE' }, '资源操作失败。')
     await loadTeachingResources(); portalNotify.success(action === 'trash' ? '已移入回收站。' : action === 'restore' ? '资源已恢复。' : '资源及文件已永久删除。')
   } catch (error) { portalNotify.error(error instanceof Error ? error.message : '资源操作失败。', '教学资源') }
   finally { resourceBusy.value = false }
@@ -594,9 +592,8 @@ async function initializeContentEditorRoute() {
   if (editingContentId.value === id && contentForm.value.title) return
   contentBusy.value = true
   try {
-    const response = await fetch('/api/content/' + encodeURIComponent(id), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { item?: PortalContent; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '读取内容详情失败。')
+    const result = await apiRequest<{ item?: PortalContent; error?: string }>(`/content/${encodeURIComponent(id)}`, {}, '读取内容详情失败。')
+    if (!result.item) throw new Error(result.error || '读取内容详情失败。')
     const item = result.item
     editingContentId.value = item.id
     contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, tags: mergeLegacyTaxonomyIntoTags(item.tags || [], item.parentCategory, item.childCategory), summary: item.summary, body: item.body, visibility: item.visibility }
@@ -610,9 +607,7 @@ async function openContentVersions(id: string) {
   contentBusy.value = true
   contentError.value = ''
   try {
-    const response = await fetch(`/api/content/${encodeURIComponent(id)}/versions`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { items?: ContentVersion[]; error?: string }
-    if (!response.ok) throw new Error(result.error || '读取版本历史失败。')
+    const result = await apiRequest<{ items?: ContentVersion[]; error?: string }>(`/content/${encodeURIComponent(id)}/versions`, {}, '读取版本历史失败。')
     contentVersions.value = result.items || []
     versionsContentId.value = id
     versionsContentTitle.value = item.title
@@ -626,9 +621,7 @@ async function restoreContentVersion(version: ContentVersion) {
   contentBusy.value = true
   contentError.value = ''
   try {
-    const response = await fetch(`/api/content/${encodeURIComponent(id)}/versions/${encodeURIComponent(version.versionId)}/restore`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { error?: string }
-    if (!response.ok) throw new Error(result.error || '恢复历史版本失败。')
+    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}/versions/${encodeURIComponent(version.versionId)}/restore`, { method: 'POST' }, '恢复历史版本失败。')
     versionsContentId.value = null
     contentNotice.value = `已恢复到版本 ${version.versionNumber}。恢复前的内容已保存到版本历史。`
     await loadContentList()
@@ -642,9 +635,7 @@ async function restoreDeletedContent(id: string) {
   contentBusy.value = true
   contentError.value = ''
   try {
-    const response = await fetch(`/api/content/${encodeURIComponent(id)}/restore`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { error?: string }
-    if (!response.ok) throw new Error(result.error || '恢复内容失败。')
+    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}/restore`, { method: 'POST' }, '恢复内容失败。')
     contentNotice.value = `“${item.title}”已恢复。`
     await loadContentList()
   } catch (error) { contentError.value = error instanceof Error ? error.message : '恢复内容失败。' }
@@ -656,9 +647,7 @@ async function permanentlyDeleteContent(id: string) {
   contentBusy.value = true
   contentError.value = ''
   try {
-    const response = await fetch(`/api/content/${encodeURIComponent(id)}/permanent`, { method: 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json' } })
-    const result = await response.json() as { error?: string }
-    if (!response.ok) throw new Error(result.error || '永久删除失败。')
+    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}/permanent`, { method: 'DELETE' }, '永久删除失败。')
     contentNotice.value = `“${item.title}”已永久删除。`
     await loadContentList()
   } catch (error) { contentError.value = error instanceof Error ? error.message : '永久删除失败。' }
@@ -711,14 +700,11 @@ async function saveContent() {
       title: contentForm.value.title.trim(), slug: contentForm.value.slug.trim(), contentType: contentForm.value.contentType,
       tags: mergeLegacyTaxonomyIntoTags(contentForm.value.tags), parentCategory: null, childCategory: null, summary: contentForm.value.summary, body: contentForm.value.body, visibility: contentForm.value.visibility,
     }
-    const response = await fetch(editing ? `/api/content/${encodeURIComponent(editing)}` : '/api/content', {
+    const result = await apiRequest<{ item?: PortalContent; error?: string }>(editing ? `/content/${encodeURIComponent(editing)}` : '/content', {
       method: editing ? 'PATCH' : 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload),
-    })
-    const result = await response.json() as { item?: PortalContent; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '保存内容失败。')
+    }, '保存内容失败。')
+    if (!result.item) throw new Error(result.error || '保存内容失败。')
     if (!editing) editingContentId.value = result.item.id
     contentEditorOpen.value = false
     contentNotice.value = editing ? '内容已保存。' : '草稿已创建。'
@@ -734,11 +720,10 @@ async function changeContentStatus(id: string, action: 'publish' | 'unpublish') 
   contentError.value = ''
   contentNotice.value = ''
   try {
-    const response = await fetch(`/api/content/${encodeURIComponent(id)}/${action}`, {
-      method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' },
-    })
-    const result = await response.json() as { item?: PortalContent; error?: string }
-    if (!response.ok || !result.item) throw new Error(result.error || '更新内容状态失败。')
+    const result = await apiRequest<{ item?: PortalContent; error?: string }>(`/content/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST',
+    }, '更新内容状态失败。')
+    if (!result.item) throw new Error(result.error || '更新内容状态失败。')
     contentNotice.value = action === 'publish' ? '内容状态已更新为已发布。' : '内容已下架。'
     await loadContentList()
   } catch (error) {
@@ -754,11 +739,9 @@ async function deleteContent(id: string) {
   contentError.value = ''
   contentNotice.value = ''
   try {
-    const response = await fetch(`/api/content/${encodeURIComponent(id)}`, {
-      method: 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json' },
-    })
-    const result = await response.json() as { error?: string }
-    if (!response.ok) throw new Error(result.error || '删除内容失败。')
+    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }, '删除内容失败。')
     contentNotice.value = '内容已移入删除状态。'
     await loadContentList()
   } catch (error) {
