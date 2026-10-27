@@ -3,9 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
-	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 )
 
 const (
@@ -185,84 +181,6 @@ func (a *portalAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, 404, "未找到接口。", nil)
-}
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Referrer-Policy", "same-origin")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
-}
-func writeError(w http.ResponseWriter, status int, message string, errorsList []string) {
-	body := map[string]any{"error": message}
-	if errorsList != nil {
-		body["errors"] = errorsList
-	}
-	writeJSON(w, status, body)
-}
-func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, max)
-	d := json.NewDecoder(r.Body)
-	d.DisallowUnknownFields()
-	if err := d.Decode(dst); err != nil {
-		return err
-	}
-	var extra any
-	if err := d.Decode(&extra); err != io.EOF {
-		return errors.New("request must contain one JSON value")
-	}
-	return nil
-}
-func runeLen(s string) int { return utf8.RuneCountInString(s) }
-func rateLimitClientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = strings.TrimSpace(r.RemoteAddr)
-	}
-	remoteIP := net.ParseIP(strings.Trim(host, "[]"))
-	if remoteIP != nil && remoteIP.IsLoopback() {
-		// Trust only Caddy's private header after it validates the peer against
-		// Cloudflare's trusted-proxy ranges. Direct loopback callers can forge
-		// X-Forwarded-For, so that generic header is intentionally ignored.
-		forwarded := strings.TrimSpace(r.Header.Get("X-Portal-Client-IP"))
-		if forwardedIP := net.ParseIP(forwarded); forwardedIP != nil {
-			return forwardedIP.String()
-		}
-	}
-	if remoteIP != nil {
-		return remoteIP.String()
-	}
-	if host == "" {
-		return "unknown"
-	}
-	return host
-}
-
-func (a *portalAPI) rateLimited(w http.ResponseWriter, r *http.Request) bool {
-	key := rateLimitClientIP(r) + ":" + r.URL.Path
-	now := time.Now()
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	v := a.rate[key]
-	if !now.Before(v.until) {
-		v = rateEntry{until: now.Add(15 * time.Minute)}
-	}
-	v.count++
-	a.rate[key] = v
-	if len(a.rate) > 5000 {
-		for k, e := range a.rate {
-			if now.After(e.until) {
-				delete(a.rate, k)
-			}
-		}
-	}
-	if v.count > 12 {
-		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(time.Until(v.until).Seconds()))))
-		writeError(w, 429, "操作过于频繁，请稍后再试。", nil)
-		return true
-	}
-	return false
 }
 func layoutPolicy(q url.Values) map[string]any {
 	width := readDimension(q.Get("width"), 1440, 10000)
