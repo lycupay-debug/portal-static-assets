@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { createContentEditorExtensions, createContentEditorTools, executeContentEditorTool, normalizeEditorImageUrl, normalizeEditorLinkUrl } from '../utils/contentEditor'
 import { useEditorImageUpload } from '../composables/useEditorImageUpload'
+import { useContentEditorOutline } from '../composables/useContentEditorOutline'
 import { createContentEditorDragHandle } from '../utils/contentEditorDragHandle'
 
 const props = defineProps<{ modelValue: string; disabled?: boolean; workspace?: boolean }>()
@@ -23,7 +24,6 @@ const imageWidths = ['25%', '50%', '75%', '100%']
 const contextMenu = ref({ open: false, x: 0, y: 0, target: "text" })
 const backgroundColors = [{ name: '浅灰', value: '#F1F1F1' }, { name: '中浅灰', value: '#E5E5E5' }, { name: '灰白', value: '#F8F8F8' }, { name: '中灰', value: '#D6D6D6' }, { name: '深浅灰', value: '#C9C9C9' }, { name: '无背景', value: '' }]
 const textColors = [{ name: '默认', value: '#292929' }, { name: '深黑', value: '#111111' }, { name: '深灰', value: '#444444' }, { name: '中灰', value: '#707070' }, { name: '浅灰', value: '#929292' }]
-const outlineItems = ref<Array<{ level: number; text: string; index: number }>>([])
 const editor = useEditor({
   content: props.modelValue || '',
   contentType: 'markdown',
@@ -67,26 +67,7 @@ const editor = useEditor({
   onSelectionUpdate: ({ editor: current }) => updateSlashMenu(current),
 })
 
-function refreshOutline(current: CoreEditor | null | undefined = editor.value) {
-  if (!current) { outlineItems.value = []; return }
-  const items: Array<{ level: number; text: string; index: number }> = []
-  let headingIndex = 0
-  current.state.doc.descendants((node) => {
-    if (node.type.name === 'heading') {
-      const index = headingIndex++
-      const text = node.textContent.trim()
-      if (text) items.push({ level: Number(node.attrs.level) || 1, text, index })
-    }
-  })
-  outlineItems.value = items
-}
-function jumpToHeading(index: number) {
-  const root = editor.value?.view.dom
-  const headings = root?.querySelectorAll('h1,h2,h3')
-  const heading = headings?.item(index) as HTMLElement | null | undefined
-  heading?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  if (heading) editor.value?.commands.focus()
-}
+
 function runToolbarItem(item: (typeof toolbarItems.value)[number]) {
   if (props.disabled || !editor.value) return
   item.run()
@@ -146,6 +127,7 @@ const toolActions = {
   },
 }
 const { onImageFileChange } = useEditorImageUpload({ editor, menuOpen: imageMenuOpen, error: imageUploadError })
+const { outlineItems, refreshOutline, jumpToHeading } = useContentEditorOutline(editor)
 const toolbarItems = computed(() => createContentEditorTools(editor.value, toolActions))
 const slashItems = computed(() => toolbarItems.value.filter(item => !slashQuery.value || (item.label + ' ' + item.description + ' ' + item.keywords).toLocaleLowerCase().includes(slashQuery.value.toLocaleLowerCase())))
 
@@ -236,9 +218,6 @@ watch(() => props.disabled, disabled => {
     imageMenuOpen.value = false
   }
 })
-watch(editor, current => {
-  refreshOutline(current)
-}, { immediate: true })
 onMounted(() => { document.addEventListener('click', onOutsideContextMenu) })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onOutsideContextMenu)
