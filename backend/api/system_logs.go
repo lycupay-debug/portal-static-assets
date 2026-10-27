@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
@@ -215,7 +216,7 @@ func readSystemLog(path, source string, after int64, limit int) (logReadResult, 
 		}
 		items := make([]systemLogEntry, 0, limit)
 		for len(data) > 0 {
-			newline := strings.IndexByte(string(data), '\n')
+			newline := bytes.IndexByte(data, '\n')
 			if newline < 0 {
 				break
 			} // Ignore an unfinished final line until its newline arrives.

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -36,6 +38,27 @@ func TestReadSystemLogReturnsLatestBoundedTailAndCursor(t *testing.T) {
 	}
 	if len(incremental.Items) != 1 || incremental.Items[0].Message != "five" {
 		t.Fatalf("unexpected incremental entries: %#v", incremental.Items)
+	}
+}
+
+func TestReadSystemLogHandlesLargeBoundedTailWithoutLosingCursor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "messages")
+	var input strings.Builder
+	for i := 0; i < 5000; i++ {
+		fmt.Fprintf(&input, "entry-%04d\n", i)
+	}
+	if err := os.WriteFile(path, []byte(input.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := readSystemLog(path, "server", 0, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 5 || result.Items[4].Message != "entry-4999" {
+		t.Fatalf("unexpected large-log tail: %#v", result.Items)
+	}
+	if result.Cursor != int64(input.Len()) {
+		t.Fatalf("cursor=%d, want %d", result.Cursor, input.Len())
 	}
 }
 
