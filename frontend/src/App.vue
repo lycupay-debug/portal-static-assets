@@ -10,6 +10,7 @@ import { portalTaxonomy, taxonomyChildOptions } from './utils/taxonomy'
 import { matchesKnowledgeTaxonomy } from './utils/knowledgeFilters'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
+import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const removedGradeTags = new Set(['年级', '一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三', '本科', '硕士'])
 const knowledgeTagOptions = portalTaxonomy
@@ -87,25 +88,6 @@ const authNotice = ref('')
 const authForm = ref({ displayName: '', email: '', password: '' })
 const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows', 'compliance', 'system-ops'])
 const activeAccountSection = ref('overview')
-const sectionRoutes: Record<string, string> = {
-  overview: '/account', profile: '/profile', security: '/security',
-  'content-management': '/content-management', 'property-management': '/housing/property-management',
-  'room-status': '/housing/room-status', 'student-records': '/education/student-records',
-  'course-calendar': '/education/course-calendar', 'teaching-resources': '/education/teaching-resources',
-  'network-tools': '/tools/network', 'document-converters': '/tools/document-converters',
-  'add-tool': '/tools/add', 'workflow-overview': '/workflows', 'copyright-compliance': '/account/compliance',
-  'system-warnings': '/account/system-ops/warnings', 'system-logs': '/account/system-ops/logs',
-  'system-execution-policy': '/account/system-ops/policy',
-}
-const routeSections = Object.fromEntries(Object.entries(sectionRoutes).map(([id, path]) => [path, id])) as Record<string, string>
-const routeAliases: Record<string, string> = {
-  '/首页': '/', '/个人中心': '/account', '/个人资料': '/profile', '/登录与安全': '/security',
-  '/登录': '/login', '/注册': '/register', '/内容管理': '/content-management',
-  '/房源管理': '/housing/property-management', '/房态管理': '/housing/room-status',
-  '/学生档案': '/education/student-records', '/课程日历': '/education/course-calendar',
-  '/教学资源': '/education/teaching-resources', '/网络工具': '/tools/network',
-  '/文档转换': '/tools/document-converters', '/添加工具': '/tools/add', '/工作流管理': '/workflows',
-}
 const contentEditorRouteId = computed(() => route.value.match(/^\/content-management\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1] || null)
 const isContentEditorPage = computed(() => route.value === '/content-management/new' || contentEditorRouteId.value !== null)
 const isProtectedPage = computed(() => isContentEditorPage.value || route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value))
