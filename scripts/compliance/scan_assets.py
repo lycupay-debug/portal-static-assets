@@ -5,7 +5,7 @@ This is an evidence collector, not an automated legal clearance tool. Unknown
 ownership and permission are deliberately retained as unknown.
 """
 from __future__ import annotations
-import argparse, csv, hashlib, json, os, re, shlex
+import argparse, csv, hashlib, json, re, subprocess
 from pathlib import Path, PurePosixPath
 from datetime import datetime, timezone
 
@@ -33,6 +33,30 @@ def package_name(lock_path):
     tail=lock_path.rsplit('node_modules/',1)[-1]
     bits=tail.split('/')
     return '/'.join(bits[:2]) if bits and bits[0].startswith('@') and len(bits)>1 else bits[0]
+def path_is_within_root(root: Path, candidate: Path):
+    try:
+        root_path=Path(root).resolve()
+        candidate_path=Path(candidate).resolve()
+    except OSError:
+        return False
+    return candidate_path.is_relative_to(root_path)
+def safe_package_directory(frontend_root: Path, lock_path: str):
+    relative=PurePosixPath(lock_path)
+    if relative.is_absolute() or '..' in relative.parts or '\\' in lock_path:
+        raise ValueError('unsafe package-lock path: '+lock_path)
+    candidate=Path(frontend_root).joinpath(*relative.parts)
+    if not path_is_within_root(frontend_root,candidate):
+        raise ValueError('package path escapes frontend root: '+lock_path)
+    return candidate
+def current_asset_source(assets):
+    current_pairs=','.join('('+sqlq(a['asset_path'])+','+sqlq(a['sha256'])+')' for a in assets)
+    if current_pairs:
+        return '(VALUES '+current_pairs+')'
+    return '(SELECT NULL::text AS asset_path, NULL::text AS sha256 WHERE FALSE)'
+def git_source_state(repo: Path):
+    revision=subprocess.run(['git','-C',str(repo),'rev-parse','HEAD'],capture_output=True,text=True,check=True).stdout.strip()
+    status=subprocess.run(['git','-C',str(repo),'status','--porcelain'],capture_output=True,text=True,check=True).stdout
+    return revision, bool(status.strip())
 def resolve_dep(parent, name, packages):
     base=parent
     while base:
@@ -84,7 +108,9 @@ def main():
     ap.add_argument('--repo',default='/opt/personal-portal')
     ap.add_argument('--release',default='/usr/local/www/personal-portal/current')
     ap.add_argument('--out',default='docs/compliance'); ap.add_argument('--strict-licenses',action='store_true')
-    args=ap.parse_args(); repo=Path(args.repo); out=repo/args.out; out.mkdir(parents=True,exist_ok=True)
+    args=ap.parse_args(); repo=Path(args.repo); out=repo/args.out
+    source_revision, source_worktree_dirty=git_source_state(repo)
+    out.mkdir(parents=True,exist_ok=True)
     try: report_path=str((out/'asset-inventory.json').relative_to(repo))
     except ValueError: report_path=str(out/'asset-inventory.json')
     now=datetime.now(timezone.utc).isoformat()
@@ -99,12 +125,16 @@ def main():
         if text and not item['full_text']: item['full_text']=text[:200000]
         if notes and notes not in item['notes']: item['notes']=(item['notes']+'; '+notes).strip('; ')
         return key
-    def add_file(p: Path, path_label: str, distribution: str, active: bool, discovered='filesystem_scan'):
+    def add_file(p: Path, path_label: str, distribution: str, active: bool, discovered='filesystem_scan', allowed_root: Path | None=None):
         try:
             if not p.is_file(): return
-            st=p.stat(); ext=p.suffix.lower(); typ=EXT_TYPES.get(ext,'other')
+            if allowed_root is not None and not path_is_within_root(allowed_root,p):
+                assets.append(make_asset(asset_name=p.name,asset_path=path_label,discovered_by=discovered,metadata={'scan_error':'resolved file path escapes the configured scan root'},notes='Path target is outside the configured scan root; file content was not read and requires manual follow-up.'))
+                return
+            resolved=p.resolve(strict=True)
+            st=resolved.stat(); ext=p.suffix.lower(); typ=EXT_TYPES.get(ext,'other')
             if 'icons/bootstrap-icons/' in path_label.replace('\\','/') and ext=='.svg': typ='icon'
-            sha=sha_file(p)
+            sha=sha_file(resolved)
             lic_key=None; own='unknown'; perm='unknown'; risk='unknown'; notes='Automated file inventory; ownership and authorization have not been legally verified.'
             meta={'extension':ext,'scan_timestamp':now,'source_relative_path':path_label,'sha256_method':'SHA-256'}
             if typ=='icon' and 'icons/bootstrap-icons/' in path_label.replace('\\','/'):
@@ -114,13 +144,13 @@ def main():
             elif typ=='source_file' and path_label.startswith('frontend/src/'):
                 own='original'; risk='unknown'; meta['source_role']='first_party_project_source'; notes='Project source file; legal rights holder and contributor chain not independently verified.'
             assets.append(make_asset(asset_type=typ,asset_name=p.name,asset_path=path_label,ownership_basis=own,license_key=lic_key,permission_status=perm,distribution_status=distribution,review_status='pending',risk_level=risk,sha256=sha,file_size_bytes=st.st_size,discovered_by=discovered,published_or_active=active,metadata=meta,notes=notes))
-        except (OSError,PermissionError) as e:
+        except OSError as e:
             assets.append(make_asset(asset_name=p.name,asset_path=path_label,discovered_by=discovered,metadata={'scan_error':str(e)},notes='File could not be fully inspected; requires manual follow-up.'))
     # Project-owned active source files; exclude historical .bak copies from active asset counts.
     src=repo/'frontend/src'
     for p in sorted(src.rglob('*')):
         if p.is_file() and '.bak-' not in p.name and not p.name.endswith('.bak') and p.suffix.lower() in {'.svg','.png','.jpg','.jpeg','.webp','.gif','.ico','.woff','.woff2','.ttf','.otf','.css','.js','.mjs','.ts','.vue','.html','.json'}:
-            add_file(p, str(p.relative_to(repo)), 'unknown', False)
+            add_file(p, str(p.relative_to(repo)), 'unknown', False, allowed_root=src)
     # Public source assets and currently deployed assets.
     for base, label, dist, active in [(repo/'frontend/public','frontend/public','bundled_in_frontend',True),(Path(args.release),'deployed/current','served_publicly',True)]:
         if not base.exists(): continue
@@ -128,17 +158,22 @@ def main():
             if p.is_file():
                 try: rel=p.relative_to(base).as_posix()
                 except ValueError: rel=p.name
-                add_file(p, f'{label}/{rel}', dist, active, 'filesystem_scan')
+                add_file(p, f'{label}/{rel}', dist, active, 'filesystem_scan', allowed_root=base)
     # Dependency license records from the lockfile, restricted to production closure.
     lock=json.loads((repo/'frontend/package-lock.json').read_text()); packages, prod=production_closure(lock)
     notice=(repo/'frontend/public/THIRD_PARTY_NOTICES.txt').read_text(errors='replace') if (repo/'frontend/public/THIRD_PARTY_NOTICES.txt').exists() else ''
     notice_sections=set(re.findall(r'^### (.+?)@([^\n]+)$',notice,re.M))
     missing_metadata=[]; missing_license_file=[]; missing_notice=[]
+    frontend_root=repo/'frontend'
     for key in sorted(prod):
         meta=packages[key]; name=package_name(key); ver=meta.get('version',''); expr=meta.get('license')
         if isinstance(expr,dict): expr=expr.get('type') or json.dumps(expr,ensure_ascii=False)
         if isinstance(expr,list): expr=' OR '.join(str(x) for x in expr)
-        pkgdir=repo/'frontend'/key; licfile=find_license_file(pkgdir); lictext=''
+        try:
+            pkgdir=safe_package_directory(frontend_root,key)
+        except ValueError as e:
+            raise SystemExit(str(e)) from e
+        licfile=find_license_file(pkgdir); lictext=''
         if licfile:
             try: lictext=licfile.read_text(errors='replace')[:200000]
             except OSError: lictext=''
@@ -173,7 +208,7 @@ def main():
     # Write inventory exports.
     def clean_asset(a):
         x=dict(a); x['license_key']=list(x['license_key']) if x.get('license_key') else None; return x
-    (out/'asset-inventory.json').write_text(json.dumps({'generated_at':now,'assets':[clean_asset(a) for a in assets]},ensure_ascii=False,indent=2)+'\n')
+    (out/'asset-inventory.json').write_text(json.dumps({'generated_at':now,'source_revision':source_revision,'source_worktree_dirty':source_worktree_dirty,'assets':[clean_asset(a) for a in assets]},ensure_ascii=False,indent=2)+'\n')
     with (out/'asset-inventory.csv').open('w',newline='',encoding='utf-8-sig') as f:
         fields=['asset_type','asset_name','asset_path','source_url','ownership_basis','permission_status','use_scope','distribution_status','review_status','risk_level','sha256','file_size_bytes','discovered_by','published_or_active','notes','metadata']
         w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
@@ -182,21 +217,23 @@ def main():
     with (out/'third-party-license-register.csv').open('w',newline='',encoding='utf-8-sig') as f:
         fields=['package','version','license_expression','license_file','license_file_sha256','license_text_found','notice_section_found','lockfile_path','risk_triage']; w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(prod_rows)
     # SQL import/upsert script; no license is marked legally approved by automation.
-    sql=['-- Generated by scripts/compliance/scan_assets.py. Evidence capture only; not legal clearance.','BEGIN;']
+    sql=['-- Generated by scripts/compliance/scan_assets.py. Evidence capture only; not legal clearance.','-- Source revision: '+source_revision+'; worktree_dirty='+str(source_worktree_dirty).lower(),'BEGIN;']
     for l in licenses.values():
         sql.append(
             'INSERT INTO portal.compliance_license_catalog (spdx_id,license_name,license_version,license_family,canonical_url,full_text,commercial_use_allowed,modification_allowed,redistribution_allowed,attribution_required,source_code_offer_required,review_status,notes) VALUES (' + ','.join([sqlq(l['spdx_id']),sqlq(l['license_name']),sqlq(l['license_version']),sqlq(l['license_family']),sqlq(l['canonical_url']),sqlq(l['full_text']),sqlq(l['commercial_use_allowed']),sqlq(l['modification_allowed']),sqlq(l['redistribution_allowed']),sqlq(l['attribution_required']),sqlq(l['source_code_offer_required']),sqlq('unreviewed'),sqlq(l['notes'])]) +
             ") ON CONFLICT (spdx_id,license_version) DO UPDATE SET canonical_url=CASE WHEN length(portal.compliance_license_catalog.canonical_url)=0 THEN EXCLUDED.canonical_url ELSE portal.compliance_license_catalog.canonical_url END, full_text=CASE WHEN length(portal.compliance_license_catalog.full_text)=0 THEN EXCLUDED.full_text ELSE portal.compliance_license_catalog.full_text END, license_family=CASE WHEN portal.compliance_license_catalog.review_status='unreviewed' THEN EXCLUDED.license_family ELSE portal.compliance_license_catalog.license_family END, commercial_use_allowed=CASE WHEN portal.compliance_license_catalog.review_status='unreviewed' THEN EXCLUDED.commercial_use_allowed ELSE portal.compliance_license_catalog.commercial_use_allowed END, modification_allowed=CASE WHEN portal.compliance_license_catalog.review_status='unreviewed' THEN EXCLUDED.modification_allowed ELSE portal.compliance_license_catalog.modification_allowed END, redistribution_allowed=CASE WHEN portal.compliance_license_catalog.review_status='unreviewed' THEN EXCLUDED.redistribution_allowed ELSE portal.compliance_license_catalog.redistribution_allowed END, attribution_required=CASE WHEN portal.compliance_license_catalog.review_status='unreviewed' THEN EXCLUDED.attribution_required ELSE portal.compliance_license_catalog.attribution_required END, source_code_offer_required=CASE WHEN portal.compliance_license_catalog.review_status='unreviewed' THEN EXCLUDED.source_code_offer_required ELSE portal.compliance_license_catalog.source_code_offer_required END, notes=CASE WHEN length(portal.compliance_license_catalog.notes)=0 THEN EXCLUDED.notes ELSE portal.compliance_license_catalog.notes END, updated_at=now();"
         )
-    current_pairs = ','.join('('+sqlq(a['asset_path'])+','+sqlq(a['sha256'])+')' for a in assets)
-    source_revision=os.popen('git -C '+shlex.quote(str(repo))+' rev-parse HEAD').read().strip()
+    current_source=current_asset_source(assets)
     finding_count=len([a for a in assets if a['risk_level'] in ('high','critical','unknown')])
-    scan_summary={'generated_at':now,'production_dependency_count':len(prod),'license_catalog_records':len(licenses),'missing_license_metadata':missing_metadata,'missing_license_files':missing_license_file,'missing_notice_sections':missing_notice,'risk_counts':{k:sum(1 for a in assets if a['risk_level']==k) for k in ('critical','high','medium','low','unknown')}}
-    scan_sql=("INSERT INTO portal.compliance_scan_runs(scan_type,scan_status,source_revision,assets_seen,assets_created,assets_updated,findings_count,report_path,summary,completed_at) SELECT 'full_audit','completed_with_warnings',"+sqlq(source_revision)+","+str(len(assets))+",COUNT(*) FILTER (WHERE existing.asset_id IS NULL),COUNT(*) FILTER (WHERE existing.asset_id IS NOT NULL),"+str(finding_count)+","+sqlq(report_path)+","+sqlq(json.dumps(scan_summary,ensure_ascii=False))+"::jsonb,now() FROM (VALUES "+current_pairs+") AS current_asset(asset_path,sha256) LEFT JOIN portal.compliance_assets existing ON existing.asset_path=current_asset.asset_path AND existing.sha256=current_asset.sha256;")
+    scan_summary={'generated_at':now,'source_revision':source_revision,'source_worktree_dirty':source_worktree_dirty,'production_dependency_count':len(prod),'license_catalog_records':len(licenses),'missing_license_metadata':missing_metadata,'missing_license_files':missing_license_file,'missing_notice_sections':missing_notice,'risk_counts':{k:sum(1 for a in assets if a['risk_level']==k) for k in ('critical','high','medium','low','unknown')}}
+    scan_sql=("INSERT INTO portal.compliance_scan_runs(scan_type,scan_status,source_revision,assets_seen,assets_created,assets_updated,findings_count,report_path,summary,completed_at) SELECT 'full_audit','completed_with_warnings',"+sqlq(source_revision)+","+str(len(assets))+",COUNT(*) FILTER (WHERE existing.asset_id IS NULL),COUNT(*) FILTER (WHERE existing.asset_id IS NOT NULL),"+str(finding_count)+","+sqlq(report_path)+","+sqlq(json.dumps(scan_summary,ensure_ascii=False))+"::jsonb,now() FROM "+current_source+" AS current_asset(asset_path,sha256) LEFT JOIN portal.compliance_assets existing ON existing.asset_path=current_asset.asset_path AND existing.sha256=current_asset.sha256;")
     sql.append(scan_sql)
     # Retain old hashes as history, but mark records no longer present in the
     # current scan as inactive instead of silently deleting their evidence.
-    sql.append("UPDATE portal.compliance_assets old SET published_or_active=FALSE,distribution_status='not_distributed',notes=CASE WHEN old.notes='' THEN 'Superseded or absent from latest inventory scan; retained for history.' ELSE old.notes || ' | Superseded or absent from latest inventory scan; retained for history.' END,updated_at=now() WHERE old.discovered_by IN ('filesystem_scan','package_lock_scan') AND old.published_or_active=TRUE AND NOT EXISTS (SELECT 1 FROM (VALUES "+current_pairs+") AS current_asset(asset_path,sha256) WHERE current_asset.asset_path=old.asset_path AND current_asset.sha256=old.sha256);")
+    if assets:
+        sql.append("UPDATE portal.compliance_assets old SET published_or_active=FALSE,distribution_status='not_distributed',notes=CASE WHEN old.notes='' THEN 'Superseded or absent from latest inventory scan; retained for history.' ELSE old.notes || ' | Superseded or absent from latest inventory scan; retained for history.' END,updated_at=now() WHERE old.discovered_by IN ('filesystem_scan','package_lock_scan') AND old.published_or_active=TRUE AND NOT EXISTS (SELECT 1 FROM "+current_source+" AS current_asset(asset_path,sha256) WHERE current_asset.asset_path=old.asset_path AND current_asset.sha256=old.sha256);")
+    else:
+        sql.append('-- Empty inventory: existing assets are left unchanged to prevent accidental mass deactivation.')
     for a in assets:
         lic=a.get('license_key'); lic_expr='(SELECT license_id FROM portal.compliance_license_catalog WHERE spdx_id='+sqlq(lic[0])+' AND license_version='+sqlq(lic[1])+')' if lic else 'NULL'
         vals=[sqlq(a['asset_type']),sqlq(a['asset_name']),sqlq(a['asset_path']),sqlq(a['source_url']),sqlq(a['creator_or_rightsholder']),sqlq(a['ownership_basis']),lic_expr,sqlq(a['permission_status']),sqlq(a['use_scope']),sqlq(a['distribution_status']),sqlq(a['review_status']),sqlq(a['risk_level']),sqlq(a['sha256']),sqlq(a['file_size_bytes']),sqlq(a['discovered_by']),sqlq(a['published_or_active']),sqljson(a['metadata']),sqlq(a['notes'])]
@@ -214,6 +251,8 @@ def main():
     report=f'''# 个人门户自身软件与静态资源许可证盘点
 
 - 生成时间：{now}
+- Git 提交：{source_revision}
+- 工作树未提交变更：{'是' if source_worktree_dirty else '否'}（若为是，扫描内容不能仅由提交号完全复现）
 - 扫描范围：个人门户自身源代码、公开静态文件、当前发布版本、第三方依赖闭包及其许可证文件/声明。
 - 明确排除：用户发布的文章、教育资源、上传图片和外部链接；这些业务内容不进入本合规扫描台账。
 - 生产依赖闭包：{len(prod)} 个 package instance（不是唯一软件项目数量）。
@@ -247,7 +286,7 @@ def main():
 **限制：** 自动扫描无法证明贡献者身份、授权链、合同有效性或实际分发的完整法律结论。所有未知项继续标记为待核实。
 '''
     (out/'portal-development-asset-inventory.md').write_text(report)
-    summary={'assets':len(assets),'asset_types':counts,'risk_counts':risk_counts,'production_dependencies':len(prod),'license_catalog_candidates':len(licenses),'missing_license_metadata':missing_metadata,'missing_license_files':missing_license_file,'missing_notice_sections':missing_notice,'seed_sql':str(out/'seed-compliance-inventory.sql'),'report':str(out/'portal-development-asset-inventory.md')}
+    summary={'source_revision':source_revision,'source_worktree_dirty':source_worktree_dirty,'assets':len(assets),'asset_types':counts,'risk_counts':risk_counts,'production_dependencies':len(prod),'license_catalog_candidates':len(licenses),'missing_license_metadata':missing_metadata,'missing_license_files':missing_license_file,'missing_notice_sections':missing_notice,'seed_sql':str(out/'seed-compliance-inventory.sql'),'report':str(out/'portal-development-asset-inventory.md')}
     print(json.dumps(summary,ensure_ascii=False,indent=2))
     if args.strict_licenses and (missing_metadata or missing_license_file or missing_notice):
         raise SystemExit('Strict license preflight failed: missing metadata/files/notices are listed in the generated reports.')

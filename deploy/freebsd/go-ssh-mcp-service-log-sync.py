@@ -50,14 +50,16 @@ def project(obj):
     if not isinstance(obj, dict):
         return None
     operation = obj.get("operation")
-    if operation not in ALLOWED:
+    if not isinstance(operation, str) or operation not in ALLOWED:
         return None
     timestamp = parse_time(obj.get("timestamp"))
     if timestamp is None:
         return None
+    returncode = obj.get("returncode")
+    has_failed_returncode = isinstance(returncode, int) and not isinstance(returncode, bool) and returncode != 0
     if obj.get("timed_out") is True:
         outcome, action = "timeout", "tool.operation.failed"
-    elif obj.get("success") is False or (isinstance(obj.get("returncode"), int) and obj["returncode"] != 0):
+    elif obj.get("success") is False or has_failed_returncode:
         outcome, action = "failed", "tool.operation.failed"
     else:
         outcome, action = "success", "tool.operation.completed"
