@@ -21,7 +21,8 @@ import { useAccountTable } from './composables/useAccountTable'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
-import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
+import { routeSections, sectionRoutes } from './navigation/portalRoutes'
+import { resolvePortalLocation } from './navigation/resolvePortalLocation'
 import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
@@ -507,18 +508,11 @@ const {
 
 function closeMenu() { menuOpen.value = false }
 function setRouteFromLocation() {
-  const rawPath = decodeURI(window.location.pathname || '/')
-  const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath
-  route.value = routeAliases[pathname] || pathname
+  const resolved = resolvePortalLocation(window.location.pathname, window.location.search)
+  route.value = resolved.route
   if (route.value === '/knowledge') {
-    const params = new URLSearchParams(window.location.search)
-    const requestedCategory = params.get('category') || 'recent'
-    const validCategory = knowledgeCategoryMenus.some(category => category.value === requestedCategory)
-    const category = validCategory ? requestedCategory : 'recent'
-    const requestedSubcategory = params.get('subcategory') || ''
-    const categoryDefinition = knowledgeCategoryMenus.find(item => item.value === category)
-    knowledgeCategory.value = category
-    knowledgeSubcategory.value = categoryDefinition?.children.includes(requestedSubcategory) ? requestedSubcategory : ''
+    knowledgeCategory.value = resolved.knowledgeCategory
+    knowledgeSubcategory.value = resolved.knowledgeSubcategory
     knowledgeVisibleCount.value = knowledgePageSize
   }
   if (isAccountPage.value) {
