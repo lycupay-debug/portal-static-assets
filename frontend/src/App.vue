@@ -104,7 +104,6 @@ function toggleAccountGroup(groupId: string) {
 const tableQuery = ref('')
 const debouncedTableQuery = ref('')
 let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
-let contentListRequestSequence = 0
 let teachingResourceListRequestSequence = 0
 watch(tableQuery, (query) => {
   tableSearchDebounceTimer = setTimeout(() => { debouncedTableQuery.value = query }, 150)
@@ -252,24 +251,22 @@ watch([activeAccountSection, contentViewMode, resourceViewMode, debouncedTableQu
 function onVirtualTableScroll(event: Event) {
   tableScrollTop.value = (event.target as HTMLElement).scrollTop
 }
-async function loadContentList(searchTerm = tableQuery.value) {
-  const requestId = ++contentListRequestSequence
-  contentLoading.value = true
-  contentError.value = ''
-  try {
-    const isTrash = contentViewMode.value === 'trash'
-    const params = new URLSearchParams()
-    if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const endpoint = isTrash ? '/content/trash' : '/content'
-    const result = await apiRequest<{ items?: PortalContent[]; error?: string }>(`${endpoint}${params.size ? `?${params}` : ''}`, {}, '读取内容列表失败。')
-    if (requestId !== contentListRequestSequence) return
-    if (isTrash) contentTrashItems.value = result.items || []
-    else contentItems.value = result.items || []
-  } catch (error) {
-    if (requestId === contentListRequestSequence) contentError.value = error instanceof Error ? error.message : '网络连接失败，无法读取内容。'
-  } finally {
-    if (requestId === contentListRequestSequence) contentLoading.value = false
-  }
+type ContentListLoader = ReturnType<typeof import('./composables/loadContentList').createContentListLoader>
+let contentListLoaderPromise: Promise<ContentListLoader> | undefined
+function getContentListLoader(): Promise<ContentListLoader> {
+  return contentListLoaderPromise ??= import('./composables/loadContentList').then(({ createContentListLoader }) => createContentListLoader({
+    viewMode: contentViewMode,
+    activeItems: contentItems,
+    trashItems: contentTrashItems,
+    loading: contentLoading,
+    error: contentError,
+  }))
+}
+function loadContentList(searchTerm = tableQuery.value) {
+  return getContentListLoader().then(loader => loader.loadContentList(searchTerm)).catch((error: unknown) => {
+    contentError.value = error instanceof Error ? error.message : '网络连接失败，无法读取内容。'
+    contentLoading.value = false
+  })
 }
 function switchContentView(mode: 'active' | 'trash') {
   contentViewMode.value = mode
