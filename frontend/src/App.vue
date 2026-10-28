@@ -198,7 +198,6 @@ const visibleEducationResources = computed(() => filteredEducationResources.valu
 
 const publicArticle = ref<PublicContent | null>(null)
 const publicArticleHtml = ref('')
-let publicArticleRequestSequence = 0
 const publicContentLoading = ref(false)
 const publicContentError = ref('')
 const publicInteractionBusy = ref(false)
@@ -662,26 +661,22 @@ watch(educationResourceSearch, (query) => {
   if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
   publicResourceSearchTimer = setTimeout(() => { void loadPublicTeachingResources(query) }, 220)
 })
-async function loadPublicArticle(slug: string) {
-  const requestId = ++publicArticleRequestSequence
-  const requestedRoute = route.value
-  publicContentLoading.value = true
-  publicContentError.value = ''
-  publicArticle.value = null
-  publicArticleHtml.value = ''
-  try {
-    const result = await apiRequest<{ item?: PublicContent; error?: string }>(`/public/content/${slug}`, {}, '内容不存在或尚未公开。')
-    if (!result.item) throw new Error(result.error || '内容不存在或尚未公开。')
-    if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
-    const { renderMarkdown } = await import('./utils/markdown')
-    if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
-    publicArticleHtml.value = renderMarkdown(result.item.body)
-    publicArticle.value = result.item
-  } catch (error) {
-    if (requestId === publicArticleRequestSequence) publicContentError.value = error instanceof Error ? error.message : '读取内容失败。'
-  } finally {
-    if (requestId === publicArticleRequestSequence) publicContentLoading.value = false
-  }
+type PublicArticleLoader = ReturnType<typeof import('./composables/loadPublicArticle').createPublicArticleLoader>
+let publicArticleLoaderPromise: Promise<PublicArticleLoader> | undefined
+function getPublicArticleLoader(): Promise<PublicArticleLoader> {
+  return publicArticleLoaderPromise ??= import('./composables/loadPublicArticle').then(({ createPublicArticleLoader }) => createPublicArticleLoader({
+    route,
+    article: publicArticle,
+    html: publicArticleHtml,
+    loading: publicContentLoading,
+    error: publicContentError,
+  }))
+}
+function loadPublicArticle(slug: string) {
+  return getPublicArticleLoader().then(loader => loader.loadPublicArticle(slug)).catch((error: unknown) => {
+    publicContentError.value = error instanceof Error ? error.message : '读取内容失败。'
+    publicContentLoading.value = false
+  })
 }
 const { toggleInteraction: togglePublicInteraction, shareArticle: sharePublicArticle, copyShareUrl } = usePublicArticleActions({
   article: publicArticle,
