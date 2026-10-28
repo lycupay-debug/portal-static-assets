@@ -9,6 +9,7 @@ fi
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 bin_dir="/usr/local/libexec/personal-portal"
 www_base="/usr/local/www/personal-portal"
+static_www_base="/usr/local/www/portal-static-assets"
 caddy_file="/usr/local/etc/caddy/Caddyfile"
 backup_dir="/var/backups/personal-portal"
 go_bin="${PERSONAL_PORTAL_GO_BIN:-}"
@@ -69,7 +70,8 @@ npm run api:lint
 npm run api:check
 npm run type-check
 npm test
-npm run build
+npm run build:static-origin
+npm run package:static-origin
 
 # Run the PostgreSQL integration suite against a fresh, isolated database
 # built from the repository migrations. Do not silently skip DB integration
@@ -96,6 +98,8 @@ if [ -f /usr/local/etc/rc.d/personal_portal_task_executor ]; then
 fi
 cp "$caddy_file" "$caddy_file.pre-go-cutover-$stamp"
 readlink "$www_base/current" > "$backup_dir/frontend-current-$stamp"
+readlink "$static_www_base/current" > "$backup_dir/static-current-$stamp"
+chmod 0600 "$backup_dir/static-current-$stamp"
 chmod 0600 "$backup_dir/frontend-current-$stamp"
 
 # Forward-only additive migrations run after the full backup.
@@ -103,10 +107,20 @@ PERSONAL_PORTAL_MIGRATION_BACKUP="$backup_dir/pre-go-cutover-$stamp.dump" "$repo
 
 release="$www_base/releases/${stamp}-go-backend"
 mkdir -p "$release"
-cp -R "$repo/frontend/dist/." "$release/"
+cp -R "$repo/frontend/dist-static-origin/." "$release/"
 if [ ! -f "$release/favicon.ico" ] && [ -f "$www_base/current/favicon.ico" ]; then
   cp "$www_base/current/favicon.ico" "$release/favicon.ico"
 fi
+
+# Prepare an immutable static-origin release from the exact same frontend build.
+static_release="$static_www_base/releases/${stamp}-static-origin"
+mkdir -p "$static_release/site"
+for asset_dir in assets icons; do
+  if [ -d "$repo/frontend/dist-static-origin/$asset_dir" ]; then
+    cp -R "$repo/frontend/dist-static-origin/$asset_dir" "$static_release/site/"
+  fi
+done
+chmod -R a+rX "$static_release"
 
 deployment_changed=1
 if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ] && [ -x /usr/local/etc/rc.d/personal_portal_task_executor ]; then
@@ -175,6 +189,8 @@ fi
 install -o root -g wheel -m 0644 "$repo/deploy/freebsd/Caddyfile" "$caddy_file"
 caddy validate --config "$caddy_file"
 service caddy reload
+ln -s "$static_release" "$static_www_base/current.next"
+mv -h -f "$static_www_base/current.next" "$static_www_base/current"
 ln -s "$release" "$www_base/current.next"
 mv -h -f "$www_base/current.next" "$www_base/current"
 

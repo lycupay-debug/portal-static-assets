@@ -71,3 +71,34 @@ www.lycupaynotion.top {
 go.lycupaynotion.top {
 	reverse_proxy 127.0.0.1:8766
 }
+
+
+assets.lycupaynotion.top {
+	@staticAssets path /assets/*
+	handle @staticAssets {
+		root * /usr/local/www/portal-static-assets/current/site
+		header {
+			Access-Control-Allow-Origin "https://www.lycupaynotion.top"
+			Vary "Origin"
+			Cache-Control "public, max-age=31536000, immutable"
+			X-Content-Type-Options "nosniff"
+		}
+		file_server
+	}
+
+	@staticIcons path /icons/*
+	handle @staticIcons {
+		root * /usr/local/www/portal-static-assets/current/site
+		header {
+			Access-Control-Allow-Origin "https://www.lycupaynotion.top"
+			Vary "Origin"
+			Cache-Control "public, max-age=86400"
+			X-Content-Type-Options "nosniff"
+		}
+		file_server
+	}
+
+	handle {
+		respond 404
+	}
+}

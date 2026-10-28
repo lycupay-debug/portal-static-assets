@@ -21,10 +21,12 @@ bin_dir="${PERSONAL_PORTAL_BIN_DIR:-/usr/local/libexec/personal-portal}"
 caddy_file="${PERSONAL_PORTAL_CADDYFILE:-/usr/local/etc/caddy/Caddyfile}"
 backup_dir="${PERSONAL_PORTAL_BACKUP_DIR:-/var/backups/personal-portal}"
 www_base="${PERSONAL_PORTAL_WWW_BASE:-/usr/local/www/personal-portal}"
+static_www_base="${PERSONAL_PORTAL_STATIC_WWW_BASE:-/usr/local/www/portal-static-assets}"
 api_backup="$bin_dir/api.pre-go-cutover-$stamp"
 core_backup="$bin_dir/event-core.pre-go-cutover-$stamp"
 caddy_backup="$caddy_file.pre-go-cutover-$stamp"
 frontend_target_file="$backup_dir/frontend-current-$stamp"
+static_target_file="$backup_dir/static-current-$stamp"
 rollback_archive=$(printenv PERSONAL_PORTAL_FULL_BACKUP 2>/dev/null || true)
 archive_stage=""
 
@@ -72,7 +74,7 @@ if [ ! -e "$frontend_target_file" ]; then
   frontend_target_file="$archive_stage/rollback/$(basename "$frontend_target_file")"
 fi
 
-for required in "$api_backup" "$core_backup" "$caddy_backup" "$frontend_target_file"; do
+for required in "$api_backup" "$core_backup" "$caddy_backup" "$frontend_target_file" "$static_target_file"; do
   if [ ! -e "$required" ]; then
     echo "Missing rollback artifact: $required" >&2
     exit 1
@@ -103,6 +105,19 @@ else
     install -o root -g wheel -m 0555 "$executor_backup" /usr/local/etc/rc.d/personal_portal_task_executor
   fi
   install -o root -g wheel -m 0644 "$caddy_backup" "$caddy_file"
+fi
+
+previous_static_release=$(cat "$static_target_file")
+if [ ! -d "$static_www_base/$previous_static_release" ]; then
+  echo "Missing previous static release: $static_www_base/$previous_static_release" >&2
+  exit 1
+fi
+ln -s "$previous_static_release" "$static_www_base/current.rollback"
+if [ "$test_mode" = "1" ]; then
+  rm -f "$static_www_base/current"
+  mv "$static_www_base/current.rollback" "$static_www_base/current"
+else
+  mv -h -f "$static_www_base/current.rollback" "$static_www_base/current"
 fi
 
 previous_release=$(cat "$frontend_target_file")
