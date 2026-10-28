@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { dismissNotificationById, notificationState, portalNotify } from '../src/utils/notification.ts'
 
 function clearNotifications() {
@@ -42,4 +43,15 @@ test('timed notifications are automatically removed', async () => {
   await new Promise(resolve => setTimeout(resolve, 35))
   assert.equal(notificationState.value.some(item => item.id === id), false)
   clearNotifications()
+})
+
+
+test('notification host provides accessible live updates and explicit dismissal', () => {
+  const host = readFileSync(new URL('../src/components/NotificationHost.vue', import.meta.url), 'utf8')
+  assert.match(host, /<Teleport to="body">/)
+  assert.match(host, /aria-live="polite"/)
+  assert.match(host, /:key="item\.id"/)
+  assert.match(host, /role="status"/)
+  assert.match(host, /aria-label="关闭通知"/)
+  assert.match(host, /dismissNotificationById\(item\.id\)/)
 })
