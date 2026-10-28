@@ -1,12 +1,16 @@
+<!--
+Responsibility: compose portal routes, page-level reactive state, and the user-facing application template.
+Dependencies: focused composables for URL resolution, authentication, data loading, editing, and table behavior.
+Collaboration: App.vue coordinates route/session gates and view state; Go remains the authority for authentication and permissions.
+Boundaries: avoid embedding reusable business workflows here; browser lifecycle and route sequencing remain explicit,
+while extracted composables own independently testable state transitions and side effects.
+-->
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
-import { ApiRequestError, apiRequest } from './api/client'
+import { apiRequest } from './api/client'
 import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
-const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
-const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
-const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
@@ -14,10 +18,10 @@ import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection
 import { useScrollRestoration } from './composables/useScrollRestoration'
 import { usePublicArticleActions } from './composables/usePublicArticleActions'
 import { useLegalDocuments } from './composables/useLegalDocuments'
-const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { useAccountTable } from './composables/useAccountTable'
+import { usePortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
@@ -28,11 +32,15 @@ import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
-import type { Content as APIContent, ContentVersion as APIContentVersion, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
-const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
-const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
+import type { Content as APIContent, ContentVersion as APIContentVersion, ResourceWrite, TeachingResource as APITeachingResource } from './api/generated'
 
-type PortalUser = APIUser & { isAdmin?: boolean }
+const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
+const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
+const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
+const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
+const taxonomyParentNames = knowledgeTaxonomyParentNames
+const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
+
 type PortalContent = APIContent
 type ContentVersion = APIContentVersion
 type TeachingResource = APITeachingResource
@@ -528,7 +536,6 @@ let publicDirectoryLoaderPromise: Promise<PublicDirectoryLoader> | undefined
 let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
 let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
 let navigationSequence = 0
-let sessionRequestSequence = 0
 function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
   return publicDirectoryLoaderPromise ??= import('./composables/loadPublicDirectoryData').then(({ createPublicDirectoryLoader }) => createPublicDirectoryLoader({
     publicContents,
@@ -635,53 +642,18 @@ async function navigate(target: string) {
     }
   }
 }
-async function loadSession(): Promise<boolean> {
-  const requestId = ++sessionRequestSequence
-  authLoading.value = true
-  try {
-    const result = await apiRequest<{ user: PortalUser }>('/auth/me')
-    if (requestId === sessionRequestSequence) user.value = result.user
-    return true
-  } catch {
-    if (requestId === sessionRequestSequence) user.value = null
-    return false
-  } finally {
-    if (requestId === sessionRequestSequence) authLoading.value = false
-  }
-}
-async function submitAuth() {
-  authBusy.value = true
-  authError.value = ''
-  authNotice.value = ''
-  try {
-    const endpoint = isRegister.value ? '/api/auth/register' : '/api/auth/login'
-    const payload: RegisterRequest | LoginRequest = isRegister.value
-      ? { displayName: authForm.value.displayName.trim(), email: authForm.value.email.trim(), password: authForm.value.password }
-      : { email: authForm.value.email.trim(), password: authForm.value.password }
-    const result = await apiRequest<{ user?: PortalUser; error?: string }>(endpoint.slice('/api'.length), {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }, '操作失败，请稍后再试。')
-    if (!result.user) throw new Error(result.error || '操作失败，请稍后再试。')
-    user.value = result.user
-    authForm.value.password = ''
-    await navigate('/account')
-    portalNotify.success(isRegister.value ? '账户创建成功。' : '登录成功。', isRegister.value ? '注册成功' : '登录成功')
-  } catch (error) {
-    authError.value = error instanceof Error ? error.message : '网络连接失败，请稍后再试。'
-  } finally { authBusy.value = false }
-}
-async function logout() {
-  authBusy.value = true
-  try {
-    await apiRequest<unknown>('/auth/logout', { method: 'POST' })
-  } finally {
-    user.value = null
-    authBusy.value = false
-    await navigate('/')
-    portalNotify.success('已安全退出登录。', '退出登录成功')
-  }
-}
+const { loadSession, submitAuth, logout } = usePortalAuthentication({
+  user,
+  authLoading,
+  authBusy,
+  authError,
+  authNotice,
+  authForm,
+  isRegister,
+  navigate,
+  notifySuccess: (message, title) => portalNotify.success(message, title),
+  notifyError: (message, title) => portalNotify.error(message, title),
+})
 function onPopState() {
   const navigationId = ++navigationSequence
   setRouteFromLocation()

@@ -31,7 +31,7 @@ test('protected history navigation checks the session before loading route data'
 
 test('async navigation ignores stale completions after a newer navigation begins', () => {
   const start = appSource.indexOf('async function navigate(target: string)')
-  const end = appSource.indexOf('async function loadSession()', start)
+  const end = appSource.indexOf('const { loadSession, submitAuth, logout }', start)
   assert.ok(start >= 0 && end > start)
   const handler = appSource.slice(start, end)
   assert.match(handler, /const navigationId = \+\+navigationSequence/)

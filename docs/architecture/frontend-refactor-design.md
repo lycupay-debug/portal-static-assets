@@ -32,9 +32,9 @@ Improve frontend module boundaries and make reusable dependencies independently 
 ## Module map and next source boundary
 
 - `frontend/src/main.ts`: imports the ordered CSS entry points, initializes responsive layout, and mounts Vue.
-- `frontend/src/App.vue`: currently owns navigation/session sequencing, page-level state, resource operations, and template rendering; split by one tested responsibility at a time.
+- `frontend/src/App.vue`: owns navigation/session sequencing, page-level state, resource operations, and template rendering; split by one tested responsibility at a time. The first route parsing responsibility is extracted into `navigation/resolvePortalLocation.ts`; session/login/register/logout orchestration is extracted into `composables/usePortalAuthentication.ts`.
 - `frontend/src/composables/load*.ts`: owns lazy data-loading flows and stale-response/error handling for the corresponding view.
-- `frontend/src/composables/use*.ts`: owns focused reusable UI behavior; callers supply state/side-effect boundaries explicitly.
+- `frontend/src/composables/use*.ts`: owns focused reusable UI behavior; callers supply state/side-effect boundaries explicitly. `usePortalAuthentication.ts` owns session request sequencing and login/register/logout state transitions; it does not replace server-side authorization. Regression tests preserve the chosen login/register mode across navigation and ensure failed logout does not display a success notification.
 - `frontend/src/components/*.vue`: view and interaction components; API authorization remains enforced by Go, not by hidden UI controls.
 - `frontend/src/utils/markdown.ts`: sanitizes and renders Markdown; its dependency chunk remains lazy.
 - `frontend/vite.config.ts`: build-time chunking and aliases only; no deployment side effects.
