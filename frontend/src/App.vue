@@ -9,7 +9,7 @@ const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOp
 const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
-import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
+import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
 import { useScrollRestoration } from './composables/useScrollRestoration'
 import { usePublicArticleActions } from './composables/usePublicArticleActions'
@@ -27,7 +27,7 @@ import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
-import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
+import type { Content as APIContent, ContentVersion as APIContentVersion, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 
@@ -292,6 +292,43 @@ function loadTeachingResources(searchTerm = tableQuery.value) {
     portalNotify.error(resourceError.value, '教学资源')
   })
 }
+type ContentManagementActions = ReturnType<typeof import('./composables/useContentManagementActions').useContentManagementActions>
+let contentManagementActionsPromise: Promise<ContentManagementActions> | undefined
+function getContentManagementActions(): Promise<ContentManagementActions> {
+  return contentManagementActionsPromise ??= import('./composables/useContentManagementActions').then(({ useContentManagementActions }) => useContentManagementActions({
+    routeContentId: contentEditorRouteId,
+    contentItems,
+    contentTrashItems,
+    contentBusy,
+    contentError,
+    contentNotice,
+    contentEditorOpen,
+    editingContentId,
+    contentForm,
+    contentVersions,
+    versionsContentId,
+    versionsContentTitle,
+    emptyContentForm,
+    loadContentList,
+    navigate,
+  }))
+}
+function runContentManagementAction<T>(action: (actions: ContentManagementActions) => Promise<T> | T): Promise<T | undefined> {
+  return getContentManagementActions().then(action).catch((error: unknown) => {
+    contentError.value = error instanceof Error ? error.message : '内容操作失败。'
+    contentBusy.value = false
+    return undefined
+  })
+}
+function initializeContentEditorRoute() { return runContentManagementAction(actions => actions.initializeContentEditorRoute()) }
+function openContentVersions(id: string) { return runContentManagementAction(actions => actions.openContentVersions(id)) }
+function restoreContentVersion(version: ContentVersion) { return runContentManagementAction(actions => actions.restoreContentVersion(version)) }
+function restoreDeletedContent(id: string) { return runContentManagementAction(actions => actions.restoreDeletedContent(id)) }
+function permanentlyDeleteContent(id: string) { return runContentManagementAction(actions => actions.permanentlyDeleteContent(id)) }
+function saveContent() { return runContentManagementAction(actions => actions.saveContent()) }
+function changeContentStatus(id: string, action: 'publish' | 'unpublish') { return runContentManagementAction(actions => actions.changeContentStatus(id, action)) }
+function deleteContent(id: string) { return runContentManagementAction(actions => actions.deleteContent(id)) }
+
 function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
 function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceFiles.value = []; resourceBatchMode.value = false; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
 function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceIsPublic.value = item.isPublic === true; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceFiles.value = []; resourceBatchMode.value = false; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
@@ -385,79 +422,6 @@ function handleResourcePaste(event: ClipboardEvent) {
   resourceError.value = errors.length ? `部分文件未添加：${errors.join('；')}` : ''
 }
 
-async function initializeContentEditorRoute() {
-  const id = contentEditorRouteId.value
-  contentError.value = ''
-  contentEditorOpen.value = false
-  if (!id) {
-    editingContentId.value = null
-    contentForm.value = emptyContentForm()
-    return
-  }
-  if (editingContentId.value === id && contentForm.value.title) return
-  contentBusy.value = true
-  try {
-    const result = await apiRequest<{ item?: PortalContent; error?: string }>(`/content/${encodeURIComponent(id)}`, {}, '读取内容详情失败。')
-    if (!result.item) throw new Error(result.error || '读取内容详情失败。')
-    const item = result.item
-    editingContentId.value = item.id
-    contentForm.value = { title: item.title, slug: item.slug, contentType: item.contentType, tags: mergeLegacyTaxonomyIntoTags(item.tags || [], item.parentCategory, item.childCategory), summary: item.summary, body: item.body, visibility: item.visibility }
-  } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '读取内容详情失败。'
-  } finally { contentBusy.value = false }
-}
-async function openContentVersions(id: string) {
-  const item = contentItems.value.find((content) => content.id === id)
-  if (!item) return
-  contentBusy.value = true
-  contentError.value = ''
-  try {
-    const result = await apiRequest<{ items?: ContentVersion[]; error?: string }>(`/content/${encodeURIComponent(id)}/versions`, {}, '读取版本历史失败。')
-    contentVersions.value = result.items || []
-    versionsContentId.value = id
-    versionsContentTitle.value = item.title
-  } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '读取版本历史失败。'
-  } finally { contentBusy.value = false }
-}
-async function restoreContentVersion(version: ContentVersion) {
-  const id = versionsContentId.value
-  if (!id || !window.confirm(`将“${versionsContentTitle.value}”恢复到版本 ${version.versionNumber}？当前内容会自动保存为一个历史版本。`)) return
-  contentBusy.value = true
-  contentError.value = ''
-  try {
-    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}/versions/${encodeURIComponent(version.versionId)}/restore`, { method: 'POST' }, '恢复历史版本失败。')
-    versionsContentId.value = null
-    contentNotice.value = `已恢复到版本 ${version.versionNumber}。恢复前的内容已保存到版本历史。`
-    await loadContentList()
-  } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '恢复历史版本失败。'
-  } finally { contentBusy.value = false }
-}
-async function restoreDeletedContent(id: string) {
-  const item = contentTrashItems.value.find((content) => content.id === id)
-  if (!item || !window.confirm(`将“${item.title}”从回收站恢复？`)) return
-  contentBusy.value = true
-  contentError.value = ''
-  try {
-    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}/restore`, { method: 'POST' }, '恢复内容失败。')
-    contentNotice.value = `“${item.title}”已恢复。`
-    await loadContentList()
-  } catch (error) { contentError.value = error instanceof Error ? error.message : '恢复内容失败。' }
-  finally { contentBusy.value = false }
-}
-async function permanentlyDeleteContent(id: string) {
-  const item = contentTrashItems.value.find((content) => content.id === id)
-  if (!item || !window.confirm(`永久删除“${item.title}”？此操作不可撤销，相关版本历史也会一并删除。`)) return
-  contentBusy.value = true
-  contentError.value = ''
-  try {
-    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}/permanent`, { method: 'DELETE' }, '永久删除失败。')
-    contentNotice.value = `“${item.title}”已永久删除。`
-    await loadContentList()
-  } catch (error) { contentError.value = error instanceof Error ? error.message : '永久删除失败。' }
-  finally { contentBusy.value = false }
-}
 function selectAccountSection(id: string) {
   activeAccountSection.value = id
   activeSidebarButton.value = id
@@ -491,71 +455,6 @@ function cancelContentEditor() {
 function editContent(id: string) {
   window.location.assign('/content-management/' + encodeURIComponent(id))
 }
-async function saveContent() {
-  if (!contentForm.value.title.trim()) { contentError.value = '请填写内容标题。'; return }
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(contentForm.value.slug.trim())) { contentError.value = '请填写有效的 URL 别名，仅允许小写英文字母、数字和连字符。'; return }
-  if (!contentForm.value.body.trim()) { contentError.value = '正文不能为空。'; return }
-  if (!contentForm.value.tags.length) { contentError.value = '请至少选择一个知识广场标签。'; return }
-  contentBusy.value = true
-  contentError.value = ''
-  contentNotice.value = ''
-  try {
-    const editing = editingContentId.value
-    const payload: ContentWrite | ContentPatch = {
-      title: contentForm.value.title.trim(), slug: contentForm.value.slug.trim(), contentType: contentForm.value.contentType,
-      tags: mergeLegacyTaxonomyIntoTags(contentForm.value.tags), parentCategory: null, childCategory: null, summary: contentForm.value.summary, body: contentForm.value.body, visibility: contentForm.value.visibility,
-    }
-    const result = await apiRequest<{ item?: PortalContent; error?: string }>(editing ? `/content/${encodeURIComponent(editing)}` : '/content', {
-      method: editing ? 'PATCH' : 'POST',
-      body: JSON.stringify(payload),
-    }, '保存内容失败。')
-    if (!result.item) throw new Error(result.error || '保存内容失败。')
-    if (!editing) editingContentId.value = result.item.id
-    contentEditorOpen.value = false
-    contentNotice.value = editing ? '内容已保存。' : '草稿已创建。'
-    await navigate('/content-management')
-  } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '保存内容失败。'
-  } finally {
-    contentBusy.value = false
-  }
-}
-async function changeContentStatus(id: string, action: 'publish' | 'unpublish') {
-  contentBusy.value = true
-  contentError.value = ''
-  contentNotice.value = ''
-  try {
-    const result = await apiRequest<{ item?: PortalContent; error?: string }>(`/content/${encodeURIComponent(id)}/${action}`, {
-      method: 'POST',
-    }, '更新内容状态失败。')
-    if (!result.item) throw new Error(result.error || '更新内容状态失败。')
-    contentNotice.value = action === 'publish' ? '内容状态已更新为已发布。' : '内容已下架。'
-    await loadContentList()
-  } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '更新内容状态失败。'
-  } finally {
-    contentBusy.value = false
-  }
-}
-async function deleteContent(id: string) {
-  const item = contentItems.value.find((content) => content.id === id)
-  if (!item || !window.confirm(`确定将“${item.title}”移入删除状态吗？`)) return
-  contentBusy.value = true
-  contentError.value = ''
-  contentNotice.value = ''
-  try {
-    await apiRequest<unknown>(`/content/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    }, '删除内容失败。')
-    contentNotice.value = '内容已移入删除状态。'
-    await loadContentList()
-  } catch (error) {
-    contentError.value = error instanceof Error ? error.message : '删除内容失败。'
-  } finally {
-    contentBusy.value = false
-  }
-}
-
 const filteredSections = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   if (!keyword) return homeSections
