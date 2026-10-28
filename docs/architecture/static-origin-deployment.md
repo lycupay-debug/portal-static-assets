@@ -32,12 +32,22 @@ npm run package:static-origin 生成独立资源包。包只包含：
 
 在正式部署前，需要先核实 Cloudflare DNS、当前源站 IP、TLS 模式、Caddy 配置验证能力与现有站点路由。拟为 assets.lycupaynotion.top 建立独立站点块：
 
-1. 只允许读取 /assets/*、/icons/*，以及经确认需要的静态文件；对 /、/index.html、/api/*、未知路径返回 404，不配置 SPA fallback。
+1. 只允许读取 /assets/*、/icons/*，以及经确认需要的静态文件；对 /、/index.html、/api/*、未知路径返回 404，不配置 SPA fallback，也不启用目录浏览。默认静态文件服务器在无 index.html 时可能展示目录列表，必须显式阻止。
 2. 只读静态目录应与门户生产发布目录分离，例如独立版本目录加只读 current 指针；候选包先解压至新版本目录，校验 manifest 后再切换。
 3. 为跨源 ES modules 返回精确的 Access-Control-Allow-Origin: https://www.lycupaynotion.top 与 Vary: Origin；不启用 credentialed CORS，不设置资源域 Cookie。若实际门户规范域名不同，必须先确认再配置。
 4. 为哈希命名的 /assets/* 设置长缓存与 immutable；未哈希图标使用较短缓存或后续引入内容哈希命名。确认 MIME 类型、压缩和 X-Content-Type-Options: nosniff。
 5. 在切换主站 HTML 引用前，分别测试 JS module CORS、CSS、SVG mask 图标、延迟加载编辑器 chunk、错误状态与浏览器控制台。CORS 不应放宽为任意来源。
 6. 配置变更前备份 Caddyfile 并执行语法/适配校验；只有在用户再次授权后才能应用生产配置或重载服务。
+
+## 生产环境只读盘点（2026-10-28）
+
+- Cloudflare 中 lycupaynotion.top zone 处于 active 状态。
+- 查询 assets.lycupaynotion.top 的 DNS 记录返回 0 条；尚无该子域名记录。
+- www.lycupaynotion.top 当前为代理开启的 A 记录，指向 54.66.101.177。
+- 当前 Caddyfile 仅包含 www.lycupaynotion.top 与 go.lycupaynotion.top 站点块；没有 assets.lycupaynotion.top 站点块。
+- 上述检查仅读取现状；未创建 DNS 记录、未编辑 Caddyfile，也未重载服务。
+
+因此正式部署至少需要新增 Cloudflare DNS 记录和独立 Caddy 站点路由。这两项均属于生产配置变更，必须在另行汇报并取得授权后执行。
 
 ## 当前验证
 
