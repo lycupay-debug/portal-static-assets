@@ -28,3 +28,6 @@ Thumbs.db
 # Python bytecode and cache directories
 __pycache__/
 *.py[cod]
+
+# Generated static-site release packages
+/artifacts/

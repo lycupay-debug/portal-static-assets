@@ -13,7 +13,9 @@
     "api:generate": "openapi-ts -f openapi-ts.config.mjs",
     "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated",
     "api:lint": "redocly lint ../api/openapi.yaml",
-    "check:static-assets": "node ../scripts/check-static-assets-layout.mjs dist"
+    "check:static-assets": "node ../scripts/check-static-assets-layout.mjs dist",
+    "package:static-assets": "node ../scripts/package-static-assets.mjs dist",
+    "test:static-assets": "node ../scripts/test-static-assets-layout.mjs"
   },
   "dependencies": {
     "@tiptap/extension-drag-handle": "^3.32.0",

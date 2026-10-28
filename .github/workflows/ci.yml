@@ -37,9 +37,27 @@ jobs:
         run: |
           npm run type-check
           npm test
+      - name: Static asset checker regression tests
+        working-directory: frontend
+        run: npm run test:static-assets
       - name: Production build and bundle budget
         working-directory: frontend
         run: npm run build
+      - name: Validate emitted static assets
+        working-directory: frontend
+        run: npm run check:static-assets
+      - name: Package static asset release candidate
+        working-directory: frontend
+        run: npm run package:static-assets
+      - name: Upload static asset release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-static-assets-${{ github.sha }}
+          path: |
+            artifacts/*.tar.gz
+            artifacts/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   backend:
     name: Go backend checks

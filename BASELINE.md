@@ -8,3 +8,7 @@
 - New independent working directory: `/opt/portal-static-assets`
 
 The initial tree is based on the selected commit. The original Git history is retained in this clone. Project experiments and commits must remain separate from the production directory `/opt/personal-portal`. Do not deploy or restart production services as part of this project without explicit authorization.
+
+## Release safety
+
+`npm run package:static-assets` creates a local release candidate only. The CI workflow is manual and publishes a workflow artifact, not a live site. A real deployment requires a separately approved destination and URL strategy because current CSS references include root-relative `/icons/...` paths.
