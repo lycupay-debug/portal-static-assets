@@ -533,6 +533,8 @@ type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicD
 let publicDirectoryLoaderPromise: Promise<PublicDirectoryLoader> | undefined
 let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
 let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
+let navigationSequence = 0
+let sessionRequestSequence = 0
 function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
   return publicDirectoryLoaderPromise ??= import('./composables/loadPublicDirectoryData').then(({ createPublicDirectoryLoader }) => createPublicDirectoryLoader({
     publicContents,
@@ -595,6 +597,7 @@ function loadRouteData(): void {
 }
 
 async function navigate(target: string) {
+  const navigationId = ++navigationSequence
   saveScrollPosition()
   closeMenu()
   history.pushState({}, '', target)
@@ -604,6 +607,7 @@ async function navigate(target: string) {
   authNotice.value = ''
   if (isProtectedPage.value) {
     const valid = await loadSession()
+    if (navigationId !== navigationSequence) return
     if (!valid) {
       history.replaceState({}, '', '/login')
       route.value = '/login'
@@ -611,16 +615,25 @@ async function navigate(target: string) {
       return
     }
   }
-  if (route.value === '/content-management') await loadContentList()
-  if (route.value === '/education/teaching-resources') await loadTeachingResources()
+  if (route.value === '/content-management') {
+    await loadContentList()
+    if (navigationId !== navigationSequence) return
+  }
+  if (route.value === '/education/teaching-resources') {
+    await loadTeachingResources()
+    if (navigationId !== navigationSequence) return
+  }
+  if (navigationId !== navigationSequence) return
   loadRouteData()
   if (route.value === '/' && window.location.hash) {
     await nextTick()
+    if (navigationId !== navigationSequence) return
     document.querySelector(window.location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   } else {
     window.scrollTo({ top: 0, behavior: 'auto' })
     if (isAccountPage.value) {
       await nextTick()
+      if (navigationId !== navigationSequence) return
       const content = document.querySelector('.account-content') as HTMLElement | null
       const table = document.querySelector('.virtual-table-scroll') as HTMLElement | null
       if (content) content.scrollTop = 0
@@ -629,15 +642,18 @@ async function navigate(target: string) {
   }
 }
 async function loadSession(): Promise<boolean> {
+  const requestId = ++sessionRequestSequence
   authLoading.value = true
   try {
     const result = await apiRequest<{ user: PortalUser }>('/auth/me')
-    user.value = result.user
+    if (requestId === sessionRequestSequence) user.value = result.user
     return true
   } catch {
-    user.value = null
+    if (requestId === sessionRequestSequence) user.value = null
     return false
-  } finally { authLoading.value = false }
+  } finally {
+    if (requestId === sessionRequestSequence) authLoading.value = false
+  }
 }
 async function submitAuth() {
   authBusy.value = true
@@ -673,33 +689,63 @@ async function logout() {
   }
 }
 function onPopState() {
+  const navigationId = ++navigationSequence
   setRouteFromLocation()
   closeMenu()
   authError.value = ''
-  loadRouteData()
-  if (route.value === '/content-management') void loadContentList()
-  if (route.value === '/education/teaching-resources') void loadTeachingResources()
-  if (isProtectedPage.value) void loadSession().then((valid) => { if (!valid) void navigate('/login') })
-  void restoreScrollPosition()
+  const continueNavigation = async () => {
+    if (isProtectedPage.value) {
+      const valid = await loadSession()
+      if (navigationId !== navigationSequence) return
+      if (!valid) {
+        history.replaceState({}, '', '/login')
+        route.value = '/login'
+        authNotice.value = '请先登录，再进入工作空间。'
+        return
+      }
+    }
+    if (navigationId !== navigationSequence) return
+    if (route.value === '/content-management') void loadContentList()
+    if (route.value === '/education/teaching-resources') void loadTeachingResources()
+    loadRouteData()
+    void restoreScrollPosition()
+  }
+  void continueNavigation()
 }
 onMounted(() => {
+  const navigationId = ++navigationSequence
   setRouteFromLocation()
   void nextTick().then(observeVirtualTableWidth)
   window.addEventListener('popstate', onPopState)
   document.addEventListener('scroll', onScrollCapture, true)
   window.addEventListener('beforeunload', saveScrollPosition)
-  loadRouteData()
   void loadPublishedLegalDocuments()
-  void loadSession().then((valid) => {
-    if (isProtectedPage.value && !valid) {
-      history.replaceState({}, '', '/login')
-      route.value = '/login'
-      authNotice.value = '请先登录，再进入工作空间。'
-    }
-  })
-  if (isAccountPage.value && activeAccountSection.value === 'content-management') void loadContentList()
-  if (isAccountPage.value && activeAccountSection.value === 'teaching-resources') void loadTeachingResources()
-  void restoreScrollPosition()
+  if (isProtectedPage.value) {
+    void loadSession().then((valid) => {
+      if (navigationId !== navigationSequence) return
+      if (!valid) {
+        history.replaceState({}, '', '/login')
+        route.value = '/login'
+        authNotice.value = '请先登录，再进入工作空间。'
+        return
+      }
+      if (route.value === '/content-management') void loadContentList()
+      if (route.value === '/education/teaching-resources') void loadTeachingResources()
+      loadRouteData()
+      void restoreScrollPosition()
+    })
+  } else {
+    loadRouteData()
+    void loadSession().then((valid) => {
+      if (navigationId !== navigationSequence) return
+      if (isProtectedPage.value && !valid) {
+        history.replaceState({}, '', '/login')
+        route.value = '/login'
+        authNotice.value = '请先登录，再进入工作空间。'
+      }
+    })
+    void restoreScrollPosition()
+  }
 })
 onBeforeUnmount(() => {
   if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
