@@ -13,6 +13,7 @@ import { knowledgeTagOptions, mergeLegacyTaxonomyIntoTags, taxonomyParentNames a
 import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
 import { useScrollRestoration } from './composables/useScrollRestoration'
 import { usePublicArticleActions } from './composables/usePublicArticleActions'
+import { useLegalDocuments } from './composables/useLegalDocuments'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
@@ -567,14 +568,16 @@ const filteredSections = computed(() => {
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
-const isLegalPage = computed(() => /^\/legal\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
-const legalSlug = computed(() => isLegalPage.value ? route.value.slice('/legal/'.length) : '')
-const publishedLegalDocuments = ref<Array<{ slug: string; title: string; documentType: string }>>([])
-const legalDocument = ref<{ slug: string; title: string; bodyMarkdown: string; effectiveAt?: string | null } | null>(null)
-const legalDocumentHtml = ref('')
-const legalDocumentLoading = ref(false)
-const legalDocumentError = ref('')
-let legalDocumentRequestSequence = 0
+const {
+  legalSlug,
+  publishedLegalDocuments,
+  legalDocument,
+  legalDocumentHtml,
+  legalDocumentLoading,
+  legalDocumentError,
+  loadPublishedLegalDocuments,
+  loadLegalDocument,
+} = useLegalDocuments(route)
 const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
 const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
 const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
@@ -678,13 +681,12 @@ watch(educationResourceSearch, (query) => {
 async function loadPublicArticle(slug: string) {
   const requestId = ++publicArticleRequestSequence
   const requestedRoute = route.value
-  const apiPath = `/api/public/content/${encodeURIComponent(slug)}`
   publicContentLoading.value = true
   publicContentError.value = ''
   publicArticle.value = null
   publicArticleHtml.value = ''
   try {
-    const result = await apiRequest<{ item?: PublicContent; error?: string }>(apiPath.slice('/api'.length), {}, '内容不存在或尚未公开。')
+    const result = await apiRequest<{ item?: PublicContent; error?: string }>(`/public/content/${slug}`, {}, '内容不存在或尚未公开。')
     if (!result.item) throw new Error(result.error || '内容不存在或尚未公开。')
     if (requestId !== publicArticleRequestSequence || route.value !== requestedRoute) return
     const { renderMarkdown } = await import('./utils/markdown')
@@ -697,32 +699,6 @@ async function loadPublicArticle(slug: string) {
     if (requestId === publicArticleRequestSequence) publicContentLoading.value = false
   }
 }
-async function loadPublishedLegalDocuments() {
-  try {
-    const result = await apiRequest<{ items?: Array<{ slug: string; title: string; documentType: string }> }>('/public/legal')
-    publishedLegalDocuments.value = result.items || []
-  } catch { /* Footer policy links stay hidden until published documents are available. */ }
-}
-async function loadLegalDocument(slug: string) {
-  const requestId = ++legalDocumentRequestSequence
-  legalDocumentLoading.value = true
-  legalDocumentError.value = ''
-  legalDocument.value = null
-  legalDocumentHtml.value = ''
-  try {
-    const result = await apiRequest<{ item?: { slug: string; title: string; bodyMarkdown: string; effectiveAt?: string | null }; error?: string }>(`/public/legal/${encodeURIComponent(slug)}`, {}, '政策文件不存在或尚未发布。')
-    if (!result.item) throw new Error(result.error || '政策文件不存在或尚未发布。')
-    if (requestId !== legalDocumentRequestSequence || route.value !== `/legal/${slug}`) return
-    const { renderMarkdown } = await import('./utils/markdown')
-    legalDocumentHtml.value = renderMarkdown(result.item.bodyMarkdown)
-    legalDocument.value = result.item
-  } catch (e) {
-    if (requestId === legalDocumentRequestSequence) legalDocumentError.value = e instanceof Error ? e.message : '读取政策文件失败。'
-  } finally {
-    if (requestId === legalDocumentRequestSequence) legalDocumentLoading.value = false
-  }
-}
-
 const { toggleInteraction: togglePublicInteraction, shareArticle: sharePublicArticle, copyShareUrl } = usePublicArticleActions({
   article: publicArticle,
   busy: publicInteractionBusy,
@@ -736,7 +712,7 @@ function loadRouteData(): void {
   if (route.value === '/education-resources') void loadPublicTeachingResources()
   if (isContentEditorPage.value) void initializeContentEditorRoute()
   if (isPublicContentPage.value) void loadPublicArticle(route.value.slice('/content/'.length))
-  if (isLegalPage.value) void loadLegalDocument(legalSlug.value)
+  if (legalSlug.value) void loadLegalDocument(legalSlug.value)
 }
 
 async function navigate(target: string) {
@@ -1147,7 +1123,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <main v-else-if="isLegalPage" class="legal-document-page">
+    <main v-else-if="legalSlug" class="legal-document-page">
       <section class="legal-document-shell">
         <a class="legal-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
         <div v-if="legalDocumentLoading" class="legal-document-state">正在读取政策文件…</div>
