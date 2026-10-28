@@ -104,7 +104,6 @@ function toggleAccountGroup(groupId: string) {
 const tableQuery = ref('')
 const debouncedTableQuery = ref('')
 let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
-let teachingResourceListRequestSequence = 0
 watch(tableQuery, (query) => {
   tableSearchDebounceTimer = setTimeout(() => { debouncedTableQuery.value = query }, 150)
 })
@@ -274,19 +273,24 @@ function switchContentView(mode: 'active' | 'trash') {
   tableQuery.value = ''
   void loadContentList()
 }
-async function loadTeachingResources(searchTerm = tableQuery.value) {
-  const requestId = ++teachingResourceListRequestSequence
-  resourceBusy.value = true; resourceError.value = ''
-  try {
-    const trash = resourceViewMode.value === 'trash'
-    const params = new URLSearchParams()
-    if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const endpoint = trash ? '/resources/trash' : '/resources'
-    const result = await apiRequest<{ items?: TeachingResource[]; error?: string }>(`${endpoint}${params.size ? `?${params}` : ''}`, {}, '读取教学资源失败。')
-    if (requestId !== teachingResourceListRequestSequence) return
-    if (trash) teachingResourceTrash.value = result.items || []; else teachingResources.value = result.items || []
-  } catch (error) { if (requestId === teachingResourceListRequestSequence) { resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'; portalNotify.error(resourceError.value, '教学资源') } }
-  finally { if (requestId === teachingResourceListRequestSequence) resourceBusy.value = false }
+type TeachingResourceListLoader = ReturnType<typeof import('./composables/loadTeachingResourceList').createTeachingResourceListLoader>
+let teachingResourceListLoaderPromise: Promise<TeachingResourceListLoader> | undefined
+function getTeachingResourceListLoader(): Promise<TeachingResourceListLoader> {
+  return teachingResourceListLoaderPromise ??= import('./composables/loadTeachingResourceList').then(({ createTeachingResourceListLoader }) => createTeachingResourceListLoader({
+    viewMode: resourceViewMode,
+    activeItems: teachingResources,
+    trashItems: teachingResourceTrash,
+    loading: resourceBusy,
+    error: resourceError,
+    onError: message => portalNotify.error(message, '教学资源'),
+  }))
+}
+function loadTeachingResources(searchTerm = tableQuery.value) {
+  return getTeachingResourceListLoader().then(loader => loader.loadTeachingResources(searchTerm)).catch((error: unknown) => {
+    resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'
+    resourceBusy.value = false
+    portalNotify.error(resourceError.value, '教学资源')
+  })
 }
 function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
 function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceFiles.value = []; resourceBatchMode.value = false; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
