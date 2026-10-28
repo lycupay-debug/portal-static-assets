@@ -86,3 +86,19 @@ npm run package:static-origin 生成独立资源包。包只包含：
 - 发布后逐一请求 manifest 的 50 个文件，HTTP 状态、文件大小和 SHA-256 均验证通过（50/50）。JS/CSS/SVG MIME 类型、精确 CORS 来源、缓存和 `nosniff` 头符合预期；根路径、`/index.html`、`/api/health`、未知路径、`/icons/`、`/favicon.ico` 和 `/THIRD_PARTY_NOTICES.txt` 均返回 404。
 - Caddy 仍为 PID `1461`，没有重启或再次 reload；门户主站仍返回 HTTP 200。
 - **主站尚未切换资源引用。** 当前线上 HTML 仍引用 `/assets/index-DdtKUDk7.js` 与 `/assets/index-CdQZ0zW5.css`。本次发布的 `index-2P2-nxX6.js` 与 `index-C4UzUbqA.css` 来自同一生产源码提交的显式静态域名构建；只有在下一阶段批准切换 HTML 引用并完成浏览器端到端回归后，才会由门户真正使用。
+
+## 生产入口切换记录（2026-10-28 08:55 UTC）
+
+用户明确批准将生产 HTML 的 JS/CSS 入口切换至独立资源域名。执行前完成回退核验并保存原始入口文件；随后仅对当前生产 release 的 `index.html` 做原子替换，没有改动 API 路径、业务代码、数据库或 Caddy 配置，也未重启服务。
+
+- 当前生产入口：`/usr/local/www/personal-portal/current/index.html`（当前 release 仍为 `releases/20261027T210753Z-go-backend`）。
+- 回退备份：`/usr/local/www/personal-portal/backups/index.html.pre-static-origin-20261028T165500Z`。
+- 原始入口 SHA-256：`977dc5bb8b950d0530ae236e2be1278de882ed5544fcc138a13b425f354c6283`。
+- 切换后入口 SHA-256：`63592f1bcbadd830ffaf21d628e0c4d7198c7bf47c687c73ebb481e2119bfe10`。
+- 当前入口引用 `https://assets.lycupaynotion.top/assets/index-2P2-nxX6.js` 和 `https://assets.lycupaynotion.top/assets/index-C4UzUbqA.css`。
+- 切换后通过外部 HTTPS 请求验证主站入口、登录页、知识页、教育资源页、系统运维页和 `/api/layout-policy` 均响应正常；主站 HTML 已返回新入口。
+- 静态资源 manifest 50/50 文件逐一验证 HTTP、大小和 SHA-256；8 个 JavaScript bundle 均通过 `node --check`；模块依赖路径检查 6 项、CSS 中 74 个 SVG 引用检查均通过。CSS 图标 URL 均指向静态资源域名，JS/API 调用仍使用同源 `/api/...` 路径。
+- JS/CSS/动态 chunk/SVG 的 HTTP 状态、MIME、CORS、缓存与 `nosniff` 响应头符合预期。静态域名根路径、API 路径和未知路径仍返回 404。
+- Caddy PID 保持 `1461`，未重启；未 reload Caddy；主站与静态资源 `current` symlink 均未更换。
+- **浏览器自动化限制：**本次 ChatGPT Browser 连接器返回“Browser access requires the originating browser context”，服务器也未安装可用的 Chromium/Firefox/Playwright。故本次完成的是线上 HTTP、资源完整性、JS 语法和静态依赖图验证，尚不能声称已完成真实浏览器中的交互式端到端测试。后续应在已连接的浏览器上下文可用时检查控制台、登录、页面导航、图标及编辑器懒加载。
+- **后续部署注意：**本次是对当前 release HTML 的原子热修复；尚未将生产部署流水线改为自动生成并发布静态域名入口。下一次完整前端部署前必须同步构建/发布流程，否则新 release 可能重新生成同源 `/assets/...` 引用。
