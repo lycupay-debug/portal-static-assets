@@ -48,7 +48,7 @@ const markdown = sizes(markdownPath)
 assertBudget('Lazy Markdown renderer (gzip)', markdown.gzip, 30 * 1024, 'gzip bytes')
 
 const initialMarkup = html.match(/<link[^>]+rel="modulepreload"[^>]+href="([^"]+)"/g) || []
-if (initialMarkup.some((tag) => /ContentDocumentEditor|markdown-|tiptap-|prosemirror-/i.test(tag))) {
+if (initialMarkup.some((tag) => /ContentDocumentEditor|markdown-|tiptap-|prosemirror-|editor-engine-/i.test(tag))) {
   throw new Error('Initial HTML preloads editor or article-rendering dependencies; keep these route-lazy')
 }
 console.log('✓ Editor and Markdown renderer remain outside the initial HTML preload list')

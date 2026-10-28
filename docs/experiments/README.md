@@ -22,3 +22,12 @@ For each experiment, record: baseline commit, hypothesis, files changed, exact c
 - Added a release packager that creates a commit-named tarball containing `site/` plus a per-file SHA-256 manifest, and emits an archive SHA-256 sidecar. It refuses overwrite and performs no upload.
 - Added manual CI steps to test the checker, validate build output, package the release candidate, and upload the package as a short-lived workflow artifact. Automatic CI remains disabled as in the selected source baseline.
 - The current deployment destination and URL/base-path strategy remain undecided; no production deployment was attempted.
+
+## 2026-10-28 — Rolldown editor-vendor chunking experiment (rejected)
+
+- Isolated worktree: `experiment/rolldown-editor-vendor`; no change was made to the project `main` Vite configuration.
+- Candidate grouped `@tiptap` and `prosemirror` modules into `editor-engine` through Vite 8 / Rolldown `build.rolldownOptions.output.codeSplitting.groups`.
+- The candidate build completed and the local HTML/CSS reference check passed. Its apparent initial entry size fell from 64.51 KiB gzip (baseline budget accounting) to 40.85 KiB gzip.
+- **Rejected:** Vite/Rolldown inserted `/assets/editor-engine-*.js` into `index.html` as a `modulepreload`. That eagerly fetches the 230.46 KiB gzip editor-engine chunk, defeating the current requirement that editor code remain route-lazy. The existing budget checker did not recognize this new chunk name, so it produced a false pass for this regression.
+- Corrective action on `main`: extend the preload guard to reject `editor-engine-*` in the initial HTML. A future chunking experiment must pass this guard and verify the actual HTML preload graph, not only the named editor chunk size.
+- Conclusion: keep the baseline automatic splitting strategy for now; do not promote this candidate.
