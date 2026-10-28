@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const dist = fileURLToPath(new URL('../dist/', import.meta.url))
+const dist = resolve(process.argv[2] ?? fileURLToPath(new URL('../dist/', import.meta.url)))
 const assetsDir = join(dist, 'assets')
 const html = readFileSync(join(dist, 'index.html'), 'utf8')
 const assets = readdirSync(assetsDir)
@@ -26,9 +26,10 @@ function assertBudget(label, actual, limit, unit) {
 
 const entryMatch = html.match(/<script[^>]+src="([^"]+\.js)"/)
 if (!entryMatch) throw new Error('Could not find the initial JavaScript entry in dist/index.html')
-const entryPath = join(dist, entryMatch[1].replace(/^\//, ''))
+const localBuildPath = (url) => join(dist, decodeURIComponent(new URL(url, 'http://local.invalid').pathname.replace(/^\//, '')))
+const entryPath = localBuildPath(entryMatch[1])
 const cssPaths = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css)"/g)]
-  .map((match) => join(dist, match[1].replace(/^\//, '')))
+  .map((match) => localBuildPath(match[1]))
 if (!cssPaths.length) throw new Error('Could not find initial CSS assets in dist/index.html')
 
 const entry = sizes(entryPath)

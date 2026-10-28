@@ -26,6 +26,8 @@ The package script writes an archive under `artifacts/` named for the current Gi
 - Does not perform network uploads or production changes.
 - The manual GitHub Actions workflow uploads the archive as a CI artifact for 14 days; it does not deploy it.
 
-## Deployment decision still required
+## Independent static origin
 
-The target host/path and asset URL strategy must be chosen before actual publication. The current frontend uses root-relative paths such as `/icons/bootstrap-icons/*.svg`; a separate origin or path prefix needs an explicit compatibility strategy. Until the target is decided and validated, do not switch the production portal to the new assets.
+The selected target is `https://assets.lycupaynotion.top/`. For this mode, use `npm run build:static-origin` followed by `npm run package:static-origin`. The build uses an absolute Vite base and writes to `dist-static-origin/`, leaving the normal build output alone. The dedicated package contains static assets and icons but intentionally excludes `index.html`; the portal HTML and API remain on the main site.
+
+See `static-origin-deployment.md` for the proposed routing/CORS/cache rules and the required approval boundary. DNS, Cloudflare, Caddy, production directories and live portal URLs have not been changed.
