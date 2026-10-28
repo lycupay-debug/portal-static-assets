@@ -104,10 +104,6 @@ function toggleAccountGroup(groupId: string) {
 const tableQuery = ref('')
 const debouncedTableQuery = ref('')
 let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
-let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
-let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
-let publicContentListSequence = 0
-let publicResourceListSequence = 0
 let contentListRequestSequence = 0
 let teachingResourceListRequestSequence = 0
 watch(tableQuery, (query) => {
@@ -634,39 +630,27 @@ function setRouteFromLocation() {
 }
 const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route)
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
-async function loadPublicContents(searchTerm = '') {
-  const requestId = ++publicContentListSequence
-  publicContentLoading.value = true
-  publicContentError.value = ''
-  try {
-    const params = new URLSearchParams()
-    if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const result = await apiRequest<{ items?: PublicContentCard[]; error?: string }>(`/public/content${params.size ? `?${params}` : ''}`, {}, '读取公开内容失败。')
-    if (requestId !== publicContentListSequence) return
-    publicContents.value = result.items || []
-    knowledgeVisibleCount.value = knowledgePageSize
-  } catch (error) {
-    if (requestId === publicContentListSequence) publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
-  } finally {
-    if (requestId === publicContentListSequence) publicContentLoading.value = false
-  }
+type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicDirectoryData').createPublicDirectoryLoader>
+let publicDirectoryLoaderPromise: Promise<PublicDirectoryLoader> | undefined
+let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
+let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
+function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
+  return publicDirectoryLoaderPromise ??= import('./composables/loadPublicDirectoryData').then(({ createPublicDirectoryLoader }) => createPublicDirectoryLoader({
+    publicContents,
+    publicTeachingResources,
+    publicContentLoading,
+    publicContentError,
+    educationResourceLoading,
+    educationResourceError,
+    knowledgeVisibleCount,
+    knowledgePageSize,
+  }))
 }
-async function loadPublicTeachingResources(searchTerm = '') {
-  const requestId = ++publicResourceListSequence
-  educationResourceLoading.value = true
-  educationResourceError.value = ''
-  try {
-    const params = new URLSearchParams()
-    if (searchTerm.trim()) params.set('q', searchTerm.trim())
-    const result = await apiRequest<{ items?: PublicTeachingResource[]; error?: string }>(`/public/resources${params.size ? `?${params}` : ''}`, {}, '读取公开教育资源失败。')
-    if (requestId !== publicResourceListSequence) return
-    publicTeachingResources.value = result.items || []
-    knowledgeVisibleCount.value = knowledgePageSize
-  } catch (error) {
-    if (requestId === publicResourceListSequence) educationResourceError.value = error instanceof Error ? error.message : '读取公开教育资源失败。'
-  } finally {
-    if (requestId === publicResourceListSequence) educationResourceLoading.value = false
-  }
+function loadPublicContents(searchTerm = '') {
+  return getPublicDirectoryLoader().then(loader => loader.loadPublicContents(searchTerm))
+}
+function loadPublicTeachingResources(searchTerm = '') {
+  return getPublicDirectoryLoader().then(loader => loader.loadPublicTeachingResources(searchTerm))
 }
 watch(knowledgeSearchQuery, (query) => {
   if (route.value !== '/knowledge') return
