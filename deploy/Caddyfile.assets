@@ -1,0 +1,32 @@
+# Caddy site fragment for the dedicated static-resource origin.
+# Include in /usr/local/etc/caddy/Caddyfile only after reviewing the deployment plan.
+# The root points to the atomically selected release directory; no SPA fallback or browsing.
+assets.lycupaynotion.top {
+	@staticAssets path /assets/*
+	handle @staticAssets {
+		root * /usr/local/www/portal-static-assets/current/site
+		header {
+			Access-Control-Allow-Origin "https://www.lycupaynotion.top"
+			Vary "Origin"
+			Cache-Control "public, max-age=31536000, immutable"
+			X-Content-Type-Options "nosniff"
+		}
+		file_server
+	}
+
+	@staticIcons path /icons/*
+	handle @staticIcons {
+		root * /usr/local/www/portal-static-assets/current/site
+		header {
+			Access-Control-Allow-Origin "https://www.lycupaynotion.top"
+			Vary "Origin"
+			Cache-Control "public, max-age=86400"
+			X-Content-Type-Options "nosniff"
+		}
+		file_server
+	}
+
+	handle {
+		respond 404
+	}
+}

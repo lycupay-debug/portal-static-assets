@@ -62,12 +62,13 @@ npm run package:static-origin 生成独立资源包。包只包含：
 - 新增记录：`A assets.lycupaynotion.top -> 54.66.101.177`，Cloudflare proxy enabled，TTL automatic。
 - Cloudflare zone SSL mode 为 `strict`，Always Use HTTPS 为 `on`；公共 DNS 已解析至 Cloudflare 代理地址。
 - 发布目录：`/usr/local/www/portal-static-assets/releases/75da6fdd80d1`；`current` 指向该版本目录。所有文件在发布前通过 manifest SHA-256/大小校验，目录/文件权限分别为 0755/0644。
-- Caddy 配置备份：`/usr/local/etc/caddy/Caddyfile.pre-assets-20261028`。当前 Caddyfile 增加独立 `assets.lycupaynotion.top` 站点块；使用 `service caddy reload` 平滑加载，没有重启进程，Caddy PID 仍为 1461。
+- Caddy 配置备份：`/usr/local/etc/caddy/Caddyfile.pre-assets-20261028`。当前 Caddyfile 增加独立 `assets.lycupaynotion.top` 站点块；对应可复用片段已保存为 `deploy/Caddyfile.assets`。使用 `service caddy reload` 平滑加载，没有重启进程，Caddy PID 仍为 1461。
 - Caddy 站点只处理 `/assets/*` 和 `/icons/*`，其余路径显式 404。跨源响应只允许 `https://www.lycupaynotion.top`；哈希资源使用一年 immutable 缓存，SVG 图标缓存 1 天。
 - 线上验证：56 个实际公开的 assets/icons 文件均返回 HTTP 200，大小和 SHA-256 与 manifest 完全一致，CORS 响应头匹配；JS/CSS/SVG MIME 类型正确。
 - 根路径、`/index.html`、`/api/health`、未知路径、`/favicon.ico`、`/THIRD_PARTY_NOTICES.txt` 和 `/icons/` 均返回 404；目录浏览未暴露。
 - `https://www.lycupaynotion.top/` 仍返回原主站 HTML，资源地址仍为同源 `/assets/...`；尚未切换门户资源引用。
-- 生产门户 Git 工作区未修改。主站 HTML 资源切换与浏览器端实际页面回归测试仍是单独阶段。
+- 版本兼容性检查发现，当前生产 HTML 引用 `/assets/index-DdtKUDk7.js` 与 `/assets/index-CdQZ0zW5.css`，本次已部署资源版本的入口是 `/assets/index-BXFNIUFF.js` 与 `/assets/index-Bmtvc4Pb.css`。两者哈希不同，证明不能直接切换当前生产 HTML 指向这个候选版本，否则会产生资源 404 或版本不匹配风险。
+- 生产门户 Git 工作区未修改。切换前必须基于确定的目标门户提交构建与发布匹配版本，并做完整浏览器回归测试；这属于单独阶段。
 
 ## 回滚原则
 
