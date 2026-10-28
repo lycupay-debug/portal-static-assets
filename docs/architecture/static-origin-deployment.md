@@ -73,3 +73,16 @@ npm run package:static-origin 生成独立资源包。包只包含：
 ## 回滚原则
 
 资源域名出现问题时，先恢复 `/usr/local/etc/caddy/Caddyfile.pre-assets-20261028` 并执行 Caddy 配置校验，再经授权平滑 reload；如需撤销 DNS，删除对应 DNS record ID `6bc94cb854f059b8aedb2b727f8e2a67`。当前主站 HTML 未引用资源子域名，因此移除静态站点不会要求门户回滚。不要自动重启服务。
+## 生产源码精确匹配发布（2026-10-28，尚未切换主站引用）
+
+为解决上节记录的入口哈希不匹配问题，本次在独立 Git worktree `/opt/portal-static-origin-build` 中，以生产门户仓库 `lycupay-debug/personal-portal` 的提交 `48d394a9c98c57c18c945bf3fa0df36f94a1c5c8` 重新构建，未修改 `/opt/personal-portal` 的生产工作区。构建使用显式 base `https://assets.lycupaynotion.top/`，并通过静态域名 URL/API 根路径检查与 bundle budget 检查。
+
+- 生产源码提交：`48d394a9c98c57c18c945bf3fa0df36f94a1c5c8`。
+- 新发布包：`artifacts/static-origin-48d394a9c98c-p2.tar.gz`。
+- SHA-256：`4c042703a6adacfea81a74f6c886825e0503b3fb7a25ad40a02015aa33d528c9`。
+- 入口资源：`/assets/index-2P2-nxX6.js` 与 `/assets/index-C4UzUbqA.css`。
+- 发布目录：`/usr/local/www/portal-static-assets/releases/48d394a9c98c-p2`；`current` 原子切换到 `releases/48d394a9c98c-p2`。上一精确源码发布保留在 `releases/48d394a9c98c`，旧候选版本 `releases/75da6fdd80d1` 也仍保留。
+- 包内 manifest 只记录 `/assets/*` 与 `/icons/*` 实际对外开放的 50 个文件；不纳入 `favicon.ico` 和 `THIRD_PARTY_NOTICES.txt`，因为当前 Caddy 路由明确对这两个路径返回 404。
+- 发布后逐一请求 manifest 的 50 个文件，HTTP 状态、文件大小和 SHA-256 均验证通过（50/50）。JS/CSS/SVG MIME 类型、精确 CORS 来源、缓存和 `nosniff` 头符合预期；根路径、`/index.html`、`/api/health`、未知路径、`/icons/`、`/favicon.ico` 和 `/THIRD_PARTY_NOTICES.txt` 均返回 404。
+- Caddy 仍为 PID `1461`，没有重启或再次 reload；门户主站仍返回 HTTP 200。
+- **主站尚未切换资源引用。** 当前线上 HTML 仍引用 `/assets/index-DdtKUDk7.js` 与 `/assets/index-CdQZ0zW5.css`。本次发布的 `index-2P2-nxX6.js` 与 `index-C4UzUbqA.css` 来自同一生产源码提交的显式静态域名构建；只有在下一阶段批准切换 HTML 引用并完成浏览器端到端回归后，才会由门户真正使用。
