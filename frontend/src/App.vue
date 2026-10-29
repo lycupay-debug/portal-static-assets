@@ -19,6 +19,7 @@ import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { useAccountTable } from './composables/useAccountTable'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
+import { validateResourceUpload } from './utils/resourceUploadValidation'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
@@ -347,17 +348,16 @@ function requestWithUploadProgress(url: string, method: string, body: ResourceWr
   })
 }
 async function createTeachingResource() {
-  if (!resourceTitle.value.trim()) { resourceError.value = '请填写资源名称。'; return }
   const batch = resourceBatchMode.value && !editingResourceId.value
   const files = batch ? resourceFiles.value : (resourceFile.value ? [resourceFile.value] : [])
-  if (batch && !files.length) { resourceError.value = '批量上传至少选择一个文件。'; return }
-  if (!files.length && !resourceUrl.value.trim() && !editingResourceId.value) { resourceError.value = '请上传文件或粘贴资源 URL 链接。'; return }
-  if (resourceUrl.value.trim() && !/^https?:\/\//i.test(resourceUrl.value.trim())) { resourceError.value = '资源 URL 必须以 http:// 或 https:// 开头。'; return }
-  for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) { resourceError.value = `文件“${file.name}”格式不受支持。请使用 PPT、PPTX、MP3、PDF、DOC、DOCX 或 TXT。`; return }
-    if (file.size > 25 * 1024 * 1024) { resourceError.value = `文件“${file.name}”超过 25 MB。`; return }
-  }
+  const validationError = validateResourceUpload({
+    title: resourceTitle.value,
+    isBatch: batch,
+    isEditing: Boolean(editingResourceId.value),
+    files,
+    url: resourceUrl.value,
+  })
+  if (validationError) { resourceError.value = validationError; return }
   resourceBusy.value = true; resourceError.value = ''; resetResourceUpload()
   try {
     const common = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, grade: (resourceGrade.value || null) as ResourceWrite['grade'], isPublic: resourceIsPublic.value, url: resourceUrl.value.trim() || null }
