@@ -20,6 +20,7 @@ import { tableCellPreview, tableCellValue } from './utils/accountTablePresentati
 import { useAccountTable } from './composables/useAccountTable'
 import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
 import { validateResourceUpload } from './utils/resourceUploadValidation'
+import { requestWithUploadProgress } from './utils/resourceUploadRequest'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
@@ -338,15 +339,6 @@ function openResourceDetails(id: string) { selectedResourceDetail.value = [...te
 function closeResourceDetails() { selectedResourceDetail.value = null }
 function handleResourceFileChange(event: Event) { const input = event.target as HTMLInputElement; const files = Array.from(input.files || []); if (resourceBatchMode.value && !editingResourceId.value) { resourceFiles.value = files; resourceFile.value = files[0] || null } else { resourceFile.value = files[0] || null; resourceFiles.value = [] }; resourceError.value = '' }
 function clearResourceSelectionForMode() { resourceFile.value = null; resourceFiles.value = []; resourceError.value = '' }
-function requestWithUploadProgress(url: string, method: string, body: ResourceWrite): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest(); xhr.open(method, url); xhr.withCredentials = true; xhr.setRequestHeader('Content-Type', 'application/json'); xhr.setRequestHeader('Accept', 'application/json')
-    xhr.upload.onprogress = (event) => { if (event.lengthComputable) resourceUploadProgress.value = Math.min(99, Math.round(event.loaded / event.total * 100)) }
-    xhr.onerror = () => reject(new Error('网络连接失败，资源未能保存。'))
-    xhr.onload = () => { let result: { item?: TeachingResource; error?: string } = {}; try { result = JSON.parse(xhr.responseText) } catch {} if (xhr.status < 200 || xhr.status >= 300) { reject(new Error(result.error || '保存资源失败。')); return } resourceUploadProgress.value = 100; resolve({ response: xhr.status, result }) }
-    xhr.send(JSON.stringify(body))
-  })
-}
 async function createTeachingResource() {
   const batch = resourceBatchMode.value && !editingResourceId.value
   const files = batch ? resourceFiles.value : (resourceFile.value ? [resourceFile.value] : [])
@@ -369,7 +361,12 @@ async function createTeachingResource() {
         if (file) data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
         const payload: ResourceWrite = { ...common, ...(file ? { filename: file.name, data } : {}) }
         const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
-        const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
+        const result = await requestWithUploadProgress(
+          endpoint,
+          editingResourceId.value ? 'PATCH' : 'POST',
+          payload,
+          percentage => { resourceUploadProgress.value = percentage },
+        )
         if (!result.item) throw new Error('服务器未返回已保存的资源。')
         created.push(result.item)
         if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
