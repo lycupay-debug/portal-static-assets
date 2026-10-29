@@ -176,7 +176,7 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 - `npm run build`: passed; initial JS (including modulepreloads) 61.83 KiB gzip / 65 KiB; initial CSS 82.32 KiB / 85 KiB; lazy editor 206.80 KiB / 230 KiB; lazy Markdown 24.67 KiB / 30 KiB.
 - `npm run build:static-origin`: passed; initial JS 61.85 KiB gzip / 65 KiB; initial CSS 82.39 KiB / 85 KiB; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
 - `npm run check:static-assets`: passed (61 files, 1 HTML); `npm run test:static-assets`: passed.
-- Frontend source/HTML public-CDN check and `git diff --check`: pending final pre-commit verification.
+- Frontend source/HTML public-CDN check: passed with no public CDN references; `git diff --check`: passed before commit.
 
 ### Limits and rollback
 
