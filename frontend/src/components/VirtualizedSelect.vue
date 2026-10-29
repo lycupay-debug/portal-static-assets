@@ -24,7 +24,14 @@ const visibleOptions = computed(() => filtered.value.slice(startIndex.value, end
 function choose(value: string) { emit('update:modelValue', value); open.value = false; query.value = ''; scrollTop.value = 0 }
 function onOutside(event: MouseEvent) { if (root.value && !root.value.contains(event.target as Node)) open.value = false }
 function onKeys(event: KeyboardEvent) { if (event.key === 'Escape') open.value = false }
+function onSearchKeys(event: KeyboardEvent) { if (event.key === 'Escape') open.value = false }
 watch(open, value => { if (value) { query.value = ''; scrollTop.value = 0 } })
+watch(filtered, () => {
+  // A narrowed result set must not keep a scroll offset from the previous, larger list.
+  scrollTop.value = 0
+  const viewport = root.value?.querySelector<HTMLElement>('.virtualized-select-viewport')
+  if (viewport) viewport.scrollTop = 0
+})
 onMounted(() => { document.addEventListener('mousedown', onOutside); document.addEventListener('keydown', onKeys) })
 onBeforeUnmount(() => { document.removeEventListener('mousedown', onOutside); document.removeEventListener('keydown', onKeys) })
 </script>
@@ -35,7 +42,7 @@ onBeforeUnmount(() => { document.removeEventListener('mousedown', onOutside); do
       <span>{{ selected?.label ?? placeholder }}</span><i class="virtualized-select-chevron bi bi-chevron-down" aria-hidden="true"></i>
     </button>
     <div v-if="open" class="virtualized-select-popover" role="listbox" :aria-label="label">
-      <input v-model="query" name="optionSearch" class="form-control virtualized-select-search" type="search" placeholder="搜索选项…" :aria-label="'搜索' + label" @keydown.stop />
+      <input v-model="query" name="optionSearch" class="form-control virtualized-select-search" type="search" placeholder="搜索选项…" :aria-label="'搜索' + label" @keydown.stop="onSearchKeys" />
       <div class="virtualized-select-viewport" :style="{ height: viewportHeight + 'px' }" @scroll="scrollTop = ($event.target as HTMLElement).scrollTop">
         <div :style="{ height: startIndex * rowHeight + 'px' }"></div>
         <button v-for="option in visibleOptions" :key="option.value" type="button" role="option" :aria-selected="option.value === modelValue" :class="{ selected: option.value === modelValue }" :style="{ height: rowHeight + 'px' }" @click="choose(option.value)"><span>{{ option.label }}</span><i v-if="option.value === modelValue" class="bi bi-check2" aria-hidden="true"></i></button>

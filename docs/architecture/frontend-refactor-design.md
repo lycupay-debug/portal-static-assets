@@ -360,3 +360,35 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Before changing keyboard navigation or focus semantics in `VirtualizedSelect.vue`, establish mounted-component coverage using the already-installed jsdom and Vue runtime/compiler tooling; then cover open/close, disabled-state transitions, empty results, option updates, and keyboard focus behavior without changing caller-owned selection semantics.
+
+## Batch 13 — VirtualizedSelect mounted behavior and keyboard/filter lifecycle (2026-10-29)
+
+### Goal and evidence
+
+- Continued the prior batch's deferred work by replacing source-only checks for the shared `VirtualizedSelect.vue` with mounted Vue component tests using the repository's existing `jsdom`, `@vue/compiler-sfc`, `esbuild`, Vite, and Vue packages. No dependency was installed.
+- The mounted tests reproduced a keyboard event path issue: the search input uses `@keydown.stop`, which prevents the document-level Escape listener from receiving Escape while focus is in the input. The previous test dispatched Escape directly on `document`, so it did not cover the actual focused control.
+- Review of the virtualization calculations also identified a stale-scroll edge case: narrowing the filtered options while the viewport is scrolled could preserve a `scrollTop` beyond the new result count, leaving the visible window empty even when matching options exist.
+
+### Changes and invariants
+
+- Added `onSearchKeys` to close the popover on Escape from the search field while retaining event propagation isolation for other keys.
+- Added a watcher on the filtered option list to reset the component scroll index and DOM viewport scroll position when search results/options change.
+- Reworked `frontend/test/virtualized-select.test.mjs` into a jsdom-mounted Vue harness. It now exercises opening/filtering, selection emission and model updates, query reset after selection/reopen, empty results, Escape from the actual search input, narrowing a scrolled list, outside-click close, disabled state, option updates, and unmount listener cleanup. Retained source assertions for nullish label fallback and caller-owned model contract.
+- Preserved public props/events, option identity, selection semantics, row/viewport dimensions, same-origin application architecture, and bundle budgets.
+
+### Verification evidence
+
+- `npm run type-check`: passed.
+- `npm test`: 174/174 passed, including six tests dedicated to `VirtualizedSelect`.
+- `npm run build`: passed; initial JS including modulepreloads 61.90 KiB gzip / 65.00 KiB budget; initial CSS 82.32 KiB gzip / 85.00 KiB budget; lazy editor 206.80 KiB gzip / 230.00 KiB budget; lazy Markdown 24.67 KiB gzip / 30.00 KiB budget.
+- `npm run build:static-origin`: passed; initial JS 61.92 KiB gzip / 65.00 KiB budget; initial CSS 82.39 KiB gzip / 85.00 KiB budget; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- `npm run check:static-assets`: passed (61 files, 1 HTML); `npm run test:static-assets`: passed; `git diff --check`: passed; frontend source/HTML public-CDN scan found no matches.
+
+### Limits and constraints
+
+- These are jsdom component DOM/event tests, not visual cross-browser tests or screen-reader/assistive-technology tests. No live API or production browser session was used.
+- No production changes, deployment, service restart, PR merge, or manual GitHub Actions run. Bundle budgets were not changed.
+
+### Next candidate
+
+- Review `TeachingResourceDrawer.vue` data formatting and lifecycle against its callers and existing shared utilities; only change behavior when a reproducible contract or lifecycle issue is found, then add a focused test before implementation.
