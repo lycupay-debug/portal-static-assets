@@ -106,3 +106,46 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Review the remaining route/lifecycle orchestration in `App.vue` for a boundary with measurable benefit. Do not extract page state alone; only proceed when the ownership contract is clear and tests can protect navigation/session ordering and the existing initial bundle budget.
+
+
+## Batch 5 — shared protected-route session guard (2026-10-29)
+
+### Goal and boundary
+
+- Extract the protected-route session gate into `frontend/src/composables/useProtectedRouteGuard.ts`.
+- Reuse one contract from ordinary in-app navigation, browser `popstate`, and initial protected-route mounting. `App.vue` remains the owner of History API mutations, the route navigation sequence, route data loading, and the redirect presentation.
+- The guard accepts injected route classification, session loading, a navigation freshness predicate, and a denial callback. It does not access the DOM, browser history, API transport, or global state. Go API authorization remains authoritative.
+
+### Behavior invariants and failure paths
+
+- Public route navigation proceeds without invoking the protected-route session gate; initial public pages still perform a background session load so the header can reflect an existing login.
+- Protected routes do not load route data until session validation succeeds.
+- An invalid session redirects the current navigation to `/login` and preserves the existing notice.
+- A navigation already stale before the guard starts does not issue a session request. If a newer navigation starts while `/auth/me` is pending, the old completion cannot redirect the newer route.
+- Existing `pushState`/`replaceState`, URL resolution, scroll restoration, route data loaders, and server API contracts are unchanged.
+
+### Changed files and tests
+
+- `frontend/src/composables/useProtectedRouteGuard.ts`: focused, framework-independent route-access policy.
+- `frontend/src/App.vue`: ordinary navigation, `popstate`, and initial protected route now share the guard; duplicate redirect/session branches removed.
+- `frontend/test/protected-route-guard.test.mjs`: public route, valid session, invalid session, stale-before-start, and stale-after-await cases.
+- `frontend/test/navigation.test.mjs`: source-level integration assertions updated to require guard use before route data loading.
+
+### Verification evidence
+
+- Baseline before edits: `npm test` passed 148/148.
+- After edits: `npm run type-check` passed; `npm test` passed 153/153.
+- `npm run build` passed; initial JavaScript including modulepreloads 61.83 KiB / 65 KiB gzip; initial CSS 82.32 KiB / 85 KiB; lazy editor 206.80 KiB / 230 KiB; lazy Markdown 24.67 KiB / 30 KiB.
+- `npm run build:static-origin` passed; initial JavaScript 61.85 KiB / 65 KiB gzip; initial CSS 82.39 KiB / 85 KiB; 16 JS bundles, 5 CSS bundles, 74 icon URLs, API paths remain root-relative.
+- `npm run check:static-assets` passed (61 files, 1 HTML); `npm run test:static-assets` passed; `git diff --check` passed; checked frontend source/HTML public-CDN references: none.
+- App.vue reduced from 1,143 lines before this batch to 1,128 lines. This is a secondary metric; the main result is one tested session-gate contract shared by three lifecycle paths.
+
+### Limitations and rollback
+
+- These tests exercise the guard contract with injected session/navigation callbacks; they are not a real-browser end-to-end test of browser history or a live `/auth/me` request.
+- If regression is observed, revert this batch commit only; do not alter the production directory or widen bundle budgets.
+- No production deployment, service restart, merge, GitHub Actions, or Chrome Test was performed.
+
+### Next candidate
+
+- Continue with the next high-risk business component from the Notion plan only after inspecting its callers, API contract, state ownership, error/retry paths, and existing tests. Do not continue extracting `App.vue` state solely to reduce line count.

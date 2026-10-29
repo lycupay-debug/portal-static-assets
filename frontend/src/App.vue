@@ -22,6 +22,7 @@ import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { useAccountTable } from './composables/useAccountTable'
 import { usePortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
+import { createProtectedRouteGuard } from './composables/useProtectedRouteGuard'
 import { formatResourceFileSize } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
@@ -514,6 +515,17 @@ function loadRouteData(): void {
   if (legalSlug.value) void loadLegalDocument(legalSlug.value)
 }
 
+const { ensureRouteAccess } = createProtectedRouteGuard({
+  isProtected: () => isProtectedPage.value,
+  loadSession: () => loadSession(),
+  isCurrent: (navigationId: number) => navigationId === navigationSequence,
+  redirectToLogin: () => {
+    history.replaceState({}, '', '/login')
+    route.value = '/login'
+    authNotice.value = '请先登录，再进入工作空间。'
+  },
+})
+
 async function navigate(target: string) {
   const navigationId = ++navigationSequence
   saveScrollPosition()
@@ -523,16 +535,7 @@ async function navigate(target: string) {
   void loadPublishedLegalDocuments()
   authError.value = ''
   authNotice.value = ''
-  if (isProtectedPage.value) {
-    const valid = await loadSession()
-    if (navigationId !== navigationSequence) return
-    if (!valid) {
-      history.replaceState({}, '', '/login')
-      route.value = '/login'
-      authNotice.value = '请先登录，再进入工作空间。'
-      return
-    }
-  }
+  if (!await ensureRouteAccess(navigationId)) return
   if (route.value === '/content-management') {
     await loadContentList()
     if (navigationId !== navigationSequence) return
@@ -577,16 +580,7 @@ function onPopState() {
   closeMenu()
   authError.value = ''
   const continueNavigation = async () => {
-    if (isProtectedPage.value) {
-      const valid = await loadSession()
-      if (navigationId !== navigationSequence) return
-      if (!valid) {
-        history.replaceState({}, '', '/login')
-        route.value = '/login'
-        authNotice.value = '请先登录，再进入工作空间。'
-        return
-      }
-    }
+    if (!await ensureRouteAccess(navigationId)) return
     if (navigationId !== navigationSequence) return
     if (route.value === '/content-management') void loadContentList()
     if (route.value === '/education/teaching-resources') void loadTeachingResources()
@@ -604,14 +598,8 @@ onMounted(() => {
   window.addEventListener('beforeunload', saveScrollPosition)
   void loadPublishedLegalDocuments()
   if (isProtectedPage.value) {
-    void loadSession().then((valid) => {
-      if (navigationId !== navigationSequence) return
-      if (!valid) {
-        history.replaceState({}, '', '/login')
-        route.value = '/login'
-        authNotice.value = '请先登录，再进入工作空间。'
-        return
-      }
+    void ensureRouteAccess(navigationId).then((allowed) => {
+      if (!allowed || navigationId !== navigationSequence) return
       if (route.value === '/content-management') void loadContentList()
       if (route.value === '/education/teaching-resources') void loadTeachingResources()
       loadRouteData()
@@ -619,14 +607,8 @@ onMounted(() => {
     })
   } else {
     loadRouteData()
-    void loadSession().then((valid) => {
-      if (navigationId !== navigationSequence) return
-      if (isProtectedPage.value && !valid) {
-        history.replaceState({}, '', '/login')
-        route.value = '/login'
-        authNotice.value = '请先登录，再进入工作空间。'
-      }
-    })
+    // Public pages still load the session so the header reflects an existing login.
+    void loadSession()
     void restoreScrollPosition()
   }
 })
