@@ -36,6 +36,36 @@ test('manual dismissal removes a notification from the queue', () => {
   assert.equal(notificationState.value.some(item => item.id === id), false)
 })
 
+test('manual dismissal and queue eviction release their timers, including a falsy timer handle', () => {
+  clearNotifications()
+  const originalSetTimeout = globalThis.setTimeout
+  const originalClearTimeout = globalThis.clearTimeout
+  const timers = []
+  const cleared = []
+  globalThis.setTimeout = (callback, delay) => {
+    const handle = timers.length === 0 ? 0 : { callback, delay }
+    timers.push({ handle, callback, delay })
+    return handle
+  }
+  globalThis.clearTimeout = (handle) => { cleared.push(handle) }
+  try {
+    portalNotify.info('manual', undefined, 100)
+    const manuallyDismissedId = notificationState.value.at(-1).id
+    const manualTimer = timers[0].handle
+    dismissNotificationById(manuallyDismissedId)
+    assert.ok(cleared.includes(manualTimer), 'manual dismissal should clear its timer even when the handle is 0')
+
+    for (let index = 1; index <= 6; index += 1) portalNotify.info(`queued-${index}`, undefined, 100)
+    assert.equal(notificationState.value.length, 5)
+    assert.ok(cleared.includes(timers[1].handle), 'evicting the oldest queued notification should clear its timer')
+    clearNotifications()
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+    globalThis.clearTimeout = originalClearTimeout
+    clearNotifications()
+  }
+})
+
 test('timed notifications are automatically removed', async () => {
   clearNotifications()
   portalNotify.success('short-lived', undefined, 15)

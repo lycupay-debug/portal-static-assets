@@ -264,3 +264,37 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 - Verification: type-check passed; 163/163 tests passed; regular and static-origin builds passed. Initial JS gzip 61.82/65 KiB regular, 61.85/65 KiB static-origin; CSS 82.32/85 KiB and 82.39/85 KiB. Static asset checks and `git diff --check` passed; no public CDN references found.
 - Limits: source-level tests only; no mounted Vue, live API, or Go integration test. Production untouched; no deploy, restart, merge, or GitHub Actions.
 - Next: review `NotificationHost.vue` and `utils/notification.ts` timer/queue lifecycle.
+
+## Batch 10 — notification timer lifecycle cleanup (2026-10-29)
+
+### Goal and evidence
+
+- Reviewed `frontend/src/components/NotificationHost.vue`, `frontend/src/utils/notification.ts`, all notification call sites, and `frontend/test/notification.test.mjs` before editing.
+- The notification manager owns a global reactive queue and a `Map` of timeout handles. Both manual dismissal and queue overflow route through `dismiss`, so eviction is expected to clear the removed item's timer as well as remove its UI state.
+- The cleanup check used truthiness (`if (timer)`) even though timer handles are opaque values. A falsy handle would be treated as absent and skipped by `clearTimeout`. The change now checks presence explicitly (`timer !== undefined`). This is a defensive lifecycle correction, not a claim that a production timer failure was observed.
+
+### Changes and invariants
+
+- Added module/function documentation describing the utility's state ownership, caller relationship, queue cap, and timer behavior.
+- Updated timer cleanup to distinguish a missing map entry from a falsy handle.
+- Added a deterministic regression test that stubs timer scheduling and asserts that manual dismissal and oldest-item eviction clear their associated timers, including a falsy handle.
+- Preserved queue cap of five, oldest-first eviction, default 4.2-second duration, `duration <= 0` persistent-notification behavior, notification titles/messages, accessible live-region markup, and all public call signatures.
+- No changes to `NotificationHost.vue` were necessary after reviewing its component lifecycle: it subscribes to the shared state and delegates explicit close actions; timer ownership remains in the notification manager rather than the rendering component.
+
+### Verification evidence
+
+- `npm run type-check`: passed.
+- `npm test`: 164/164 passed.
+- `npm run build`: passed; initial JS including modulepreloads 61.83 KiB gzip / 65 KiB; initial CSS 82.32 KiB / 85 KiB; lazy editor 206.80 KiB / 230 KiB; lazy Markdown 24.67 KiB / 30 KiB.
+- `npm run build:static-origin`: passed; initial JS 61.85 KiB gzip / 65 KiB; initial CSS 82.39 KiB / 85 KiB; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- `npm run check:static-assets`: passed (61 files, 1 HTML); `npm run test:static-assets`: passed.
+- `git diff --check`: passed; frontend source/HTML scan found no public CDN references.
+
+### Limits and rollback
+
+- Timer cleanup is tested with a deterministic scheduler stub plus the existing real-time auto-dismiss test; this is not a mounted Vue/browser lifecycle test.
+- No production deployment, service restart, merge, or GitHub Actions run. Production files and services remain untouched.
+
+### Next candidate
+
+- Continue with `TeachingResourceDrawer.vue`, `VirtualizedSelect.vue`, and `utils/responsiveLayout.ts` in the planned order; first map component ownership, input validation, accessibility, listener/style-variable cleanup, and large-data behavior before selecting one independently testable boundary.
