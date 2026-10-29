@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { normalizeComplianceAssetDetail } from '../utils/compliance.ts'
+import { runWithBusyState } from '../utils/runWithBusyState.ts'
 import { ApiRequestError, apiRequest } from '../api/client'
 
 type AnyRecord = Record<string, any>
@@ -54,6 +55,19 @@ async function run<T>(fn: () => Promise<T>) {
   error.value = ''; feedback.value = ''
   try { return await fn() } catch (e) { error.value = e instanceof Error ? e.message : '请求失败'; return null }
 }
+/** Keep the shared saving indicator accurate even if a post-mutation refresh fails. */
+async function withSaving<T>(operation: () => Promise<T>): Promise<T> {
+  return runWithBusyState(value => { saving.value = value }, operation)
+}
+/** A successful write remains successful if a follow-up read fails; expose the refresh failure separately. */
+async function refreshAfterSave(operation: () => Promise<void>) {
+  try {
+    await operation()
+  } catch (refreshError) {
+    const detail = refreshError instanceof Error ? `：${refreshError.message}` : ''
+    error.value = `保存已完成，但刷新数据失败${detail}。可手动刷新台账。`
+  }
+}
 async function loadOverview() { const r = await api<AnyRecord>('/compliance/overview'); overview.value = r }
 async function loadAssets(reset = false) {
   if (reset) assetOffset.value = 0
@@ -99,39 +113,53 @@ async function saveAsset() {
   if (!selectedAsset.value) return
   const id = String(selectedAsset.value.id || selectedAsset.value.asset_id || '')
   if (!id) { error.value = '无法识别资产 ID，请关闭详情并重新打开。'; return }
-  saving.value = true
-  const r = await run(() => api(`/compliance/assets/${id}`, { method: 'PATCH', body: JSON.stringify(assetForm.value) }))
-  if (r) { feedback.value = '资产台账已更新。'; await loadAssets(); await loadOverview(); await openAsset({ id }) }
-  saving.value = false
+  await withSaving(async () => {
+    const r = await run(() => api(`/compliance/assets/${id}`, { method: 'PATCH', body: JSON.stringify(assetForm.value) }))
+    if (r) {
+      const successMessage = '资产台账已更新。'
+      await refreshAfterSave(async () => { await loadAssets(); await loadOverview(); await openAsset({ id }) })
+      feedback.value = successMessage
+    }
+  })
 }
 async function saveReview() {
   if (!selectedAsset.value) return
   const id = String(selectedAsset.value.id || selectedAsset.value.asset_id || '')
   if (!id) { error.value = '无法识别资产 ID，请关闭详情并重新打开。'; return }
-  saving.value = true
   const payload = { type: reviewForm.value.type, decision: reviewForm.value.decision, riskLevel: reviewForm.value.riskLevel, findings: reviewForm.value.findings, requiredActions: reviewForm.value.actions.split('\n').map(x => x.trim()).filter(Boolean) }
-  const r = await run(() => api(`/compliance/assets/${id}/reviews`, { method: 'POST', body: JSON.stringify(payload) }))
-  if (r) { feedback.value = '审核记录已保存；没有自动删除或下架内容。'; await loadAssets(); await loadOverview(); await openAsset({ id }) }
-  saving.value = false
+  await withSaving(async () => {
+    const r = await run(() => api(`/compliance/assets/${id}/reviews`, { method: 'POST', body: JSON.stringify(payload) }))
+    if (r) {
+      const successMessage = '审核记录已保存；没有自动删除或下架内容。'
+      await refreshAfterSave(async () => { await loadAssets(); await loadOverview(); await openAsset({ id }) })
+      feedback.value = successMessage
+    }
+  })
 }
 async function saveEvidence() {
   if (!selectedAsset.value || !evidenceForm.value.text.trim()) { error.value = '请填写证据内容。'; return }
   const id = String(selectedAsset.value.id || selectedAsset.value.asset_id || '')
   if (!id) { error.value = '无法识别资产 ID，请关闭详情并重新打开。'; return }
-  saving.value = true
-  const r = await run(() => api(`/compliance/assets/${id}/evidence`, { method: 'POST', body: JSON.stringify(evidenceForm.value) }))
-  if (r) { feedback.value = '证据记录已保存。'; await openAsset({ id }) }
-  saving.value = false
+  await withSaving(async () => {
+    const r = await run(() => api(`/compliance/assets/${id}/evidence`, { method: 'POST', body: JSON.stringify(evidenceForm.value) }))
+    if (r) {
+      await openAsset({ id })
+      feedback.value = '证据记录已保存。'
+    }
+  })
 }
 async function verifySubmittedEvidence(item: AnyRecord, verified: boolean) {
   if (!selectedAsset.value) return
   const assetId = String(selectedAsset.value.id || selectedAsset.value.asset_id || '')
   const evidenceId = String(item.id || '')
   if (!assetId || !evidenceId) return
-  saving.value = true
-  const r = await run(() => api(`/compliance/assets/${assetId}/evidence/${evidenceId}`, { method: 'PATCH', body: JSON.stringify({ verified }) }))
-  if (r) { feedback.value = verified ? '证据已标记为核验通过；请继续提交独立审核结论。' : '证据核验标记已撤销。'; await openAsset({ id: assetId }) }
-  saving.value = false
+  await withSaving(async () => {
+    const r = await run(() => api(`/compliance/assets/${assetId}/evidence/${evidenceId}`, { method: 'PATCH', body: JSON.stringify({ verified }) }))
+    if (r) {
+      await openAsset({ id: assetId })
+      feedback.value = verified ? '证据已标记为核验通过；请继续提交独立审核结论。' : '证据核验标记已撤销。'
+    }
+  })
 }
 async function openLicense(item: AnyRecord) {
   const result = await run(() => api<AnyRecord>('/compliance/licenses/' + item.id))
@@ -142,10 +170,13 @@ async function openLicense(item: AnyRecord) {
 async function saveLicense() {
   if (!selectedLicense.value) return
   const id = selectedLicense.value.id
-  saving.value = true
-  const r = await run(() => api(`/compliance/licenses/${id}`, { method: 'PATCH', body: JSON.stringify(licenseForm.value) }))
-  if (r) { feedback.value = '许可证审核信息已更新。'; await loadLicenses(); selectedLicense.value = null }
-  saving.value = false
+  await withSaving(async () => {
+    const r = await run(() => api(`/compliance/licenses/${id}`, { method: 'PATCH', body: JSON.stringify(licenseForm.value) }))
+    if (r) {
+      feedback.value = '许可证审核信息已更新。'
+      await refreshAfterSave(async () => { await loadLicenses(); selectedLicense.value = null })
+    }
+  })
 }
 function toLocalDate(value?: string | null) {
   if (!value) return ''
@@ -161,11 +192,19 @@ function openDocument(item: AnyRecord) {
 async function saveDocument() {
   if (!selectedDocument.value) return
   const slug = selectedDocument.value.slug
-  saving.value = true
   const payload = { bodyMarkdown: documentForm.value.bodyMarkdown, status: documentForm.value.status, missingInformation: String(documentForm.value.missingInformation || '').split('\n').map((x: string) => x.trim()).filter(Boolean), factualAssumptions: String(documentForm.value.factualAssumptions || '').split('\n').map((x: string) => x.trim()).filter(Boolean), approvedBy: documentForm.value.approvedBy, legalReviewAt: fromLocalDate(documentForm.value.legalReviewAt), effectiveAt: fromLocalDate(documentForm.value.effectiveAt), changeNote: documentForm.value.changeNote }
-  const r = await run(() => api(`/compliance/documents/${slug}`, { method: 'PATCH', body: JSON.stringify(payload) }))
-  if (r) { feedback.value = `政策已保存，版本 ${r.version}。`; await loadDocuments(); await loadOverview(); const updated = documents.value.find(x => x.slug === slug); if (updated) openDocument(updated) }
-  saving.value = false
+  await withSaving(async () => {
+    const r = await run(() => api(`/compliance/documents/${slug}`, { method: 'PATCH', body: JSON.stringify(payload) }))
+    if (r) {
+      feedback.value = `政策已保存，版本 ${r.version}。`
+      await refreshAfterSave(async () => {
+        await loadDocuments()
+        await loadOverview()
+        const updated = documents.value.find(x => x.slug === slug)
+        if (updated) openDocument(updated)
+      })
+    }
+  })
 }
 function exportCSV() { window.location.href = '/api/compliance/export/assets.csv' }
 function closeModals() { selectedAsset.value = null; selectedLicense.value = null; selectedDocument.value = null }

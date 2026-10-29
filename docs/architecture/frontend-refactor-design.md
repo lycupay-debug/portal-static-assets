@@ -149,3 +149,41 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Continue with the next high-risk business component from the Notion plan only after inspecting its callers, API contract, state ownership, error/retry paths, and existing tests. Do not continue extracting `App.vue` state solely to reduce line count.
+
+
+## Batch 6 — compliance save lifecycle and busy-state recovery (2026-10-29)
+
+### Goal and evidence-based defect
+
+- Reviewed `frontend/src/components/ComplianceCenter.vue` before editing. Six write/verification flows manually set `saving = true`, awaited a mutation, performed follow-up reads, then set `saving = false` without a `finally` boundary.
+- Concrete failure path: if a successful mutation is followed by a rejected `loadAssets`, `loadOverview`, `loadLicenses`, or `loadDocuments` request, control exits before the trailing assignment. The shared save buttons can remain disabled. This was a code-path finding, not a claim that a live production incident had occurred.
+- Read-only backend review found integration coverage for non-admin denial, administrator access to the overview/list endpoints, CSV export response, and transactional rollback when compliance audit writing fails. The shared `api/openapi.yaml` does not define the compliance endpoints, so it was not treated as a complete contract source. No backend files or services were changed.
+
+### Changes and invariants
+
+- Added `frontend/src/utils/runWithBusyState.ts`, a framework-independent helper that sets busy before an async operation and always resets it in `finally`, while allowing errors to propagate to the caller.
+- Routed asset updates, review creation, evidence creation/verification, license updates, and policy document updates through the shared busy-state helper.
+- Added `refreshAfterSave` to distinguish a successful write from a failed follow-up refresh: the UI keeps the success result and reports that refresh failed and can be retried manually, instead of implying that the write itself failed.
+- Restored the successful operation notice after detail reloads, because the shared `run()` helper clears prior notices when starting a read.
+- Existing API paths, HTTP methods, request payloads, server-side permission checks, audit transaction behavior, and the policy that review actions do not automatically delete/unpublish content are unchanged.
+
+### Tests and verification
+
+- Added `frontend/test/run-with-busy-state.test.mjs`: busy state remains active during the operation, clears after success, clears after a rejected async operation, and clears after a synchronous throw.
+- Extended `frontend/test/compliance.test.mjs` to verify all six mutation paths use the shared cleanup boundary and that refresh failure has an explicit user-facing message.
+- `npm run type-check`: passed.
+- `npm test`: 158/158 passed.
+- `npm run build`: passed; initial JS (including modulepreloads) 61.83 KiB gzip / 65 KiB; initial CSS 82.32 KiB / 85 KiB; lazy editor 206.80 KiB / 230 KiB; lazy Markdown 24.67 KiB / 30 KiB.
+- `npm run build:static-origin`: passed; initial JS 61.85 KiB gzip / 65 KiB; initial CSS 82.39 KiB / 85 KiB; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- `npm run check:static-assets`: passed (61 files, 1 HTML); `npm run test:static-assets`: passed.
+- Frontend source/HTML public-CDN check and `git diff --check`: pending final pre-commit verification.
+
+### Limits and rollback
+
+- Busy-state behavior is tested at the helper boundary and checked against the six component mutation functions; no real browser session or live compliance mutation was performed.
+- If a regression is found, revert this batch commit only. Production directory and service state remain untouched.
+- No deployment, service restart, merge, or GitHub Actions run.
+
+### Next candidate
+
+- Continue the Notion sequence with the system execution policy and system operations centers, first mapping frontend role visibility against backend RBAC and testing denial/error paths. Do not rely on UI gating as an authorization control; the Go API remains authoritative.
