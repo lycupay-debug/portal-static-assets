@@ -298,3 +298,33 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Continue with `TeachingResourceDrawer.vue`, `VirtualizedSelect.vue`, and `utils/responsiveLayout.ts` in the planned order; first map component ownership, input validation, accessibility, listener/style-variable cleanup, and large-data behavior before selecting one independently testable boundary.
+
+
+## Batch 11 — responsive layout listener/request lifecycle (2026-10-29)
+
+### Goal and evidence
+
+- Reviewed `TeachingResourceDrawer.vue`, `VirtualizedSelect.vue`, `utils/responsiveLayout.ts`, `main.ts`, CSS token definitions, and existing test conventions.
+- The responsive initializer registered global `resize` and `orientationchange` listeners but exposed no cleanup function. Its debounce timer also used truthiness to decide whether to clear a timer, and the timer reference was not reset after firing. An in-flight fetch could still update document root styles after the owner had been disposed because no disposal boundary existed.
+- Selected this as the smallest high-value lifecycle seam; drawer formatting already has a shared utility, while changing virtualized-select keyboard/focus semantics needs dedicated mounted-component tests and was deferred.
+
+### Changes and invariants
+
+- `initializeResponsiveLayout()` now returns a cleanup callback that removes both global listeners, clears any defined debounce timer, resets timer ownership, and increments the request sequence so in-flight fetch/JSON responses become stale.
+- Debounce cleanup now uses explicit `resizeTimer !== undefined`, then clears the reference when the scheduled callback starts.
+- Added source-boundary tests for cleanup exposure, listener removal, in-flight request invalidation, debounce timer ownership, and existing CSS write restrictions.
+- Preserved the 160ms debounce, same-origin GET, version=1 policy requirement, `--layout-` CSS variable allowlist, and CSS fallback on errors. `main.ts` still initializes once before Vue mount; no runtime call-site behavior changes.
+
+### Verification evidence
+
+- `npm run type-check`: passed.
+- `npm test`: 167/167 passed.
+- `npm run build`: passed; initial JS including modulepreloads 61.87 KiB gzip / 65 KiB, initial CSS 82.32 KiB gzip / 85 KiB, lazy editor 206.80 KiB gzip / 230 KiB, lazy Markdown 24.67 KiB gzip / 30 KiB.
+- `npm run build:static-origin`: passed; initial JS 61.89 KiB gzip / 65 KiB, initial CSS 82.39 KiB gzip / 85 KiB; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- `npm run check:static-assets`: passed (61 files, 1 HTML); `npm run test:static-assets`: passed.
+- `git diff --check`: passed; checked frontend source/HTML has no public CDN references.
+
+### Limits and constraints
+
+- Current tests are source-boundary assertions, not browser-level event/fetch lifecycle tests. The returned cleanup API enables a future mounted/jsdom behavior test.
+- No production changes, service restarts, deployment, PR merge, or manual GitHub Actions.

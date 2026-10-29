@@ -1,3 +1,9 @@
+/**
+ * 职责：按当前视口请求布局策略，并将允许的 CSS token 应用到根元素。
+ * 依赖：浏览器 window/document/fetch；失败时由 CSS 默认 token 提供降级。
+ * 协作：main.ts 在应用挂载前初始化；返回的 dispose 用于移除监听并使待处理请求失效。
+ * 边界：只接受 version=1 的策略，且只写入 --layout- 前缀的字符串变量。
+ */
 interface ResponsiveLayoutPolicy {
   version: number
   viewport: { width: number; height: number }
@@ -38,12 +44,25 @@ async function applyResponsivePolicy(): Promise<void> {
 }
 
 function scheduleResponsivePolicy(): void {
-  if (resizeTimer) clearTimeout(resizeTimer)
-  resizeTimer = setTimeout(() => void applyResponsivePolicy(), 160)
+  if (resizeTimer !== undefined) clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => {
+    resizeTimer = undefined
+    void applyResponsivePolicy()
+  }, 160)
 }
 
-export function initializeResponsiveLayout(): void {
+/** Register responsive listeners and return cleanup for timers and in-flight requests. */
+export function initializeResponsiveLayout(): () => void {
   void applyResponsivePolicy()
   window.addEventListener('resize', scheduleResponsivePolicy, { passive: true })
   window.addEventListener('orientationchange', scheduleResponsivePolicy, { passive: true })
+
+  return () => {
+    window.removeEventListener('resize', scheduleResponsivePolicy)
+    window.removeEventListener('orientationchange', scheduleResponsivePolicy)
+    if (resizeTimer !== undefined) clearTimeout(resizeTimer)
+    resizeTimer = undefined
+    // Invalidate any fetch/json response already in flight so it cannot mutate a disposed layout.
+    activeRequest += 1
+  }
 }
