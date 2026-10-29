@@ -12,6 +12,7 @@ import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
 import { useScrollRestoration } from './composables/useScrollRestoration'
+import { useDebouncedValue } from './composables/useDebouncedValue'
 import { usePublicArticleActions } from './composables/usePublicArticleActions'
 import { useLegalDocuments } from './composables/useLegalDocuments'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
@@ -103,11 +104,7 @@ function toggleAccountGroup(groupId: string) {
 
 
 const tableQuery = ref('')
-const debouncedTableQuery = ref('')
-let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
-watch(tableQuery, (query) => {
-  tableSearchDebounceTimer = setTimeout(() => { debouncedTableQuery.value = query }, 150)
-})
+const debouncedTableQuery = useDebouncedValue(tableQuery, 150)
 watch(debouncedTableQuery, (query) => {
   if (activeAccountSection.value === 'content-management') void loadContentList(query)
   else if (activeAccountSection.value === 'teaching-resources') void loadTeachingResources(query)
@@ -526,8 +523,8 @@ const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicDirectoryData').createPublicDirectoryLoader>
 let publicDirectoryLoaderPromise: Promise<PublicDirectoryLoader> | undefined
-let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
-let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
+const debouncedKnowledgeSearchQuery = useDebouncedValue(knowledgeSearchQuery, 220)
+const debouncedEducationResourceSearch = useDebouncedValue(educationResourceSearch, 220)
 let navigationSequence = 0
 let sessionRequestSequence = 0
 function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
@@ -548,15 +545,11 @@ function loadPublicContents(searchTerm = '') {
 function loadPublicTeachingResources(searchTerm = '') {
   return getPublicDirectoryLoader().then(loader => loader.loadPublicTeachingResources(searchTerm))
 }
-watch(knowledgeSearchQuery, (query) => {
-  if (route.value !== '/knowledge') return
-  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
-  publicContentSearchTimer = setTimeout(() => { void loadPublicContents(query) }, 220)
+watch(debouncedKnowledgeSearchQuery, (query) => {
+  if (route.value === '/knowledge') void loadPublicContents(query)
 })
-watch(educationResourceSearch, (query) => {
-  if (route.value !== '/education-resources') return
-  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
-  publicResourceSearchTimer = setTimeout(() => { void loadPublicTeachingResources(query) }, 220)
+watch(debouncedEducationResourceSearch, (query) => {
+  if (route.value === '/education-resources') void loadPublicTeachingResources(query)
 })
 type PublicArticleLoader = ReturnType<typeof import('./composables/loadPublicArticle').createPublicArticleLoader>
 let publicArticleLoaderPromise: Promise<PublicArticleLoader> | undefined
@@ -743,8 +736,6 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
-  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
-  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
   educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
