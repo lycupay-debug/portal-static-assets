@@ -39,7 +39,6 @@ import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource } from './api/generated'
 
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
-const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
 const TeachingResourceEditorDialog = defineAsyncComponent(() => import('./components/TeachingResourceEditorDialog.vue'))
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 const taxonomyParentNames = knowledgeTaxonomyParentNames
@@ -90,6 +89,33 @@ const authNotice = ref('')
 const authForm = ref({ displayName: '', email: '', password: '' })
 const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows', 'compliance', 'system-ops'])
 const activeAccountSection = ref('overview')
+const systemOpsHost = ref<HTMLElement | null>(null)
+let disposeSystemOpsCenter: (() => void) | null = null
+let systemOpsMountSequence = 0
+watch([activeAccountSection, systemOpsHost], ([section, host]) => {
+  const sequence = ++systemOpsMountSequence
+  disposeSystemOpsCenter?.()
+  disposeSystemOpsCenter = null
+  if (!host) return
+  const view = section === 'system-warnings' ? 'warnings' : section === 'system-logs' ? 'logs' : section === 'system-execution-policy' ? 'policy' : null
+  if (!view) return
+  void (async () => {
+    const module = await import('./components/systemOpsCenter')
+    await import('./components/systemOpsCenter.css')
+    if (view === 'policy') {
+      await Promise.all([
+        import('./components/permissionManagement.css'),
+        import('./components/systemExecutionPolicyCenter.css'),
+      ])
+    }
+    if (sequence !== systemOpsMountSequence || host !== systemOpsHost.value) return
+    disposeSystemOpsCenter = module.mountSystemOpsCenter(host, { view }).dispose
+  })().catch((error: unknown) => {
+    if (sequence !== systemOpsMountSequence || host !== systemOpsHost.value) return
+    host.textContent = '系统运维界面加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '系统运维界面加载失败', '系统运维')
+  })
+}, { flush: 'post' })
 const contentEditorRouteId = computed(() => route.value.match(/^\/content-management\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1] || null)
 const isContentEditorPage = computed(() => route.value === '/content-management/new' || contentEditorRouteId.value !== null)
 const isProtectedPage = computed(() => isContentEditorPage.value || route.value === '/account' || Object.prototype.hasOwnProperty.call(routeSections, route.value))
@@ -644,6 +670,9 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  systemOpsMountSequence += 1
+  disposeSystemOpsCenter?.()
+  disposeSystemOpsCenter = null
   disposeNotificationHost?.()
   disposeNotificationHost = null
   disposeContentVisibilitySelect?.()
@@ -1041,13 +1070,13 @@ onBeforeUnmount(() => {
           <ComplianceCenter :is-admin="user?.isAdmin === true" />
         </template>
         <template v-else-if="activeAccountSection === 'system-warnings'">
-          <SystemOpsCenter view="warnings" />
+          <div ref="systemOpsHost"></div>
         </template>
         <template v-else-if="activeAccountSection === 'system-logs'">
-          <SystemOpsCenter view="logs" />
+          <div ref="systemOpsHost"></div>
         </template>
         <template v-else-if="activeAccountSection === 'system-execution-policy'">
-          <SystemOpsCenter view="policy" />
+          <div ref="systemOpsHost"></div>
         </template>
 
         <template v-else>
