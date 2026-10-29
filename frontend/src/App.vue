@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
-import { ApiRequestError, apiRequest } from './api/client'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { apiRequest } from './api/client'
 import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
@@ -12,13 +12,16 @@ import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
 import { useScrollRestoration } from './composables/useScrollRestoration'
+import { useDebouncedValue } from './composables/useDebouncedValue'
 import { usePublicArticleActions } from './composables/usePublicArticleActions'
 import { useLegalDocuments } from './composables/useLegalDocuments'
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { useAccountTable } from './composables/useAccountTable'
-import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
+import { formatFileSize, formatResourceFileSize } from './utils/resourceFiles'
+import { getResourceUploadFileError, validateResourceUpload } from './utils/resourceUploadValidation'
+import { requestWithUploadProgress } from './utils/resourceUploadRequest'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
@@ -26,7 +29,6 @@ import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
-import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
@@ -102,11 +104,7 @@ function toggleAccountGroup(groupId: string) {
 
 
 const tableQuery = ref('')
-const debouncedTableQuery = ref('')
-let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
-watch(tableQuery, (query) => {
-  tableSearchDebounceTimer = setTimeout(() => { debouncedTableQuery.value = query }, 150)
-})
+const debouncedTableQuery = useDebouncedValue(tableQuery, 150)
 watch(debouncedTableQuery, (query) => {
   if (activeAccountSection.value === 'content-management') void loadContentList(query)
   else if (activeAccountSection.value === 'teaching-resources') void loadTeachingResources(query)
@@ -337,27 +335,17 @@ function openResourceDetails(id: string) { selectedResourceDetail.value = [...te
 function closeResourceDetails() { selectedResourceDetail.value = null }
 function handleResourceFileChange(event: Event) { const input = event.target as HTMLInputElement; const files = Array.from(input.files || []); if (resourceBatchMode.value && !editingResourceId.value) { resourceFiles.value = files; resourceFile.value = files[0] || null } else { resourceFile.value = files[0] || null; resourceFiles.value = [] }; resourceError.value = '' }
 function clearResourceSelectionForMode() { resourceFile.value = null; resourceFiles.value = []; resourceError.value = '' }
-function requestWithUploadProgress(url: string, method: string, body: ResourceWrite): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest(); xhr.open(method, url); xhr.withCredentials = true; xhr.setRequestHeader('Content-Type', 'application/json'); xhr.setRequestHeader('Accept', 'application/json')
-    xhr.upload.onprogress = (event) => { if (event.lengthComputable) resourceUploadProgress.value = Math.min(99, Math.round(event.loaded / event.total * 100)) }
-    xhr.onerror = () => reject(new Error('网络连接失败，资源未能保存。'))
-    xhr.onload = () => { let result: { item?: TeachingResource; error?: string } = {}; try { result = JSON.parse(xhr.responseText) } catch {} if (xhr.status < 200 || xhr.status >= 300) { reject(new Error(result.error || '保存资源失败。')); return } resourceUploadProgress.value = 100; resolve({ response: xhr.status, result }) }
-    xhr.send(JSON.stringify(body))
-  })
-}
 async function createTeachingResource() {
-  if (!resourceTitle.value.trim()) { resourceError.value = '请填写资源名称。'; return }
   const batch = resourceBatchMode.value && !editingResourceId.value
   const files = batch ? resourceFiles.value : (resourceFile.value ? [resourceFile.value] : [])
-  if (batch && !files.length) { resourceError.value = '批量上传至少选择一个文件。'; return }
-  if (!files.length && !resourceUrl.value.trim() && !editingResourceId.value) { resourceError.value = '请上传文件或粘贴资源 URL 链接。'; return }
-  if (resourceUrl.value.trim() && !/^https?:\/\//i.test(resourceUrl.value.trim())) { resourceError.value = '资源 URL 必须以 http:// 或 https:// 开头。'; return }
-  for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) { resourceError.value = `文件“${file.name}”格式不受支持。请使用 PPT、PPTX、MP3、PDF、DOC、DOCX 或 TXT。`; return }
-    if (file.size > 25 * 1024 * 1024) { resourceError.value = `文件“${file.name}”超过 25 MB。`; return }
-  }
+  const validationError = validateResourceUpload({
+    title: resourceTitle.value,
+    isBatch: batch,
+    isEditing: Boolean(editingResourceId.value),
+    files,
+    url: resourceUrl.value,
+  })
+  if (validationError) { resourceError.value = validationError; return }
   resourceBusy.value = true; resourceError.value = ''; resetResourceUpload()
   try {
     const common = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, grade: (resourceGrade.value || null) as ResourceWrite['grade'], isPublic: resourceIsPublic.value, url: resourceUrl.value.trim() || null }
@@ -369,7 +357,12 @@ async function createTeachingResource() {
         if (file) data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
         const payload: ResourceWrite = { ...common, ...(file ? { filename: file.name, data } : {}) }
         const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
-        const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
+        const result = await requestWithUploadProgress(
+          endpoint,
+          editingResourceId.value ? 'PATCH' : 'POST',
+          payload,
+          percentage => { resourceUploadProgress.value = percentage },
+        )
         if (!result.item) throw new Error('服务器未返回已保存的资源。')
         created.push(result.item)
         if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
@@ -412,9 +405,8 @@ function handleResourcePaste(event: ClipboardEvent) {
   event.preventDefault()
   const accepted: File[] = []; const errors: string[] = []
   for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) errors.push(`${file.name}：格式不受支持`)
-    else if (file.size > 25 * 1024 * 1024) errors.push(`${file.name}：超过 25 MB`)
+    const validationError = getResourceUploadFileError(file)
+    if (validationError) errors.push(`${file.name}：${validationError}`)
     else accepted.push(file)
   }
   if (resourceBatchMode.value && !editingResourceId.value) { resourceFiles.value = accepted; resourceFile.value = accepted[0] || null }
@@ -531,8 +523,8 @@ const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicDirectoryData').createPublicDirectoryLoader>
 let publicDirectoryLoaderPromise: Promise<PublicDirectoryLoader> | undefined
-let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
-let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
+const debouncedKnowledgeSearchQuery = useDebouncedValue(knowledgeSearchQuery, 220)
+const debouncedEducationResourceSearch = useDebouncedValue(educationResourceSearch, 220)
 let navigationSequence = 0
 let sessionRequestSequence = 0
 function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
@@ -553,15 +545,11 @@ function loadPublicContents(searchTerm = '') {
 function loadPublicTeachingResources(searchTerm = '') {
   return getPublicDirectoryLoader().then(loader => loader.loadPublicTeachingResources(searchTerm))
 }
-watch(knowledgeSearchQuery, (query) => {
-  if (route.value !== '/knowledge') return
-  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
-  publicContentSearchTimer = setTimeout(() => { void loadPublicContents(query) }, 220)
+watch(debouncedKnowledgeSearchQuery, (query) => {
+  if (route.value === '/knowledge') void loadPublicContents(query)
 })
-watch(educationResourceSearch, (query) => {
-  if (route.value !== '/education-resources') return
-  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
-  publicResourceSearchTimer = setTimeout(() => { void loadPublicTeachingResources(query) }, 220)
+watch(debouncedEducationResourceSearch, (query) => {
+  if (route.value === '/education-resources') void loadPublicTeachingResources(query)
 })
 type PublicArticleLoader = ReturnType<typeof import('./composables/loadPublicArticle').createPublicArticleLoader>
 let publicArticleLoaderPromise: Promise<PublicArticleLoader> | undefined
@@ -748,8 +736,6 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
-  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
-  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
   educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
