@@ -328,3 +328,35 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 
 - Current tests are source-boundary assertions, not browser-level event/fetch lifecycle tests. The returned cleanup API enables a future mounted/jsdom behavior test.
 - No production changes, service restarts, deployment, PR merge, or manual GitHub Actions.
+
+## Batch 12 — preserve labels for valid empty-string select values (2026-10-29)
+
+### Goal and evidence
+
+- Reviewed `VirtualizedSelect.vue`, its two call sites in `App.vue` and `TeachingResourceEditorDialog.vue`, the option mappings, and the existing Node test setup before editing.
+- The trigger previously rendered `selected?.label || placeholder`. `Option.label` is typed as `string`, so an intentionally empty label was treated as if no option were selected and replaced with the placeholder. The component can distinguish a missing selected option (`undefined`) from a selected option whose label is `''`; nullish fallback preserves that distinction. The existing grade option's empty-string *value* is not itself the defect because its label is non-empty; it was reviewed to verify that model values and display labels are separate concerns.
+- This is a source-contract edge case identified by tracing the shared component and its callers, not a claim of a confirmed production incident.
+
+### Changes and invariants
+
+- Changed the trigger label fallback from `selected?.label || placeholder` to `selected?.label ?? placeholder`, so fallback applies only when no option label exists; an explicitly empty label is preserved.
+- Added component-level documentation for responsibilities, state ownership, collaborators, and the valid empty-string value boundary.
+- Added `frontend/test/virtualized-select.test.mjs` to guard nullish display fallback and the caller-owned `modelValue` / `update:modelValue` contract.
+- Kept option filtering, virtualization window calculations, scroll reset, outside-click/Escape listeners, selected value emission, styling, and all public props unchanged. No new dependencies were installed.
+
+### Verification evidence
+
+- `npm run type-check`: passed.
+- `npm test`: 169/169 passed.
+- `npm run build`: passed; initial JavaScript including modulepreloads 61.87 KiB gzip / 65.00 KiB budget; initial CSS 82.32 KiB gzip / 85.00 KiB budget; lazy editor 206.80 KiB gzip / 230.00 KiB budget; lazy Markdown 24.67 KiB gzip / 30.00 KiB budget.
+- `npm run build:static-origin`: passed; initial JavaScript including modulepreloads 61.89 KiB gzip / 65.00 KiB budget; initial CSS 82.39 KiB gzip / 85.00 KiB budget; lazy editor 206.80 KiB gzip; lazy Markdown 24.67 KiB gzip; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- `npm run check:static-assets`: passed (61 files, 1 HTML); `npm run test:static-assets`: passed; `git diff --check`: passed; frontend source/HTML public-CDN scan found no matches.
+
+### Limits and constraints
+
+- The new tests are source-boundary assertions. They do not mount the Vue component or test actual browser rendering, keyboard navigation, focus behavior, or pointer events. The component's broader keyboard/focus semantics remain a separate candidate requiring mounted-component coverage.
+- No production changes, service restarts, deployment, PR merge, or GitHub Actions run. Bundle budgets were not changed.
+
+### Next candidate
+
+- Before changing keyboard navigation or focus semantics in `VirtualizedSelect.vue`, establish mounted-component coverage using the already-installed jsdom and Vue runtime/compiler tooling; then cover open/close, disabled-state transitions, empty results, option updates, and keyboard focus behavior without changing caller-owned selection semantics.

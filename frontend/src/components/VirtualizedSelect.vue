@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+/**
+ * Responsibility: searchable, windowed option selection shared by content and teaching-resource forms.
+ * Dependencies: Vue props/reactivity and document-level outside-click/Escape listeners.
+ * Collaboration: callers own the selected model value and option list; this component owns transient query/open/scroll state.
+ * Boundary: empty-string option values are valid domain values and must not be confused with a missing selection.
+ */
 type Option = { label: string; value: string }
 const props = withDefaults(defineProps<{ modelValue: string | null; options: Option[]; label: string; placeholder?: string; disabled?: boolean }>(), { placeholder: '请选择', disabled: false })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -26,7 +32,7 @@ onBeforeUnmount(() => { document.removeEventListener('mousedown', onOutside); do
 <template>
   <div ref="root" class="virtualized-select" :class="{ 'is-open': open, 'is-disabled': disabled }">
     <button type="button" class="virtualized-select-trigger" :aria-label="label" :aria-expanded="open" :disabled="disabled" @click="open = !open">
-      <span>{{ selected?.label || placeholder }}</span><i class="virtualized-select-chevron bi bi-chevron-down" aria-hidden="true"></i>
+      <span>{{ selected?.label ?? placeholder }}</span><i class="virtualized-select-chevron bi bi-chevron-down" aria-hidden="true"></i>
     </button>
     <div v-if="open" class="virtualized-select-popover" role="listbox" :aria-label="label">
       <input v-model="query" name="optionSearch" class="form-control virtualized-select-search" type="search" placeholder="搜索选项…" :aria-label="'搜索' + label" @keydown.stop />
