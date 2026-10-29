@@ -43,3 +43,45 @@ test('teaching resource loader reports current request failures', async () => {
   assert.deepEqual(messages, ['server unavailable'])
   assert.equal(state.loading.value, false)
 })
+
+
+test('teaching resource loader keeps the newest search result and suppresses stale failures', async () => {
+  const pending = []
+  const messages = []
+  const state = setup((path) => new Promise((resolve, reject) => pending.push({ path, resolve, reject })), message => messages.push(message))
+  const older = state.loadTeachingResources('algebra')
+  const newer = state.loadTeachingResources('biology')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(pending.map(item => item.path), ['/resources?q=algebra', '/resources?q=biology'])
+
+  pending[1].resolve({ items: [resource('biology-current')] })
+  await newer
+  assert.equal(state.activeItems.value[0].id, 'biology-current')
+  assert.equal(state.loading.value, false)
+
+  pending[0].reject(new Error('stale algebra failure'))
+  await older
+  assert.equal(state.activeItems.value[0].id, 'biology-current')
+  assert.equal(state.error.value, '')
+  assert.deepEqual(messages, [])
+  assert.equal(state.loading.value, false)
+})
+
+test('teaching resource loader never lets a stale active request overwrite trash view data', async () => {
+  const pending = []
+  const state = setup(path => new Promise(resolve => pending.push({ path, resolve })))
+  const activeRequest = state.loadTeachingResources('old query')
+  await new Promise(resolve => setImmediate(resolve))
+  state.viewMode.value = 'trash'
+  const trashRequest = state.loadTeachingResources()
+  await new Promise(resolve => setImmediate(resolve))
+
+  pending[1].resolve({ items: [resource('trash-current')] })
+  await trashRequest
+  pending[0].resolve({ items: [resource('stale-active')] })
+  await activeRequest
+
+  assert.equal(state.trashItems.value[0].id, 'trash-current')
+  assert.equal(state.activeItems.value.length, 0)
+  assert.equal(state.loading.value, false)
+})

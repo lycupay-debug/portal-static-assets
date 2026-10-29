@@ -421,3 +421,31 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### 下一批候选
 
 - 继续审查资源列表/详情数据加载和视图切换的竞态及父子状态同步；先从 `loadTeachingResourceList.ts` 和调用方建立可复现的请求序列测试，只在确认边界问题后修改。
+
+
+## Batch 15 — 教学资源列表请求竞态回归测试（2026-10-29）
+
+### 审查结论与变更
+
+- 对照工程标准检查 loadTeachingResourceList.ts、App.vue 中的动态加载器/视图切换调用方、同类 loadContentList.ts，以及已有的 loader 测试。
+- 当前实现已通过单调递增 request sequence 和捕获的 view mode 阻止过期结果写入；不需要仅为制造代码差异而改写实现。本批重点补齐此前未直接覆盖的并发搜索失败和 active/trash 交错请求场景。
+- 扩展 frontend/test/teaching-resource-list-loader.test.mjs 两项确定性测试：较早的搜索请求在较新的搜索成功后失败时，不得覆盖新数据、写入错误或触发通知；active 请求与 trash 请求交错时，过期 active 响应不得污染回收站数据，最终 loading 状态应正确释放。
+- 不改 API 路径、请求语义、状态所有权、通知策略或生产代码。通过验证当前请求序列保护，而不是无证据地引入取消请求/AbortController。
+
+### 验证证据
+
+- 专项 loader 测试：5/5 通过。
+- npm run type-check：通过。
+- npm test：180/180 通过。
+- npm run build：通过；首屏 JS（含 modulepreload）61.91 KiB gzip / 65.00 KiB 预算；首屏 CSS 82.32 KiB gzip / 85.00 KiB；懒加载编辑器 206.80 KiB gzip / 230.00 KiB；Markdown 24.67 KiB gzip / 30.00 KiB。
+- npm run build:static-origin：通过；首屏 JS 61.93 KiB gzip / 65.00 KiB；首屏 CSS 82.39 KiB gzip / 85.00 KiB；16 个 JS bundle、5 个 CSS bundle、74 个 icon URL；API 路径仍为根相对路径。
+- npm run check:static-assets：通过（61 个文件、1 个 HTML）；npm run test:static-assets 通过；前端源码/HTML 公共 CDN 扫描无匹配；git diff --check 通过。
+
+### 限制与安全边界
+
+- 本批新增的是可控 Promise 顺序测试，不是浏览器网络/真实后端集成测试；不声称 API 请求被取消，只验证 stale response 不会提交到 UI 状态。
+- 生产目录未修改；未部署、未重启服务、未合并 PR、未运行 GitHub Actions；bundle 预算未放宽。
+
+### 下一批候选
+
+- 检查 App.vue 对动态导入 loader 初始化失败与请求失败的错误/忙碌状态处理是否重复或可能产生重复通知；用可测的纯函数或最小集成测试先确认调用路径，再决定是否抽取公共错误边界。
