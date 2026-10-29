@@ -1,17 +1,24 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { apiRequest } from '../api/client'
 import { mountPermissionManagement } from './permissionManagement'
 import './permissionManagement.css'
-const SystemExecutionPolicyCenter = defineAsyncComponent(() => import('./SystemExecutionPolicyCenter.vue'))
+import { mountSystemExecutionPolicyCenter } from './systemExecutionPolicyCenter'
+import './systemExecutionPolicyCenter.css'
 const policyView = ref<'execution' | 'permissions'>('execution')
+const executionPolicyHost = ref<HTMLElement | null>(null)
 const permissionManagementHost = ref<HTMLElement | null>(null)
+let disposeExecutionPolicy: (() => void) | null = null
 let disposePermissionManagement: (() => void) | null = null
-watch([policyView, permissionManagementHost], ([view, host]) => {
+watch([policyView, executionPolicyHost, permissionManagementHost], ([view, executionHost, permissionHost]) => {
+  disposeExecutionPolicy?.()
+  disposeExecutionPolicy = null
   disposePermissionManagement?.()
   disposePermissionManagement = null
-  if (view === 'permissions' && host) {
-    disposePermissionManagement = mountPermissionManagement(host).dispose
+  if (view === 'execution' && executionHost) {
+    disposeExecutionPolicy = mountSystemExecutionPolicyCenter(executionHost).dispose
+  } else if (view === 'permissions' && permissionHost) {
+    disposePermissionManagement = mountPermissionManagement(permissionHost).dispose
   }
 }, { flush: 'post' })
 
@@ -138,7 +145,7 @@ onMounted(() => {
     warningTimer = setInterval(() => { if (!document.hidden) void loadWarnings() }, 15000)
   }
 })
-onBeforeUnmount(() => { logLoadSequence += 1; closeStream(); if (warningTimer) clearInterval(warningTimer); disposePermissionManagement?.(); disposePermissionManagement = null })
+onBeforeUnmount(() => { logLoadSequence += 1; closeStream(); if (warningTimer) clearInterval(warningTimer); disposePermissionManagement?.(); disposePermissionManagement = null; disposeExecutionPolicy?.(); disposeExecutionPolicy = null })
 </script>
 
 <template>
@@ -147,7 +154,7 @@ onBeforeUnmount(() => { logLoadSequence += 1; closeStream(); if (warningTimer) c
       <button type="button" :class="{ active: policyView === 'execution' }" @click="policyView = 'execution'">运行模式与任务策略</button>
       <button type="button" :class="{ active: policyView === 'permissions' }" @click="policyView = 'permissions'">权限管理</button>
     </nav>
-    <SystemExecutionPolicyCenter v-if="policyView === 'execution'" />
+    <div v-if="policyView === 'execution'" ref="executionPolicyHost"></div>
     <div v-else ref="permissionManagementHost"></div>
   </section>
   <section v-else class="system-ops-center">
