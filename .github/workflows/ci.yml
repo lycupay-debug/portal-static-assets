@@ -1,8 +1,10 @@
 name: CI
 
-# Automatic CI is disabled while GitHub Actions quota is exhausted.
-# Runs can only be started manually from the Actions tab.
 on:
+  push:
+    branches: [main, "integration/**", "refactor/**", "feature/**"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

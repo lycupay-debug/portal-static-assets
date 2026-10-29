@@ -47,9 +47,11 @@ export function createPublicArticleLoader(options: PublicArticleOptions) {
       options.html.value = html
       options.article.value = result.item
     } catch (error) {
-      if (requestId === requestSequence) options.error.value = error instanceof Error ? error.message : '读取内容失败。'
+      if (requestId === requestSequence && options.route.value === requestedRoute) {
+        options.error.value = error instanceof Error ? error.message : '读取内容失败。'
+      }
     } finally {
-      if (requestId === requestSequence) options.loading.value = false
+      if (requestId === requestSequence && options.route.value === requestedRoute) options.loading.value = false
     }
   }
 

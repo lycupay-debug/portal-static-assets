@@ -102,7 +102,7 @@ onMounted(refresh)
         <header><h2>账户角色</h2><span>{{ users.length }} 个账户</span></header>
         <input v-model="query" class="form-control permission-search" type="search" placeholder="搜索邮箱或昵称" aria-label="搜索账户" />
         <div class="permission-user-list">
-          <button v-for="item in filteredUsers" :key="item.id" type="button" class="permission-user" :class="{ active: item.id === selectedUser }" @click="chooseUser(item.id)">
+          <button v-for="item in filteredUsers" :key="item.id" type="button" class="permission-user" :disabled="saving" :class="{ active: item.id === selectedUser }" @click="chooseUser(item.id)">
             <span class="permission-user-name">{{ item.displayName || '未设置昵称' }}</span><span class="permission-user-email">{{ item.email }}</span>
             <span class="permission-tags"><i v-for="key in item.roles" :key="key">{{ roles.find(r => r.roleKey === key)?.displayName || key }}</i></span>
           </button>
@@ -121,7 +121,7 @@ onMounted(refresh)
       <section class="permission-panel">
         <header><h2>角色权限</h2><span>{{ permissions.length }} 项权限</span></header>
         <label class="permission-field-label" for="permission-role">选择角色</label>
-        <select id="permission-role" v-model="selectedRole" class="form-select" @change="syncSelections">
+        <select id="permission-role" v-model="selectedRole" class="form-select" :disabled="saving" @change="syncSelections">
           <option v-for="item in roles" :key="item.roleKey" :value="item.roleKey">{{ item.displayName }}</option>
         </select>
         <div v-if="role" class="permission-editor">

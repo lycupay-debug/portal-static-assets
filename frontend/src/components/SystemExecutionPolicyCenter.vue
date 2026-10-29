@@ -39,7 +39,14 @@ async function saveMode() {
     policy.value = await request<PolicyResponse>('/system-ops/policy', { method: 'PUT', body: JSON.stringify({ mode: selectedMode.value }) })
     selectedMode.value = policy.value.mode
     notice.value = '运行模式已保存，后端已记录本次策略变更。'
-  } catch (e) { error.value = e instanceof Error ? e.message : '保存运行策略失败'; await loadPolicy() }
+  } catch (e) {
+    const saveError = e instanceof Error ? e.message : '保存运行策略失败'
+    await loadPolicy()
+    const reloadError = error.value
+    error.value = reloadError
+      ? `${saveError}（重新读取当前策略也失败：${reloadError}）`
+      : saveError
+  }
   finally { saving.value = false }
 }
 

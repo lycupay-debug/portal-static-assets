@@ -20,18 +20,18 @@ test('legacy localized paths resolve to canonical routes', () => {
 
 const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 
-test('protected history navigation checks the session before loading route data', () => {
+test('history navigation delegates protected-route access to the shared guard before loading route data', () => {
   const start = appSource.indexOf('function onPopState()')
   const end = appSource.indexOf('onMounted(() => {', start)
   assert.ok(start >= 0 && end > start)
   const handler = appSource.slice(start, end)
-  assert.ok(handler.indexOf('await loadSession()') < handler.indexOf('loadRouteData()'))
+  assert.ok(handler.indexOf('await ensureRouteAccess(navigationId)') < handler.indexOf('loadRouteData()'))
   assert.match(handler, /navigationId !== navigationSequence/)
 })
 
 test('async navigation ignores stale completions after a newer navigation begins', () => {
   const start = appSource.indexOf('async function navigate(target: string)')
-  const end = appSource.indexOf('async function loadSession()', start)
+  const end = appSource.indexOf('const { loadSession, submitAuth, logout }', start)
   assert.ok(start >= 0 && end > start)
   const handler = appSource.slice(start, end)
   assert.match(handler, /const navigationId = \+\+navigationSequence/)
@@ -44,5 +44,5 @@ test('initial protected routes wait for session validation before loading route 
   assert.ok(start >= 0 && end > start)
   const lifecycle = appSource.slice(start, end)
   const protectedBranch = lifecycle.slice(lifecycle.indexOf('if (isProtectedPage.value)'), lifecycle.indexOf('} else {', lifecycle.indexOf('if (isProtectedPage.value)')))
-  assert.ok(protectedBranch.indexOf('loadSession()') < protectedBranch.indexOf('loadRouteData()'))
+  assert.ok(protectedBranch.indexOf('ensureRouteAccess(navigationId)') < protectedBranch.indexOf('loadRouteData()'))
 })

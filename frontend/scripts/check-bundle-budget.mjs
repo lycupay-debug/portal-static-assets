@@ -1,3 +1,10 @@
+/**
+ * Responsibility: enforce measured transfer-size budgets for the initial route and lazy features.
+ * Dependencies: the Vite output directory and Node's gzip implementation; no network access.
+ * Collaboration: run after normal or static-origin builds to catch regressions in initial, editor,
+ * and Markdown payloads, including separately emitted vendor chunks.
+ * Boundaries: measures built artifacts only; it never changes thresholds or production files.
+ */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { join, resolve } from 'node:path'
@@ -7,12 +14,6 @@ const dist = resolve(process.argv[2] ?? fileURLToPath(new URL('../dist/', import
 const assetsDir = join(dist, 'assets')
 const html = readFileSync(join(dist, 'index.html'), 'utf8')
 const assets = readdirSync(assetsDir)
-
-function assetFile(pattern, label) {
-  const matches = assets.filter((name) => pattern.test(name))
-  if (matches.length !== 1) throw new Error(`Expected exactly one ${label} asset, found ${matches.length}`)
-  return join(assetsDir, matches[0])
-}
 
 function sizes(path) {
   const source = readFileSync(path)
@@ -32,25 +33,41 @@ const cssPaths = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\
   .map((match) => localBuildPath(match[1]))
 if (!cssPaths.length) throw new Error('Could not find initial CSS assets in dist/index.html')
 
-const entry = sizes(entryPath)
-// This is a maintainability guardrail, not a minimization target; avoid trade-offs that fragment architecture just to shave bytes.
-assertBudget('Initial JavaScript (gzip)', entry.gzip, 150 * 1024, 'gzip bytes')
+const initialJsPaths = new Set([entryPath])
+for (const match of html.matchAll(/<link[^>]+rel="modulepreload"[^>]+href="([^"]+\.js)"/g)) {
+  initialJsPaths.add(localBuildPath(match[1]))
+}
+const initialJs = [...initialJsPaths].reduce((total, path) => {
+  const size = sizes(path)
+  return { raw: total.raw + size.raw, gzip: total.gzip + size.gzip }
+}, { raw: 0, gzip: 0 })
+// Maintainability guardrail, not a minimization target; do not fragment architecture to shave bytes.
+assertBudget('Initial JavaScript including modulepreloads (gzip)', initialJs.gzip, 150 * 1024, 'gzip bytes')
 // Keep a small raw-size allowance for whitespace-insensitive table search.
-assertBudget('Initial JavaScript (raw)', entry.raw, 191 * 1024, 'raw bytes')
+assertBudget('Initial JavaScript including modulepreloads (raw)', initialJs.raw, 191 * 1024, 'raw bytes')
 const initialCssGzip = cssPaths.reduce((total, path) => total + sizes(path).gzip, 0)
 assertBudget('Initial CSS (gzip)', initialCssGzip, 85 * 1024, 'gzip bytes')
 
-const editorPath = assetFile(/^ContentDocumentEditor-.+\.js$/, 'lazy editor JavaScript')
-const editor = sizes(editorPath)
-assertBudget('Lazy editor JavaScript (gzip)', editor.gzip, 230 * 1024, 'gzip bytes')
-assertBudget('Lazy editor JavaScript (raw)', editor.raw, 720 * 1024, 'raw bytes')
+function aggregateChunks(patterns, label) {
+  const paths = assets.filter((name) => patterns.some((pattern) => pattern.test(name))).map((name) => join(assetsDir, name))
+  if (!assets.some((name) => patterns[0].test(name))) {
+    throw new Error(`Could not find the primary ${label} chunk`)
+  }
+  return paths.reduce((total, path) => {
+    const size = sizes(path)
+    return { raw: total.raw + size.raw, gzip: total.gzip + size.gzip }
+  }, { raw: 0, gzip: 0 })
+}
 
-const markdownPath = assetFile(/^markdown-.+\.js$/, 'lazy Markdown renderer JavaScript')
-const markdown = sizes(markdownPath)
-assertBudget('Lazy Markdown renderer (gzip)', markdown.gzip, 30 * 1024, 'gzip bytes')
+const editor = aggregateChunks([/^ContentDocumentEditor-.+\.js$/, /^editor-vendor-.+\.js$/], 'lazy editor JavaScript')
+assertBudget('Lazy editor JavaScript including vendor chunks (gzip)', editor.gzip, 230 * 1024, 'gzip bytes')
+assertBudget('Lazy editor JavaScript including vendor chunks (raw)', editor.raw, 720 * 1024, 'raw bytes')
+
+const markdown = aggregateChunks([/^markdown-.+\.js$/, /^markdown-vendor-.+\.js$/], 'lazy Markdown renderer JavaScript')
+assertBudget('Lazy Markdown renderer including vendor chunks (gzip)', markdown.gzip, 30 * 1024, 'gzip bytes')
 
 const initialMarkup = html.match(/<link[^>]+rel="modulepreload"[^>]+href="([^"]+)"/g) || []
-if (initialMarkup.some((tag) => /ContentDocumentEditor|markdown-|tiptap-|prosemirror-|editor-engine-/i.test(tag))) {
+if (initialMarkup.some((tag) => /ContentDocumentEditor|markdown-|tiptap-|prosemirror-|editor-vendor-/i.test(tag))) {
   throw new Error('Initial HTML preloads editor or article-rendering dependencies; keep these route-lazy')
 }
 console.log('✓ Editor and Markdown renderer remain outside the initial HTML preload list')

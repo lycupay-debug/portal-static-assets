@@ -29,6 +29,7 @@ const cursor = ref(0)
 const failedFileCleanupEvents = ref(0)
 const checkedAt = ref('')
 let stream: EventSource | null = null
+let logLoadSequence = 0
 let warningTimer: ReturnType<typeof setInterval> | undefined
 
 const filteredLogs = computed(() => logs.value.filter(item => {
@@ -55,22 +56,26 @@ function addLog(item: LogEntry) {
 }
 async function loadLogs(reset = false) {
   if (props.view !== 'logs') return
+  const sequence = ++logLoadSequence
+  const source = activeSource.value
   closeStream()
   loading.value = true
   error.value = ''
   if (reset) { logs.value = []; cursor.value = 0 }
   try {
-    const params = new URLSearchParams({ source: activeSource.value, limit: '100', after: reset ? '0' : String(cursor.value) })
+    const params = new URLSearchParams({ source, limit: '100', after: reset ? '0' : String(cursor.value) })
     const result = await api<{ items: LogEntry[]; cursor: number }>(`/system-ops/logs?${params}`)
+    if (sequence !== logLoadSequence || source !== activeSource.value) return
     if (reset) logs.value = result.items || []
     else for (const item of result.items || []) addLog(item)
     cursor.value = Math.max(cursor.value, Number(result.cursor || 0))
     if (!paused.value) connectStream()
   } catch (e) {
+    if (sequence !== logLoadSequence || source !== activeSource.value) return
     error.value = e instanceof Error ? e.message : '读取日志失败'
     connectionState.value = 'offline'
   } finally {
-    loading.value = false
+    if (sequence === logLoadSequence) loading.value = false
   }
 }
 function connectStream() {
@@ -123,7 +128,7 @@ onMounted(() => {
     warningTimer = setInterval(() => { if (!document.hidden) void loadWarnings() }, 15000)
   }
 })
-onBeforeUnmount(() => { closeStream(); if (warningTimer) clearInterval(warningTimer) })
+onBeforeUnmount(() => { logLoadSequence += 1; closeStream(); if (warningTimer) clearInterval(warningTimer) })
 </script>
 
 <template>
