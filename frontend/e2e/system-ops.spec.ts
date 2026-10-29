@@ -56,9 +56,9 @@ test('protected policy route mounts native execution and permission views and sw
   await page.goto('/account/system-ops/policy')
   await expect(page.getByRole('heading', { name: '运行模式与任务策略' })).toBeVisible()
 
-  await page.getByRole('button', { name: '权限管理' }).click()
+  await page.getByRole('navigation', { name: '运维管理功能' }).getByRole('button', { name: '权限管理' }).click()
   await expect(page.getByRole('heading', { name: '权限管理' })).toBeVisible()
 
-  await page.getByRole('button', { name: '运行模式与任务策略' }).click()
+  await page.getByRole('navigation', { name: '运维管理功能' }).getByRole('button', { name: '运行模式与任务策略' }).click()
   await expect(page.getByRole('heading', { name: '运行模式与任务策略' })).toBeVisible()
 })
