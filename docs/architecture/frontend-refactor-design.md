@@ -513,3 +513,34 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### 下一批候选
 
 - 检查 `App.vue` 路由切换与公开内容加载的生命周期是否会在模块初始化失败后产生重复提示或状态串扰；以现有 route/navigation sequence 为基线，先补充可复现测试，再决定是否调整调用协调方式。
+
+## Batch 18 — 公开文章过期请求不得污染新路由状态（2026-10-29）
+
+### 复现与根因
+
+- 在 `loadPublicArticle.ts` 中，成功响应在提交文章/HTML 前同时校验 request sequence 和捕获的 route；但 `catch` 与 `finally` 只校验 request sequence。
+- 通过可控 Promise 测试复现：文章请求未完成时导航离开文章页，随后请求 reject，旧请求仍会把错误写进共享 `publicContentError`（可能触发不相关的错误通知），并将共享 `publicContentLoading` 清为 false。该 loading ref 也被公开目录加载复用，旧文章请求可能错误地结束新路由的 loading 状态。
+- 测试先于实现添加，首轮运行失败，实际错误文本为 `stale article request failed`，确认不是推测性修复。
+
+### 修改
+
+- 将文章 loader 的 catch/finally 写状态条件统一为 `requestId === requestSequence && options.route.value === requestedRoute`。
+- 过期路由上的旧请求不再写入错误或释放由新路由拥有的 loading 状态；当前路由的真实请求失败仍会报告错误并正常释放 loading。
+- 新增 `frontend/test/public-article-loader.test.mjs` 回归用例，模拟文章请求在离开文章页后失败，同时让共享 loading ref 归属新路由，验证错误不串扰、loading 不被旧请求清除。
+
+### 验证证据
+
+- 新回归测试在修复前失败，修复后通过；`npm run type-check` 通过。
+- `npm test`：185/185 通过。
+- `npm run build`：通过；首屏 JS（含 modulepreload）61.93 KiB gzip / 65 KiB 预算，首屏 CSS 82.32 KiB gzip / 85 KiB，懒加载编辑器 206.80 KiB gzip / 230 KiB，Markdown 24.67 KiB gzip / 30 KiB。
+- `npm run build:static-origin`：通过；首屏 JS 61.95 KiB gzip / 65 KiB，首屏 CSS 82.39 KiB gzip / 85 KiB；16 个 JS bundle、5 个 CSS bundle、74 个 icon URL，API 路径仍为根相对路径。
+- `npm run check:static-assets`：通过（61 个文件、1 个 HTML）；`npm run test:static-assets`、`git diff --check` 均通过；前端源码/HTML 公共 CDN 扫描无匹配。
+
+### 限制与安全边界
+
+- 可控 Promise 测试覆盖异步时序和共享 ref 所有权，不等于真实浏览器网络或生产 API 集成测试；没有引入请求取消或改变 API 行为。
+- 生产目录未修改；未部署、未重启服务、未合并 PR、未运行 GitHub Actions；bundle 预算未放宽。
+
+### 下一批候选
+
+- 对照同样的 route + request sequence 不变量检查法律文档和其他共享 loading/error ref 的 loader，区分已被测试覆盖的保护与真实缺口，不做无证据的统一重构。

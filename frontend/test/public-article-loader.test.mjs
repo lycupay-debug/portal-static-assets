@@ -63,3 +63,17 @@ test('public article loader ignores an older response after a newer request', as
   await first
   assert.equal(state.article.value.slug, 'second-article')
 })
+
+test('public article loader ignores a stale failure without clearing a newer route loading state', async () => {
+  let rejectRequest
+  const state = setup(() => new Promise((_, reject) => { rejectRequest = reject }))
+  const pending = state.loadPublicArticle('first-article')
+  await new Promise(resolve => setImmediate(resolve))
+  state.route.value = '/'
+  state.error.value = ''
+  state.loading.value = true // The shared loading ref now belongs to a newer route's directory request.
+  rejectRequest(new Error('stale article request failed'))
+  await pending
+  assert.equal(state.error.value, '')
+  assert.equal(state.loading.value, true)
+})
