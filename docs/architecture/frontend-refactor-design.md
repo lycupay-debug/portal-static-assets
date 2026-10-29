@@ -392,3 +392,32 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Review `TeachingResourceDrawer.vue` data formatting and lifecycle against its callers and existing shared utilities; only change behavior when a reproducible contract or lifecycle issue is found, then add a focused test before implementation.
+
+
+## Batch 14 — TeachingResourceDrawer 数据格式化边界（2026-10-29）
+
+### 发现与修改
+
+- 按上一批候选审查 `TeachingResourceDrawer.vue`、`App.vue` 调用点、生成的 `TeachingResource` 类型与 `utils/resourceFiles.ts`。父组件持有资源数据/视图模式并处理 close/edit/download；详情抽屉只负责展示和转发用户意图，没有需要新增的持久状态。
+- 抽屉原先复制了一份文件大小格式化逻辑，并以 `fileSize` 真值判断是否展示。合法的 `0` 字节会被当作缺失值显示为 `—`；复制的格式化函数还会把 0 字节格式化成 `1 KB`。现改用共享的 `formatResourceFileSize`，并让有效的 0 字节显示为 `0 B`，缺失/非法大小仍显示 `—`。
+- 创建/更新时间直接调用 `new Date(value).toLocaleString()`；格式错误的时间戳会渲染为误导性的 `Invalid Date`。新增局部 `formatResourceDate`：缺失值显示 `—`，有效日期采用 `zh-CN` 24 小时格式，无效日期保留原始值以便发现数据问题，而不伪装成有效日期。
+- 组件模板按职责拆分为可读结构，补充职责、状态所有权、协作工具和数据边界注释。没有改变 API、父组件状态所有权、资源链接 `noopener noreferrer`、活动/回收站操作可见性或事件签名。
+
+### 行为测试与验证
+
+- 新增 `frontend/test/teaching-resource-drawer.test.mjs`，使用仓库现有 Vue SFC compiler、Vue runtime、esbuild 与 jsdom 挂载真实组件；没有安装新依赖。
+- 测试覆盖 0 字节文件、无效创建/删除时间戳、回收站不显示编辑/下载操作、close/edit/download 事件与资源 ID、外链 `target`/`rel` 安全属性及外链动作标签。
+- `npm run type-check`：通过。
+- `npm test`：178/178 通过。
+- `npm run build`：通过；首屏 JS（含 modulepreload）61.91 KiB gzip / 65.00 KiB 预算，首屏 CSS 82.32 KiB / 85.00 KiB，懒加载编辑器 206.80 KiB / 230.00 KiB，Markdown 24.67 KiB / 30.00 KiB。
+- `npm run build:static-origin`：通过；首屏 JS 61.93 KiB gzip / 65.00 KiB，首屏 CSS 82.39 KiB / 85.00 KiB；16 个 JS bundle、5 个 CSS bundle、74 个 icon URL；API 路径仍为根相对路径。
+- `npm run check:static-assets`：通过（61 个文件、1 个 HTML）；`npm run test:static-assets`、`git diff --check` 均通过；前端源码/HTML 公共 CDN 扫描无匹配。
+
+### 限制与约束
+
+- jsdom 验证组件 DOM/事件与边界格式化，不替代真实浏览器的视觉、跨浏览器和辅助技术测试；没有调用生产 API。
+- 生产目录未修改；未部署、未重启服务、未合并 PR、未运行 GitHub Actions；bundle 预算未放宽。
+
+### 下一批候选
+
+- 继续审查资源列表/详情数据加载和视图切换的竞态及父子状态同步；先从 `loadTeachingResourceList.ts` 和调用方建立可复现的请求序列测试，只在确认边界问题后修改。
