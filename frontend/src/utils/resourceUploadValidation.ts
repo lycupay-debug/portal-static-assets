@@ -8,6 +8,17 @@ import { resourceFileExtensions } from './resourceFiles'
 
 export type ResourceUploadFile = Pick<File, 'name' | 'size'>
 
+/** 单文件大小上限与扩展名规则由表单预检和粘贴导入共用，避免两套入口发生规则漂移。 */
+export const MAX_RESOURCE_UPLOAD_FILE_BYTES = 25 * 1024 * 1024
+
+/** 返回单个文件的校验错误；不读文件内容、不产生副作用。 */
+export function getResourceUploadFileError(file: ResourceUploadFile): string | null {
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  if (!resourceFileExtensions.has(extension)) return '格式不受支持。请使用 PPT、PPTX、MP3、PDF、DOC、DOCX 或 TXT。'
+  if (file.size > MAX_RESOURCE_UPLOAD_FILE_BYTES) return '超过 25 MB。'
+  return null
+}
+
 export interface ResourceUploadValidationInput {
   title: string
   isBatch: boolean
@@ -27,9 +38,8 @@ export function validateResourceUpload(input: ResourceUploadValidationInput): st
   if (url && !lowerUrl.startsWith('http://') && !lowerUrl.startsWith('https://')) return '资源 URL 必须以 http:// 或 https:// 开头。'
 
   for (const file of input.files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) return `文件“${file.name}”格式不受支持。请使用 PPT、PPTX、MP3、PDF、DOC、DOCX 或 TXT。`
-    if (file.size > 25 * 1024 * 1024) return `文件“${file.name}”超过 25 MB。`
+    const fileError = getResourceUploadFileError(file)
+    if (fileError) return `文件“${file.name}”${fileError}`
   }
 
   return null

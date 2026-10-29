@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { validateResourceUpload } from '../src/utils/resourceUploadValidation.ts'
+import { getResourceUploadFileError, MAX_RESOURCE_UPLOAD_FILE_BYTES, validateResourceUpload } from '../src/utils/resourceUploadValidation.ts'
 
 const file = (name, size = 1024) => ({ name, size })
 const input = overrides => ({
@@ -50,4 +50,13 @@ test('file size boundary accepts 25 MiB and rejects larger files', () => {
 
 test('editing a resource may keep its existing file and URL', () => {
   assert.equal(validateResourceUpload(input({ isEditing: true, files: [], url: '' })), null)
+})
+
+
+test('file selection and paste entry points share extension and size rules', () => {
+  assert.equal(getResourceUploadFileError(file('lesson.PDF')), null)
+  assert.match(getResourceUploadFileError(file('payload.exe')), /格式不受支持/)
+  assert.equal(MAX_RESOURCE_UPLOAD_FILE_BYTES, 25 * 1024 * 1024)
+  assert.equal(getResourceUploadFileError(file('lesson.pdf', MAX_RESOURCE_UPLOAD_FILE_BYTES)), null)
+  assert.match(getResourceUploadFileError(file('lesson.pdf', MAX_RESOURCE_UPLOAD_FILE_BYTES + 1)), /超过 25 MB/)
 })

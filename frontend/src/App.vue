@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
-import { ApiRequestError, apiRequest } from './api/client'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { apiRequest } from './api/client'
 import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
@@ -18,8 +18,8 @@ const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { useAccountTable } from './composables/useAccountTable'
-import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
-import { validateResourceUpload } from './utils/resourceUploadValidation'
+import { formatFileSize, formatResourceFileSize } from './utils/resourceFiles'
+import { getResourceUploadFileError, validateResourceUpload } from './utils/resourceUploadValidation'
 import { requestWithUploadProgress } from './utils/resourceUploadRequest'
 import { resourceFileIcon } from './utils/resourceIcons'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
@@ -28,7 +28,6 @@ import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
-import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
 const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
@@ -409,9 +408,8 @@ function handleResourcePaste(event: ClipboardEvent) {
   event.preventDefault()
   const accepted: File[] = []; const errors: string[] = []
   for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) errors.push(`${file.name}：格式不受支持`)
-    else if (file.size > 25 * 1024 * 1024) errors.push(`${file.name}：超过 25 MB`)
+    const validationError = getResourceUploadFileError(file)
+    if (validationError) errors.push(`${file.name}：${validationError}`)
     else accepted.push(file)
   }
   if (resourceBatchMode.value && !editingResourceId.value) { resourceFiles.value = accepted; resourceFile.value = accepted[0] || null }
