@@ -77,3 +77,32 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 
 - Browser clipboard integration and actual server-side upload validation were not exercised by these unit tests. Keep those limitations explicit.
 - `App.vue` still owns resource dialog state, XHR upload transport, resource CRUD, and list refresh. Further extraction should move the UI and upload workflow together into a lazy-loaded dialog component or another boundary that measurably reduces initial payload; do not repeat a state-only extraction that breaches the current budget.
+
+## Batch 4 — lazy teaching-resource editor dialog (2026-10-29)
+
+### Goal and boundary
+
+- Move the complete teaching-resource create/edit UI and upload workflow out of `App.vue` into `frontend/src/components/TeachingResourceEditorDialog.vue`.
+- Keep `App.vue` responsible for opening the dialog, supplying the optional resource and option lists, synchronizing the shared resource busy flag, refreshing the list after a successful/partial save, and showing the completion notification.
+- The child owns form fields, file selection/paste filtering, on-demand validation, same-origin XHR upload progress, partial batch outcomes, and completion UI. Server-side authorization and resource validation remain in the Go API.
+- The component is loaded through `defineAsyncComponent` and mounted only while the dialog is open; it does not add an eager dependency to the initial route.
+
+### Compatibility and control flow
+
+- Create/edit endpoint and payload contract are unchanged: `POST /api/resources`, or `PATCH /api/resources/{id}`, with the existing `ResourceWrite` JSON shape and optional base64 file payload.
+- Batch uploads still create independent resources per file; successful records trigger list refresh even when other files fail.
+- Busy state is released before emitting the saved event, avoiding a race where list refresh and upload could overwrite the same loading flag.
+- The close/escape/backdrop restrictions remain active while busy and after completion until the user clicks the explicit completion button.
+- Public resource asset hosting, API paths, authentication behavior, and deployment topology are unchanged.
+
+### Verification evidence
+
+- `npm run type-check`: passed.
+- `npm test`: 148/148 passed, including three component-boundary checks for lazy mounting, ownership of upload interactions, same-origin endpoints and on-demand validation.
+- `npm run build`: passed; initial JavaScript including modulepreloads 61.75 KiB / 65 KiB gzip, initial CSS 82.32 KiB / 85 KiB gzip, lazy editor 206.80 KiB / 230 KiB gzip, lazy Markdown 24.67 KiB / 30 KiB gzip.
+- `npm run build:static-origin`: passed; initial JavaScript 61.78 KiB / 65 KiB gzip, initial CSS 82.39 KiB / 85 KiB gzip; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- Browser clipboard interaction and live upload API behavior were not exercised by this batch's unit/architecture tests. No production deploy, service restart, merge, or Chrome Test was performed.
+
+### Next candidate
+
+- Review the remaining route/lifecycle orchestration in `App.vue` for a boundary with measurable benefit. Do not extract page state alone; only proceed when the ownership contract is clear and tests can protect navigation/session ordering and the existing initial bundle budget.
