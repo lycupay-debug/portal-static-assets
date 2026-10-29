@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -82,6 +84,8 @@ jobs:
         run: go mod verify
       - name: Unit and race tests
         working-directory: backend
+        env:
+          TZ: Asia/Shanghai
         run: go test -race -count=1 ./...
       - name: Static checks
         working-directory: backend
@@ -89,7 +93,7 @@ jobs:
 
   event-core:
     name: C event core checks
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Compile and protocol tests
