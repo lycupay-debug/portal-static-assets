@@ -253,3 +253,14 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Add a testable request-sequencing helper or a mounted component test with deferred promises if the test environment can support it without adding an eager dependency. Then inspect `PermissionManagement.vue` reconciliation feedback and account navigation role visibility.
+
+
+## Batch 9 — permission editor selection locking (2026-10-29)
+
+- Reviewed `PermissionManagement.vue`, account navigation visibility, and Go RBAC handlers. During a pending PATCH, account buttons and the role selector remained active while checkboxes and save buttons were disabled. The live role label used after `await` could therefore refer to a different role than the one updated. This is a source-level race finding, not a live incident.
+- Disabled account selection buttons and the role selector while `saving` is true. API paths, PATCH methods, request payloads, super-admin safeguards, and server authorization are unchanged.
+- Read-only Go review confirmed `/admin/*` requires `requireSuperAdmin`; role mutations validate role/permission keys and write audit records transactionally. No frontend visibility policy was changed because that would be an access-policy decision.
+- Added `frontend/test/permission-management.test.mjs` for selection lock and API/UI contract assertions.
+- Verification: type-check passed; 163/163 tests passed; regular and static-origin builds passed. Initial JS gzip 61.82/65 KiB regular, 61.85/65 KiB static-origin; CSS 82.32/85 KiB and 82.39/85 KiB. Static asset checks and `git diff --check` passed; no public CDN references found.
+- Limits: source-level tests only; no mounted Vue, live API, or Go integration test. Production untouched; no deploy, restart, merge, or GitHub Actions.
+- Next: review `NotificationHost.vue` and `utils/notification.ts` timer/queue lifecycle.
