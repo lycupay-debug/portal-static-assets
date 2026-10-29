@@ -68,7 +68,7 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 
 - `npm run type-check`: passed.
 - `npm test`: 145/145 passed.
-- `npm run build`: passed; initial JavaScript including modulepreloads 64.62 KiB / 65 KiB, initial CSS 82.32 KiB / 85 KiB, lazy editor 206.80 KiB / 230 KiB, lazy Markdown 24.67 KiB / 30 KiB.
+- `npm run build`: passed; initial JavaScript including modulepreloads 64.63 KiB / 65 KiB, initial CSS 82.32 KiB / 85 KiB, lazy editor 206.80 KiB / 230 KiB, lazy Markdown 24.67 KiB / 30 KiB.
 - `npm run build:static-origin`: passed; initial JavaScript 64.65 KiB / 65 KiB, initial CSS 82.39 KiB / 85 KiB; static-origin layout check reported 2 entry URLs, 15 JS bundles, 5 CSS bundles and 74 icon URLs, with API paths remaining root-relative.
 - `git diff --check`: passed. No public CDN references found in the checked frontend source/HTML.
 - Production deployment, service restarts, GitHub Actions and Chrome Test were not run.
