@@ -222,3 +222,34 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Inspect `PermissionManagement.vue` post-save reconciliation feedback and account navigation's role visibility contract. Keep server-side RBAC authoritative; do not introduce client-side authorization assumptions without a verified session/capability source and tests.
+
+## Batch 8 — stale log response protection in SystemOpsCenter (2026-10-29)
+
+### Goal and defect
+
+- Reviewed the log lifecycle in `frontend/src/components/SystemOpsCenter.vue`. Switching between server and SSH log sources starts a new request, but the older request can resolve later and replace the newer source's list/cursor or set the connection state based on the old request. Its `finally` could also clear the loading indicator while the new request is still pending.
+- This was a source-level asynchronous race finding; no live incident or production behavior was inferred.
+
+### Changes and invariants
+
+- Added a monotonically increasing `logLoadSequence` and captured the requested source at the start of `loadLogs`.
+- Successful and failed responses now check both the sequence and active source before mutating logs, cursor, errors, or connection state.
+- The loading flag is cleared only by the latest request. Unmount increments the sequence to invalidate any pending completion and closes the stream.
+- Endpoint paths, request parameters, source selection UI, cursor semantics, EventSource credential behavior, and backend authorization remain unchanged.
+
+### Verification
+
+- Added source-boundary assertions for the sequence token and invalidation contract to `frontend/test/system-execution-policy.test.mjs`.
+- `npm run type-check`: passed; `npm test`: 161/161 passed.
+- `npm run build`: passed; initial JS including modulepreloads 61.82 KiB gzip / 65 KiB; initial CSS 82.32 KiB / 85 KiB; lazy editor 206.80 KiB / 230 KiB; Markdown 24.67 KiB / 30 KiB.
+- `npm run build:static-origin`: passed; initial JS 61.85 KiB gzip / 65 KiB; initial CSS 82.39 KiB / 85 KiB; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- Static asset layout and checker tests passed; `git diff --check` passed. No public CDN references were found in frontend source/HTML.
+
+### Limits and rollback
+
+- Tests assert the source-level lifecycle contract; no mounted Vue test, simulated deferred HTTP response, live EventSource, or browser E2E was performed.
+- No production deployment, service restart, merge, or GitHub Actions run. Production files and services remain untouched.
+
+### Next candidate
+
+- Add a testable request-sequencing helper or a mounted component test with deferred promises if the test environment can support it without adding an eager dependency. Then inspect `PermissionManagement.vue` reconciliation feedback and account navigation role visibility.

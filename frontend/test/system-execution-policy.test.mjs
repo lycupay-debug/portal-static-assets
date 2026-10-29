@@ -16,6 +16,15 @@ test('failed policy writes remain visible after a reconciliation read', () => {
   assert.match(body, /finally\s*\{ saving\.value = false \}/)
 })
 
+test('component request sequencing is explicit', () => {
+  const component = readFileSync(new URL('../src/components/SystemOpsCenter.vue', import.meta.url), 'utf8')
+  assert.ok(component.includes('const sequence = ++logLoadSequence'))
+  assert.ok(component.includes('const source = activeSource.value'))
+  assert.ok(component.includes('logLoadSequence += 1'))
+  assert.ok(component.includes('sequence === logLoadSequence'))
+  assert.ok(component.includes('sequence !== logLoadSequence'))
+})
+
 test('policy mutation remains explicit PUT and reload remains read-only GET', () => {
   const start = source.indexOf('async function saveMode(')
   const end = source.indexOf('\nasync function loadTasks(', start + 1)
