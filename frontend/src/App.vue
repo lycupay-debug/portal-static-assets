@@ -39,7 +39,6 @@ import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource } from './api/generated'
 
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
-const TeachingResourceEditorDialog = defineAsyncComponent(() => import('./components/TeachingResourceEditorDialog.vue'))
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 const visibilityOptions: VirtualizedSelectOption[] = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
@@ -175,6 +174,31 @@ const resourceBusy = ref(false)
 const resourceError = ref('')
 const resourceTypeOptions = ['听力材料', '课件', '教学视频', '电子书', '练习题', '教案', '其他']
 const resourceGradeOptions = ['不限定年级', ...taxonomyChildOptions('年级').map(option => option.value)]
+const teachingResourceEditorHost = ref<HTMLElement | null>(null)
+let disposeTeachingResourceEditor: (() => void) | null = null
+let teachingResourceEditorSequence = 0
+watch([resourceDialogOpen, resourceDialogItem, teachingResourceEditorHost], ([open, resource, host]) => {
+  const sequence = ++teachingResourceEditorSequence
+  disposeTeachingResourceEditor?.()
+  disposeTeachingResourceEditor = null
+  if (!open || !host) return
+  void import('./components/teachingResourceEditorDialog').then(module => {
+    if (sequence !== teachingResourceEditorSequence || host !== teachingResourceEditorHost.value || !resourceDialogOpen.value) return
+    disposeTeachingResourceEditor = module.mountTeachingResourceEditorDialog(host, {
+      resource,
+      resourceTypeOptions,
+      resourceGradeOptions,
+      onClose: () => { resourceDialogOpen.value = false },
+      onBusyChange: busy => { resourceBusy.value = busy },
+      onSaved: onResourceDialogSaved,
+      onCompleted: onResourceDialogCompleted,
+    }).dispose
+  }).catch((error: unknown) => {
+    if (sequence !== teachingResourceEditorSequence || host !== teachingResourceEditorHost.value) return
+    host.textContent = '教学资源编辑器加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '教学资源编辑器加载失败', '教学资源')
+  })
+}, { flush: 'post' })
 watch(authError, (message) => { if (message) portalNotify.error(message, '登录或注册失败') }, { flush: 'sync' })
 watch(authNotice, (message) => { if (message) portalNotify.info(message) }, { flush: 'sync' })
 watch(contentError, (message) => { if (message) portalNotify.error(message, '内容操作失败') }, { flush: 'sync' })
@@ -670,6 +694,9 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  teachingResourceEditorSequence += 1
+  disposeTeachingResourceEditor?.()
+  disposeTeachingResourceEditor = null
   systemOpsMountSequence += 1
   disposeSystemOpsCenter?.()
   disposeSystemOpsCenter = null
@@ -1156,17 +1183,7 @@ onBeforeUnmount(() => {
 
     <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="btn btn-dark button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
 
-    <TeachingResourceEditorDialog
-      v-if="resourceDialogOpen"
-      :resource="resourceDialogItem"
-      :resource-type-options="resourceTypeOptions"
-      :resource-grade-options="resourceGradeOptions"
-      :busy="resourceBusy"
-      @close="resourceDialogOpen = false"
-      @update:busy="resourceBusy = $event"
-      @saved="onResourceDialogSaved"
-      @completed="onResourceDialogCompleted"
-    />
+    <div v-if="resourceDialogOpen" ref="teachingResourceEditorHost"></div>
 
     <div v-if="selectedTableCell" class="table-cell-detail-backdrop" @click.self="selectedTableCell = null" @keydown.esc="selectedTableCell = null">
       <section class="table-cell-detail" role="dialog" aria-modal="true" :aria-label="selectedTableCell.label">
