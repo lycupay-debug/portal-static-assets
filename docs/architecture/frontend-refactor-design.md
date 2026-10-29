@@ -43,3 +43,37 @@ Improve frontend module boundaries and make reusable dependencies independently 
 ## Validation plan
 
 For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run build:static-origin`, `npm run check:static-assets` or the matching static-origin layout check, and `git diff --check`. Inspect generated HTML and chunk dependency graph; verify no public CDN references, no editor/Markdown preloads, and same-origin `/api` requests. Chrome Test is optional and will be used only if its connected environment is available. No production deployment or service restart is part of this branch.
+
+## Batch 3 — teaching-resource upload validation boundary (2026-10-29)
+
+### Scope and behavior invariants
+
+- Extract the teaching-resource form checks and pasted-file filtering from `App.vue` into `frontend/src/utils/teachingResourceValidation.ts`.
+- Preserve existing user-facing error messages, supported extensions, the 25 MiB file-size limit, URL protocol restrictions, batch-upload behavior, and edit-without-replacement-file behavior.
+- Load the validation utility only when the resource dialog submits or handles pasted files. Keep the initial JavaScript under the existing 65 KiB gzip budget; do not relax the budget.
+- No API path, request payload, authorization behavior, upload transport, production file, or service is changed.
+
+### Data/control flow
+
+- Form submit: `App.vue#createTeachingResource` → lazy import of `validateResourceForm` → client-side error or existing XHR upload flow.
+- Paste: `App.vue#handleResourcePaste` reads clipboard files and calls `preventDefault()` synchronously, then lazy-imports `filterPastedResourceFiles` → accepted files and rejection messages return to the existing form state.
+- The utility is a user-feedback layer only. The Go API remains responsible for server-side file, URL, and permission validation.
+
+### Boundary coverage
+
+- `frontend/test/teaching-resource-validation.test.mjs` covers missing title/source, unsafe URL schemes, batch mode with no files, unsupported extension, the exact 25 MiB boundary, edits without replacement files, and mixed accepted/rejected clipboard files.
+- An attempted extraction of the entire dialog state into a synchronous composable was rejected after measured builds exceeded the initial JS gzip budget (66,905 bytes against 66,560 bytes). That experiment was not retained. The smaller on-demand validation module reduced the initial payload instead of widening the threshold.
+
+### Verification evidence
+
+- `npm run type-check`: passed.
+- `npm test`: 145/145 passed.
+- `npm run build`: passed; initial JavaScript including modulepreloads 64.62 KiB / 65 KiB, initial CSS 82.32 KiB / 85 KiB, lazy editor 206.80 KiB / 230 KiB, lazy Markdown 24.67 KiB / 30 KiB.
+- `npm run build:static-origin`: passed; initial JavaScript 64.65 KiB / 65 KiB, initial CSS 82.39 KiB / 85 KiB; static-origin layout check reported 2 entry URLs, 15 JS bundles, 5 CSS bundles and 74 icon URLs, with API paths remaining root-relative.
+- `git diff --check`: passed. No public CDN references found in the checked frontend source/HTML.
+- Production deployment, service restarts, GitHub Actions and Chrome Test were not run.
+
+### Remaining risk / next boundary
+
+- Browser clipboard integration and actual server-side upload validation were not exercised by these unit tests. Keep those limitations explicit.
+- `App.vue` still owns resource dialog state, XHR upload transport, resource CRUD, and list refresh. Further extraction should move the UI and upload workflow together into a lazy-loaded dialog component or another boundary that measurably reduces initial payload; do not repeat a state-only extraction that breaches the current budget.

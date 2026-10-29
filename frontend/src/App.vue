@@ -356,17 +356,23 @@ function requestWithUploadProgress(url: string, method: string, body: ResourceWr
   })
 }
 async function createTeachingResource() {
-  if (!resourceTitle.value.trim()) { resourceError.value = '请填写资源名称。'; return }
   const batch = resourceBatchMode.value && !editingResourceId.value
   const files = batch ? resourceFiles.value : (resourceFile.value ? [resourceFile.value] : [])
-  if (batch && !files.length) { resourceError.value = '批量上传至少选择一个文件。'; return }
-  if (!files.length && !resourceUrl.value.trim() && !editingResourceId.value) { resourceError.value = '请上传文件或粘贴资源 URL 链接。'; return }
-  if (resourceUrl.value.trim() && !/^https?:\/\//i.test(resourceUrl.value.trim())) { resourceError.value = '资源 URL 必须以 http:// 或 https:// 开头。'; return }
-  for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) { resourceError.value = `文件“${file.name}”格式不受支持。请使用 PPT、PPTX、MP3、PDF、DOC、DOCX 或 TXT。`; return }
-    if (file.size > 25 * 1024 * 1024) { resourceError.value = `文件“${file.name}”超过 25 MB。`; return }
+  let validationError: string | null
+  try {
+    const { validateResourceForm } = await import('./utils/teachingResourceValidation')
+    validationError = validateResourceForm({
+      title: resourceTitle.value,
+      batchMode: batch,
+      editing: Boolean(editingResourceId.value),
+      files,
+      url: resourceUrl.value,
+    })
+  } catch {
+    resourceError.value = '无法加载资源校验模块，请刷新页面后重试。'
+    return
   }
+  if (validationError) { resourceError.value = validationError; return }
   resourceBusy.value = true; resourceError.value = ''; resetResourceUpload()
   try {
     const common = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, grade: (resourceGrade.value || null) as ResourceWrite['grade'], isPublic: resourceIsPublic.value, url: resourceUrl.value.trim() || null }
@@ -411,7 +417,7 @@ async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 
 function switchResourceView() { resourceViewMode.value = resourceViewMode.value === 'active' ? 'trash' : 'active'; tableQuery.value = ''; void loadTeachingResources() }
 function downloadTeachingResource(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item?.url) window.open(item.url, '_blank', 'noopener,noreferrer'); else window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
 
-function handleResourcePaste(event: ClipboardEvent) {
+async function handleResourcePaste(event: ClipboardEvent) {
   if (resourceBusy.value || resourceUploadDone.value) return
   const clipboard = event.clipboardData
   if (!clipboard) return
@@ -419,12 +425,16 @@ function handleResourcePaste(event: ClipboardEvent) {
   if (!files.length) for (const item of Array.from(clipboard.items || [])) { if (item.kind === 'file') { const file = item.getAsFile(); if (file) files.push(file) } }
   if (!files.length) return
   event.preventDefault()
-  const accepted: File[] = []; const errors: string[] = []
-  for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) errors.push(`${file.name}：格式不受支持`)
-    else if (file.size > 25 * 1024 * 1024) errors.push(`${file.name}：超过 25 MB`)
-    else accepted.push(file)
+  let accepted: File[]
+  let errors: string[]
+  try {
+    const { filterPastedResourceFiles } = await import('./utils/teachingResourceValidation')
+    const result = filterPastedResourceFiles(files)
+    accepted = result.accepted
+    errors = result.errors
+  } catch {
+    resourceError.value = '无法加载资源校验模块，请刷新页面后重试。'
+    return
   }
   if (resourceBatchMode.value && !editingResourceId.value) { resourceFiles.value = accepted; resourceFile.value = accepted[0] || null }
   else { resourceFile.value = accepted[0] || null; resourceFiles.value = [] }
