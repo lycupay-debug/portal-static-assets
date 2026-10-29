@@ -290,9 +290,8 @@ function loadTeachingResources(searchTerm = tableQuery.value) {
   })
 }
 type ContentManagementActions = ReturnType<typeof import('./composables/useContentManagementActions').useContentManagementActions>
-let contentManagementActionsPromise: Promise<ContentManagementActions> | undefined
-function getContentManagementActions(): Promise<ContentManagementActions> {
-  return contentManagementActionsPromise ??= import('./composables/useContentManagementActions').then(({ useContentManagementActions }) => useContentManagementActions({
+const getContentManagementActions = createRetryableLazyLoader<ContentManagementActions>(() =>
+  import('./composables/useContentManagementActions').then(({ useContentManagementActions }) => useContentManagementActions({
     routeContentId: contentEditorRouteId,
     contentItems,
     contentTrashItems,
@@ -308,8 +307,8 @@ function getContentManagementActions(): Promise<ContentManagementActions> {
     emptyContentForm,
     loadContentList,
     navigate,
-  }))
-}
+  })),
+)
 function runContentManagementAction<T>(action: (actions: ContentManagementActions) => Promise<T> | T): Promise<T | undefined> {
   return getContentManagementActions().then(action).catch((error: unknown) => {
     contentError.value = error instanceof Error ? error.message : '内容操作失败。'
@@ -449,12 +448,8 @@ function setRouteFromLocation() {
 const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route)
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicDirectoryData').createPublicDirectoryLoader>
-let publicDirectoryLoaderPromise: Promise<PublicDirectoryLoader> | undefined
-let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
-let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
-let navigationSequence = 0
-function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
-  return publicDirectoryLoaderPromise ??= import('./composables/loadPublicDirectoryData').then(({ createPublicDirectoryLoader }) => createPublicDirectoryLoader({
+const getPublicDirectoryLoader = createRetryableLazyLoader<PublicDirectoryLoader>(() =>
+  import('./composables/loadPublicDirectoryData').then(({ createPublicDirectoryLoader }) => createPublicDirectoryLoader({
     publicContents,
     publicTeachingResources,
     publicContentLoading,
@@ -463,13 +458,22 @@ function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
     educationResourceError,
     knowledgeVisibleCount,
     knowledgePageSize,
-  }))
-}
+  })),
+)
+let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
+let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
+let navigationSequence = 0
 function loadPublicContents(searchTerm = '') {
-  return getPublicDirectoryLoader().then(loader => loader.loadPublicContents(searchTerm))
+  return getPublicDirectoryLoader().then(loader => loader.loadPublicContents(searchTerm)).catch((error: unknown) => {
+    publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
+    publicContentLoading.value = false
+  })
 }
 function loadPublicTeachingResources(searchTerm = '') {
-  return getPublicDirectoryLoader().then(loader => loader.loadPublicTeachingResources(searchTerm))
+  return getPublicDirectoryLoader().then(loader => loader.loadPublicTeachingResources(searchTerm)).catch((error: unknown) => {
+    educationResourceError.value = error instanceof Error ? error.message : '读取公开教育资源失败。'
+    educationResourceLoading.value = false
+  })
 }
 watch(knowledgeSearchQuery, (query) => {
   if (route.value !== '/knowledge') return
@@ -482,16 +486,15 @@ watch(educationResourceSearch, (query) => {
   publicResourceSearchTimer = setTimeout(() => { void loadPublicTeachingResources(query) }, 220)
 })
 type PublicArticleLoader = ReturnType<typeof import('./composables/loadPublicArticle').createPublicArticleLoader>
-let publicArticleLoaderPromise: Promise<PublicArticleLoader> | undefined
-function getPublicArticleLoader(): Promise<PublicArticleLoader> {
-  return publicArticleLoaderPromise ??= import('./composables/loadPublicArticle').then(({ createPublicArticleLoader }) => createPublicArticleLoader({
+const getPublicArticleLoader = createRetryableLazyLoader<PublicArticleLoader>(() =>
+  import('./composables/loadPublicArticle').then(({ createPublicArticleLoader }) => createPublicArticleLoader({
     route,
     article: publicArticle,
     html: publicArticleHtml,
     loading: publicContentLoading,
     error: publicContentError,
-  }))
-}
+  })),
+)
 function loadPublicArticle(slug: string) {
   return getPublicArticleLoader().then(loader => loader.loadPublicArticle(slug)).catch((error: unknown) => {
     publicContentError.value = error instanceof Error ? error.message : '读取内容失败。'

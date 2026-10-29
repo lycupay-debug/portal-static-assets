@@ -481,3 +481,35 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### 下一批候选
 
 - 审查其他 `App.vue` 中缓存的动态模块初始化 Promise（例如 public directory/article loader 和 content-management actions），核对它们是否存在相同的永久 rejected-promise 缓存；按具体副作用和调用契约逐个测试，不做未经证实的批量替换。
+
+## Batch 17 — 其余动态数据模块初始化失败恢复（2026-10-29）
+
+### 审查结论与变更
+
+- 延续 Batch 16 的证据检查，对 `App.vue` 全部 Promise 缓存/动态导入点做仓库级检索。剩余的 `useContentManagementActions`、`loadPublicDirectoryData` 和 `loadPublicArticle` 仍使用 `promise ??= import(...).then(...)`；这些模块初始化失败后同样会永久缓存 rejected Promise。
+- 将这三处初始化器也改为 `createRetryableLazyLoader`，与内容列表和教学资源列表保持同一缓存契约。已初始化后的业务请求错误仍由对应 composable 自己处理，不会触发 loader 模块重新初始化。
+- 公开目录加载器有额外边界：原先 `loadPublicContents` / `loadPublicTeachingResources` 没有捕获初始化阶段的异常；从路由/搜索 watcher 以 `void` 调用时可能产生未处理 rejection，而且错误状态无法解释失败原因。本批为这两个调用点增加初始化失败 catch，分别写入已有错误 ref 并确保 loading 复位。正常 API 请求错误仍由 `loadPublicDirectoryData.ts` 内部处理，因此不会重复通知或覆盖业务错误。
+- 更新 `frontend/test/vite-code-splitting.test.mjs` 的架构契约测试，覆盖五个懒加载数据模块都使用可重试初始化，并检查公开目录初始化错误会设置错误状态、释放 loading。未改动 `defineAsyncComponent` 的组件加载器，因为它由 Vue 管理且重试/错误处理语义不同，不应未经单独验证混用此 helper。
+
+### 变更范围与不变量
+
+- 修改 `frontend/src/App.vue`、`frontend/test/vite-code-splitting.test.mjs` 和本架构记录。
+- 动态导入仍然保持按需分包；API URL、认证/授权、请求序列保护、通知机制、页面路由和数据所有权不变。
+- 没有新增依赖，没有改变 API 请求重试策略；这里只允许重新尝试模块初始化，不自动重放任何业务 API 请求。
+
+### 验证证据
+
+- `npm run type-check`：通过。
+- `npm test`：184/184 通过（Batch 17 动态模块初始化边界契约测试）。
+- `npm run build`：通过；首屏 JS（含 modulepreload）61.93 KiB gzip / 65 KiB 预算，首屏 CSS 82.32 KiB gzip / 85 KiB，懒加载编辑器 206.80 KiB gzip / 230 KiB，Markdown 24.67 KiB gzip / 30 KiB。
+- `npm run build:static-origin`：通过；首屏 JS 61.95 KiB gzip / 65 KiB，首屏 CSS 82.39 KiB gzip / 85 KiB；16 个 JS bundle、5 个 CSS bundle、74 个 icon URL，API 路径仍为根相对路径。
+- `npm run check:static-assets`：通过（61 个文件、1 个 HTML）；`npm run test:static-assets`、`git diff --check` 均通过；前端源码/HTML 公共 CDN 扫描无匹配。
+
+### 限制与安全边界
+
+- 架构契约测试检查 `App.vue` 的源码接线；通用 retry helper 的 Promise 缓存/失败恢复行为由 Batch 16 的确定性单元测试覆盖。本批未模拟真实浏览器 chunk 网络故障，也未进行生产 API/浏览器集成测试。
+- 生产目录未修改；未部署、未重启服务、未合并 PR、未运行 GitHub Actions；bundle 预算未放宽。
+
+### 下一批候选
+
+- 检查 `App.vue` 路由切换与公开内容加载的生命周期是否会在模块初始化失败后产生重复提示或状态串扰；以现有 route/navigation sequence 为基线，先补充可复现测试，再决定是否调整调用协调方式。

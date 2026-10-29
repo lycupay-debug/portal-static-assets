@@ -33,3 +33,18 @@ test('static-origin build uses the owned asset service, not a public CDN', () =>
   assert.match(packageJson.scripts['build:static-origin'], /https:\/\/assets\.lycupaynotion\.top\//)
   assert.doesNotMatch(viteConfig, /https?:\/\/(?:cdn\.|unpkg\.|jsdelivr\.|cdnjs\.)/i)
 })
+
+test('all lazily initialized App.vue data modules can recover from rejected imports', () => {
+  for (const modulePath of [
+    './composables/loadContentList',
+    './composables/loadTeachingResourceList',
+    './composables/useContentManagementActions',
+    './composables/loadPublicDirectoryData',
+    './composables/loadPublicArticle',
+  ]) {
+    const escapedPath = modulePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    assert.match(appSource, new RegExp(`createRetryableLazyLoader<[\\s\\S]*?import\\(['"]${escapedPath}['"]\\)`), `${modulePath} should use retryable lazy initialization`)
+  }
+  assert.match(appSource, /function loadPublicContents\([\s\S]*?\.catch\(\(error: unknown\) => \{[\s\S]*?publicContentLoading\.value = false/)
+  assert.match(appSource, /function loadPublicTeachingResources\([\s\S]*?\.catch\(\(error: unknown\) => \{[\s\S]*?educationResourceLoading\.value = false/)
+})
