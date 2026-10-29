@@ -187,3 +187,38 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### Next candidate
 
 - Continue the Notion sequence with the system execution policy and system operations centers, first mapping frontend role visibility against backend RBAC and testing denial/error paths. Do not rely on UI gating as an authorization control; the Go API remains authoritative.
+
+## Batch 7 — preserve execution-policy mutation errors during reconciliation (2026-10-29)
+
+### Goal and evidence-based defect
+
+- Reviewed `SystemExecutionPolicyCenter.vue`, `SystemOpsCenter.vue`, `PermissionManagement.vue`, account navigation references, and the Go API's system-ops/RBAC authorization entry points before changing code.
+- Found a concrete error-reporting defect in `saveMode`: after a failed `PUT /system-ops/policy`, the catch block called `loadPolicy()`. That loader clears the shared error at entry and clears it again on a successful read, so a failed policy write could be presented with no error at all if reconciliation succeeded. The reload is useful to reconcile the selected mode with server state, but it must not erase the mutation failure.
+- No role/permission mutation, API contract, route, server authorization, or database code was changed in this batch.
+
+### Changes and invariants
+
+- `SystemExecutionPolicyCenter.vue#saveMode` now captures the original save error, reloads policy state, then restores the save error. If reconciliation also fails, the message retains both the mutation failure and the reload failure.
+- The `saving` flag remains released in `finally`; the write remains `PUT /system-ops/policy`, and the reconciliation read remains `GET /system-ops/policy`.
+- Read-only RBAC review confirmed `/admin/*` handlers call `requireSuperAdmin` before dispatch. The backend requires both the `super_admin` role and the designated administrator account; user-role and role-permission mutations retain backend validation and audit writes.
+- Read-only system-ops review confirmed every `/system-ops/*` request passes `requireSystemOpsAdmin`; GET/HEAD requests require `portal.system_ops.read`, while mutations require `portal.system_ops.manage`. Frontend visibility is not an authorization boundary.
+- `SystemOpsCenter.vue` continues to use same-origin API calls and a credentialed same-origin EventSource. No client-side role check was added because the server remains authoritative and a reliable frontend capability contract would require a separate design/test seam.
+
+### Tests and verification
+
+- Added `frontend/test/system-execution-policy.test.mjs` to assert that save failure survives the reconciliation read, cleanup remains in `finally`, the mutation stays PUT, and the reconciliation request stays read-only GET.
+- `npm run type-check`: passed.
+- `npm test`: 160/160 passed.
+- `npm run build`: passed; initial JavaScript including modulepreloads 61.82 KiB gzip / 65 KiB; initial CSS 82.32 KiB / 85 KiB; lazy editor 206.80 KiB / 230 KiB; lazy Markdown 24.67 KiB / 30 KiB.
+- `npm run build:static-origin`: passed; initial JavaScript 61.85 KiB gzip / 65 KiB; initial CSS 82.39 KiB / 85 KiB; 16 JS bundles, 5 CSS bundles, 74 icon URLs; API paths remain root-relative.
+- `npm run check:static-assets`: passed (61 files, 1 HTML); `npm run test:static-assets`: passed; `git diff --check`: passed; frontend source/HTML public-CDN check: no matches.
+
+### Limits and rollback
+
+- The new frontend tests are source-level boundary checks, not a mounted Vue test or live API test. The Go authorization paths were inspected read-only; backend integration tests were not run in the production checkout.
+- No browser E2E, live session, or mutation was performed. No production deployment, service restart, merge, or GitHub Actions run.
+- Rollback is limited to this batch's component and test changes; the production directory and services remain untouched.
+
+### Next candidate
+
+- Inspect `PermissionManagement.vue` post-save reconciliation feedback and account navigation's role visibility contract. Keep server-side RBAC authoritative; do not introduce client-side authorization assumptions without a verified session/capability source and tests.
