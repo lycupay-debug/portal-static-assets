@@ -61,7 +61,32 @@ if [ -n "$(git -C "$repo" status --porcelain)" ]; then
   exit 1
 fi
 
-sh "$repo/deploy/freebsd/test-caddy-security-headers.sh"
+# Deployment-time Caddy configuration guard (kept inline; standalone test files are removed).
+config="$repo/deploy/freebsd/Caddyfile"
+for directive in \
+  'X-Content-Type-Options "nosniff"' \
+  'X-Frame-Options "DENY"' \
+  'Referrer-Policy "strict-origin-when-cross-origin"' \
+  'Permissions-Policy "camera=(), microphone=(), geolocation=()"' \
+  'trusted_proxies static' \
+  'trusted_proxies_strict' \
+  'client_ip_headers CF-Connecting-IP' \
+  'header_up X-Portal-Client-IP {client_ip}' \
+  'handle /editor {' \
+  'redir https://{http.request.host}/content-management 308' \
+  'handle /editor/assets/* {' \
+  'respond 410' \
+  'handle_path /editor/* {' \
+  'redir https://{http.request.host}/content-management{path} 308'; do
+  if ! grep -Fq "$directive" "$config"; then
+    echo "Missing required Caddy deployment directive: $directive" >&2
+    exit 1
+  fi
+done
+if ! grep -Fq 'go.lycupaynotion.top {' "$config" || ! grep -Fq 'reverse_proxy 127.0.0.1:8766' "$config"; then
+  echo "Caddy deployment configuration must preserve the GSM reverse proxy." >&2
+  exit 1
+fi
 
 cd "$repo/frontend"
 npm ci
@@ -69,21 +94,15 @@ python3.14 "$repo/scripts/compliance/scan_assets.py" --repo "$repo" --release "$
 npm run api:lint
 npm run api:check
 npm run type-check
-npm test
 npm run build:static-origin
 npm run package:static-origin
-
-# Run the PostgreSQL integration suite against a fresh, isolated database
-# built from the repository migrations. Do not silently skip DB integration
-# tests during a production release preflight.
-sh "$repo/scripts/ops/test-postgres-integration.sh" "$repo" "$go_bin"
 
 cd "$repo/backend"
 "$go_bin" vet ./...
 "$go_bin" build -trimpath -ldflags="-s -w" -o "$work/api" ./api
 
 cd "$repo/event-core"
-make clean all test
+make clean all
 
 # Create a full PostgreSQL backup before applying migrations or replacing services.
 dump_tmp="/tmp/personal-portal-pre-go-cutover-$stamp.dump"

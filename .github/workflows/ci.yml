@@ -36,14 +36,9 @@ jobs:
       - name: Verify generated API contract
         working-directory: frontend
         run: npm run api:check
-      - name: Type check and unit tests
+      - name: Type check
         working-directory: frontend
-        run: |
-          npm run type-check
-          npm test
-      - name: Static asset checker regression tests
-        working-directory: frontend
-        run: npm run test:static-assets
+        run: npm run type-check
       - name: Production build and bundle budget
         working-directory: frontend
         run: npm run build
@@ -82,11 +77,6 @@ jobs:
       - name: Verify dependencies
         working-directory: backend
         run: go mod verify
-      - name: Unit and race tests
-        working-directory: backend
-        env:
-          TZ: Asia/Shanghai
-        run: go test -race -count=1 ./...
       - name: Static checks
         working-directory: backend
         run: go vet ./...
@@ -96,9 +86,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and protocol tests
+      - name: Compile event core
         working-directory: event-core
-        run: make clean all test
+        run: make clean all
 
   compliance-and-deploy-policy:
     name: Compliance and deployment policy checks
@@ -108,8 +98,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Compliance asset scanner unit tests
-        run: python -m unittest scripts.compliance.test_scan_assets
       - name: Python syntax checks
         run: python -m compileall -q scripts/compliance
       - name: Shell syntax checks

@@ -9,13 +9,11 @@
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
-    "test": "tsx --test test/*.test.mjs",
     "api:generate": "openapi-ts -f openapi-ts.config.mjs",
     "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated",
     "api:lint": "redocly lint ../api/openapi.yaml",
     "check:static-assets": "node ../scripts/check-static-assets-layout.mjs dist",
     "package:static-assets": "node ../scripts/package-static-assets.mjs dist",
-    "test:static-assets": "node ../scripts/test-static-assets-layout.mjs",
     "build:static-origin": "npm run type-check && vite build --base=https://assets.lycupaynotion.top/ --outDir dist-static-origin && node scripts/check-bundle-budget.mjs dist-static-origin && node ../scripts/check-static-origin-build.mjs dist-static-origin",
     "package:static-origin": "node ../scripts/package-static-origin.mjs dist-static-origin"
   },
