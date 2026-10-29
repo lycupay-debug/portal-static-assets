@@ -449,3 +449,35 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### 下一批候选
 
 - 检查 App.vue 对动态导入 loader 初始化失败与请求失败的错误/忙碌状态处理是否重复或可能产生重复通知；用可测的纯函数或最小集成测试先确认调用路径，再决定是否抽取公共错误边界。
+
+## Batch 16 — 动态 loader 初始化失败后的可重试性（2026-10-29）
+
+### 审查结论与证据
+
+- 按 Batch 15 的候选，检查 `App.vue` 中内容列表与教学资源列表 loader 的动态导入、两类 loader 内部的请求错误处理、错误通知 watcher/回调及现有测试。
+- 两处调用方均将动态导入 Promise 缓存到模块级变量。若 chunk 下载或模块初始化失败，该 rejected Promise 会永久留在缓存中；之后用户再次进入列表时会复用同一个 rejected Promise，无法重新尝试加载模块。请求执行失败与初始化失败的边界不同：列表 loader 已初始化后会自行处理 API 请求错误并释放 loading，外层 catch 主要负责初始化阶段失败，不应将 API 错误处理重复抽象。
+- 因此没有创建泛化的公共错误边界；只抽取一个可独立测试的 `createRetryableLazyLoader`，用于缓存成功初始化、共享并发初始化，并在初始化 Promise reject 时清除缓存，允许下一次调用重试。
+
+### 变更与不变量
+
+- 新增 `frontend/src/utils/retryableLazyLoader.ts`，无 Vue/browser 依赖；成功结果持续缓存，失败初始化不会被永久缓存，原始异常继续传递给调用方。
+- `App.vue` 的内容列表与教学资源列表动态 loader 改用该 helper。请求 loader 内部的 API 错误状态、教学资源通知回调、内容错误 watcher、loading 状态所有权和调用签名保持不变。
+- 新增 `frontend/test/retryable-lazy-loader.test.mjs`，验证并发调用共享同一 Promise、成功初始化只执行一次、reject 后下一次重试成功，以及 factory 同步抛错也能重试。
+- 没有改变 API 路径、认证/权限边界、路由、请求取消策略或 bundle 预算；没有新增依赖。
+
+### 验证证据
+
+- `npm run type-check`：通过。
+- `npm test`：183/183 通过。
+- `npm run build`：通过；首屏 JS（含 modulepreload）61.93 KiB gzip / 65 KiB 预算，首屏 CSS 82.32 KiB gzip / 85 KiB，懒加载编辑器 206.80 KiB gzip / 230 KiB，Markdown 24.67 KiB gzip / 30 KiB。
+- `npm run build:static-origin`：通过；首屏 JS 61.95 KiB gzip / 65 KiB，首屏 CSS 82.39 KiB gzip / 85 KiB；16 个 JS bundle、5 个 CSS bundle、74 个 icon URL，API 路径仍为根相对路径。
+- `npm run check:static-assets`：通过（61 个文件、1 个 HTML）；`npm run test:static-assets`、`git diff --check` 均通过；前端源码/HTML 公共 CDN 扫描无匹配。
+
+### 限制与安全边界
+
+- 单元测试验证注入式 Promise factory 的缓存/重试语义；未模拟浏览器真实 chunk 网络故障或线上动态导入行为，也未调用生产 API。
+- 生产目录未修改；未部署、未重启服务、未合并 PR、未运行 GitHub Actions；bundle 预算未放宽。
+
+### 下一批候选
+
+- 审查其他 `App.vue` 中缓存的动态模块初始化 Promise（例如 public directory/article loader 和 content-management actions），核对它们是否存在相同的永久 rejected-promise 缓存；按具体副作用和调用契约逐个测试，不做未经证实的批量替换。

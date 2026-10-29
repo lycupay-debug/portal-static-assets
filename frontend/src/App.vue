@@ -25,6 +25,7 @@ import { usePortalAuthentication, type PortalUser } from './composables/usePorta
 import { createProtectedRouteGuard } from './composables/useProtectedRouteGuard'
 import { formatResourceFileSize } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
+import { createRetryableLazyLoader } from './utils/retryableLazyLoader'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeSections, sectionRoutes } from './navigation/portalRoutes'
 import { resolvePortalLocation } from './navigation/resolvePortalLocation'
@@ -249,16 +250,15 @@ function onVirtualTableScroll(event: Event) {
   tableScrollTop.value = (event.target as HTMLElement).scrollTop
 }
 type ContentListLoader = ReturnType<typeof import('./composables/loadContentList').createContentListLoader>
-let contentListLoaderPromise: Promise<ContentListLoader> | undefined
-function getContentListLoader(): Promise<ContentListLoader> {
-  return contentListLoaderPromise ??= import('./composables/loadContentList').then(({ createContentListLoader }) => createContentListLoader({
+const getContentListLoader = createRetryableLazyLoader<ContentListLoader>(() =>
+  import('./composables/loadContentList').then(({ createContentListLoader }) => createContentListLoader({
     viewMode: contentViewMode,
     activeItems: contentItems,
     trashItems: contentTrashItems,
     loading: contentLoading,
     error: contentError,
-  }))
-}
+  })),
+)
 function loadContentList(searchTerm = tableQuery.value) {
   return getContentListLoader().then(loader => loader.loadContentList(searchTerm)).catch((error: unknown) => {
     contentError.value = error instanceof Error ? error.message : '网络连接失败，无法读取内容。'
@@ -272,17 +272,16 @@ function switchContentView(mode: 'active' | 'trash') {
   void loadContentList()
 }
 type TeachingResourceListLoader = ReturnType<typeof import('./composables/loadTeachingResourceList').createTeachingResourceListLoader>
-let teachingResourceListLoaderPromise: Promise<TeachingResourceListLoader> | undefined
-function getTeachingResourceListLoader(): Promise<TeachingResourceListLoader> {
-  return teachingResourceListLoaderPromise ??= import('./composables/loadTeachingResourceList').then(({ createTeachingResourceListLoader }) => createTeachingResourceListLoader({
+const getTeachingResourceListLoader = createRetryableLazyLoader<TeachingResourceListLoader>(() =>
+  import('./composables/loadTeachingResourceList').then(({ createTeachingResourceListLoader }) => createTeachingResourceListLoader({
     viewMode: resourceViewMode,
     activeItems: teachingResources,
     trashItems: teachingResourceTrash,
     loading: resourceBusy,
     error: resourceError,
     onError: message => portalNotify.error(message, '教学资源'),
-  }))
-}
+  })),
+)
 function loadTeachingResources(searchTerm = tableQuery.value) {
   return getTeachingResourceListLoader().then(loader => loader.loadTeachingResources(searchTerm)).catch((error: unknown) => {
     resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'
