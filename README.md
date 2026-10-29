@@ -1,5 +1,14 @@
 # Personal Portal
 
+## 当前架构决策（2026-10-30）：移除 Vue，保留后端职责边界
+
+前端技术方向已从 Vue 3 组件体系调整为 **原生 TypeScript 模块 + 标准 DOM API + HTML/CSS**。这是逐步迁移，不表示全部 Vue 已移除；在迁移完成并验证前，现有 Vue SFC 仍属于待迁移的历史实现。CSS 应先评估并尽量复用，不为迁移而重写视觉系统。Tiptap 3 / ProseMirror 必须单独验证其对 Vue 的依赖、可替代接入方式、编辑器功能与 bundle 影响；未验证前不得假定可以直接保留或直接删除。
+
+**职责边界固定，具体实现允许重构。** Go 继续负责唯一业务 API 与后端业务规则；PostgreSQL 继续作为业务/事件持久化事实源；C 继续负责 FreeBSD 原生事件驱动核心及受限元数据通知，不接管业务 payload、业务规则或持久化；Caddy 继续负责 TLS、静态资源、路由、反向代理、可信代理与安全响应头。上述层的代码、模块、配置和内部实现均可在遵守职责边界、协议/数据兼容性、安全要求和验证流程的前提下重构。不得把“职责不可变”误解为“代码/配置冻结”；也不得因重构而把某层的职责转移给另一层。
+
+前端迁移必须同步调整路由解析、模块挂载/卸载、状态所有权、事件监听器清理、测试与构建流程。每次变更先追踪调用链、数据流和依赖，再做最小迁移；测试、GitHub Actions 与真实浏览器 E2E 分开报告。不得把单元测试或 HTTP smoke 说成 E2E 通过。
+
+
 FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，不使用 Docker。
 
 ## 文档说明
@@ -8,18 +17,18 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 
 ## 当前技术方向
 
-- 前端：Vue 3、TypeScript、Vite；生产环境只提供构建后的静态文件。
+- 前端目标架构：原生 TypeScript 模块 + 标准 DOM API + HTML/CSS；移除 Vue 运行时、SFC、组件模板编译与 Vue 状态/生命周期机制。Vite 可暂时保留为构建工具，是否保留及其插件链需在迁移中验证；生产环境只提供构建后的静态文件。
 - 事件驱动核心：必须使用 C 语言实现，并优先利用 FreeBSD 原生 `kqueue` / `kevent`。
 - 后端：唯一业务 API 使用 Go（`database/sql` + pgx），统一处理认证、会话、内容、教学资源和事件生命周期；C 仅负责 FreeBSD 本地 IPC/kqueue 元数据通知，PostgreSQL 保存业务与事件持久状态。
 - 服务管理：FreeBSD `rc.d`。
 - 内容：初期由项目自身管理，不接入 Notion。
 - 教学资源：资源类型与适用年级分开保存；适用年级复用 `frontend/src/utils/taxonomy.ts` 的“年级”子项，未限定年级保存为 `NULL`；数据库通过版本化迁移维护字段，Go API 校验并返回年级，前端创建/编辑表单和表格共用该字段。
-- 分类字段：文章内容独立保存父类与子类，年级与教育人力资源分类由共享 taxonomy 定义驱动。全站自定义下拉菜单统一使用 `VirtualizedSelect.vue`，设计参数通过 `frontend/src/monochrome.css` 中的 `--portal-select-*` CSS 变量集中维护。
+- 分类字段：文章内容独立保存父类与子类，年级与教育人力资源分类由共享 taxonomy 定义驱动。移除 Vue 后，自定义下拉菜单迁移为原生 TypeScript/DOM 实现；设计参数继续优先复用 `frontend/src/monochrome.css` 中的 `--portal-select-*` CSS 变量。
 - 依赖原则：优先标准库和系统原生能力；没有明确需求时不增加第三方服务。
 
 ## 目录
 
-- `frontend/`：Vue + TypeScript 前端。
+- `frontend/`：原生 TypeScript 模块、DOM 操作、HTML/CSS 与前端构建/测试工具。
 - `backend/api/`：Go HTTP API 与持久化事件接收入口。
 - `event-core/`：C 语言 `kqueue` 事件核心；IPC v2 提供 PING/STATUS/PUBLISH/SUBSCRIBE/ACK 元数据通知。PUBLISHED 与 ACKNOWLEDGED 都不是业务处理完成确认。
 - `deploy/freebsd/`：FreeBSD 部署与 `rc.d` 脚本。
@@ -40,7 +49,7 @@ npm run build
 
 ## 当前状态
 
-当前架构目标为单一 Go 业务 API、PostgreSQL 事件收件箱/租约/重试/结果与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。CI 覆盖 OpenAPI 生成契约、全量迁移、Go race tests、C IPC FIFO/ACK/错误 ACK 与并发测试。生产部署使用 deploy/freebsd/deploy.sh，包含备份、迁移、健康检查与可回滚发布。
+当前架构目标为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 事件收件箱/租约/重试/结果与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。CI 覆盖 OpenAPI 生成契约、全量迁移、Go race tests、C IPC FIFO/ACK/错误 ACK 与并发测试。生产部署使用 deploy/freebsd/deploy.sh，包含备份、迁移、健康检查与可回滚发布。
 
 ---
 
@@ -53,7 +62,7 @@ npm run build
 ## 1. 不可随意改变的架构原则
 
 1. **Go 是唯一生产业务后端。** 认证、会话、权限、输入验证、业务 API、错误格式、数据库事务、内容和教学资源、事件接收/分发/处理/重试/恢复均由 Go 负责。禁止新增 Node.js/Python/C 业务 API，也禁止把同一规则分别实现于两个后端。
-2. **Node.js/npm 仅用于前端开发与构建。** Vue 3、TypeScript、Vite 的依赖安装、类型检查、测试和打包可以使用 Node.js；生产环境不依赖常驻 Node.js 业务服务。历史 Node 后端归档不属于正常运行架构。
+2. **Node.js/npm 仅用于前端开发与构建。** TypeScript 类型检查、测试、代码生成和打包可以使用 Node.js；前端运行时目标为原生 TypeScript 编译产物与标准 DOM API，不依赖 Vue。生产环境不依赖常驻 Node.js 业务服务。历史 Node 后端归档不属于正常运行架构。
 3. **C 只承担底层事件通知与 IPC。** C 事件核心使用 FreeBSD `kqueue`/`kevent` 和 Unix Domain Socket，传递受限的事件元数据（如 `event_id`、`event_type`），不接收、解析、保存或执行业务 payload，不负责数据库、认证、幂等、租约、业务重试和处理结果。
 4. **PostgreSQL 是业务和事件持久状态的事实来源。** C 的内存队列和推送只是唤醒提示；进程重启、丢失通知或重复通知后，Go 必须能从数据库状态恢复工作。
 5. **OpenAPI 是 HTTP API 的共享契约源。** 先更新 `api/openapi.yaml`，再生成 TypeScript 类型并实现 Go 端行为；不得在 Vue 和 Go 中各自维护不一致的请求/响应结构。
@@ -69,7 +78,7 @@ npm run build
 用户浏览器
    │ HTTPS
    ▼
-Vue 3 + TypeScript + HTML + CSS（Node.js 只参与开发/构建）
+HTML + CSS + 原生 TypeScript/DOM（Node.js 只参与开发/构建）
    │
    ▼
 Caddy / HTTPS / 静态文件 / 安全响应头 / 反向代理
@@ -99,7 +108,7 @@ PostgreSQL（portal schema）
 
 | 层 | 唯一职责 | 禁止事项 |
 |---|---|---|
-| Vue 3 + TypeScript | UI、交互、客户端状态、调用类型化 API | 自行定义与 OpenAPI 冲突的 DTO；把客户端校验当成安全边界 |
+| 原生 TypeScript + DOM | UI、交互、明确的模块状态与生命周期清理、调用类型化 API | 自行定义与 OpenAPI 冲突的 DTO；把客户端校验当成安全边界；引入 Vue 运行时依赖 |
 | Node.js/npm | 前端依赖管理、代码生成、测试和构建 | 生产业务 API、认证服务、业务任务处理器 |
 | Caddy | TLS、静态资源、路由、代理、可信代理配置、安全头 | 绕过 Go 直接连接业务数据库；向 Go 传入未经可信代理校验的客户端 IP |
 | Go API | 全部 HTTP 业务语义、身份与授权、验证、错误格式、事务、事件生命周期 | 将业务规则下放给 C 或另建 Node 服务 |
@@ -172,7 +181,7 @@ PostgreSQL（portal schema）
 
 统一入口为 `.github/workflows/frontend-ci.yml`，push、pull request 和手动触发均执行检查。每次提交至少覆盖：
 
-1. **OpenAPI/TypeScript：** OpenAPI lint、生成文件同步检查、Vue/TypeScript 类型检查。
+1. **OpenAPI/TypeScript：** OpenAPI lint、生成文件同步检查、TypeScript 类型检查。
 2. **前端：** 自动化测试、生产构建与 bundle 预算；首屏不得提前加载编辑器或文章 Markdown 渲染器。安全的 Markdown/URL 处理、编辑器块往返持久化、分类数据约束等逻辑须有测试。
 3. **Go：** `go test -race ./...`、PostgreSQL 集成测试、`go vet ./...`、编译。
 4. **SQL：** 空数据库全量迁移按序执行，并使用应用数据库角色测试权限与约束。
@@ -242,7 +251,7 @@ git status --short --branch
 | 项目 | 当前状态 | 证据/范围 |
 |---|---|---|
 | Go-only 生产业务后端 | 已实施 | Go API 处理业务；旧 Node API 不在正常生产流量路径，部署后已禁用旧认证服务 |
-| Vue 3 + TypeScript + Vite | 已实施 | 前端生产构建和类型检查纳入 CI；Node.js 只用于构建 |
+| 原生 TypeScript + DOM（迁移中） | 进行中 | 通知模块已迁移；其余 Vue SFC、路由、状态所有权、生命周期、构建插件与测试体系仍需逐项迁移和验证 |
 | OpenAPI 共享契约 | 已实施 | `api/openapi.yaml`；生成 TypeScript 类型；lint 和生成漂移检查纳入 CI |
 | PostgreSQL 版本化迁移 | 已实施至 028 | `backend/migrations/001`–`028`；新增命令任务队列与执行器心跳；CI 空库按序迁移；迁移事务策略测试 |
 | Go 事件接收、分发、租约、处理和恢复 | 已实现基础能力 | Go/PostgreSQL 为持久事实源；测试覆盖重复唤醒、处理并发、租约/崩溃恢复等路径 |
