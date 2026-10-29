@@ -10,7 +10,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, o
 import { apiRequest } from './api/client'
 import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
 import { useDebouncedValue } from './composables/useDebouncedValue'
-import VirtualizedSelect from './components/VirtualizedSelect.vue'
+import { mountVirtualizedSelect, type VirtualizedSelectOption } from './components/virtualizedSelect'
 import { mountNotificationHost } from './components/notificationHost'
 import { mountTeachingResourceDrawer } from './components/teachingResourceDrawer'
 import { portalNotify } from './utils/notification'
@@ -43,7 +43,7 @@ const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOp
 const TeachingResourceEditorDialog = defineAsyncComponent(() => import('./components/TeachingResourceEditorDialog.vue'))
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 const taxonomyParentNames = knowledgeTaxonomyParentNames
-const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
+const visibilityOptions: VirtualizedSelectOption[] = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 
 type PortalContent = APIContent
 type ContentVersion = APIContentVersion
@@ -157,6 +157,25 @@ const emptyContentForm = (): ContentForm => ({
   title: '', slug: '', contentType: 'article', tags: [], summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
+const contentVisibilitySelectHost = ref<HTMLElement | null>(null)
+let disposeContentVisibilitySelect: (() => void) | null = null
+let contentVisibilitySelect: ReturnType<typeof mountVirtualizedSelect> | null = null
+watch(contentVisibilitySelectHost, (host) => {
+  disposeContentVisibilitySelect?.()
+  disposeContentVisibilitySelect = null
+  contentVisibilitySelect = null
+  if (!host) return
+  contentVisibilitySelect = mountVirtualizedSelect(host, {
+    label: '可见范围',
+    options: visibilityOptions,
+    value: contentForm.value.visibility,
+    disabled: contentBusy.value,
+    onChange: (value) => { contentForm.value.visibility = value as ContentForm['visibility'] },
+  })
+  disposeContentVisibilitySelect = contentVisibilitySelect.dispose
+}, { flush: 'post' })
+watch(() => contentForm.value.visibility, value => contentVisibilitySelect?.update({ value }))
+watch(contentBusy, disabled => contentVisibilitySelect?.update({ disabled }))
 const {
   dialogOpen: knowledgeTagDialogOpen,
   trigger: knowledgeTagTrigger,
@@ -627,6 +646,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   disposeNotificationHost?.()
   disposeNotificationHost = null
+  disposeContentVisibilitySelect?.()
+  disposeContentVisibilitySelect = null
+  contentVisibilitySelect = null
   disposeTeachingResourceDrawer?.()
   disposeTeachingResourceDrawer = null
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
@@ -674,7 +696,7 @@ onBeforeUnmount(() => {
             <section class="workspace-properties">
               <label><span>内容标题</span><input class="form-control" v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
               <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><button type="button" ref="knowledgeTagTrigger" class="workspace-tag-picker-trigger" :disabled="contentBusy" :aria-expanded="knowledgeTagDialogOpen" aria-haspopup="dialog" @click.stop="openKnowledgeTagDialog"><span class="bi bi-diagram-3" aria-hidden="true"></span><span>{{ selectedKnowledgeTagCount ? `已选择 ${selectedKnowledgeTagCount} 个标签` : '点击选择标签' }}</span><span class="bi bi-chevron-down" aria-hidden="true"></span></button><div v-if="selectedKnowledgeTagCount" class="workspace-tag-selected-preview"><span v-for="tag in contentForm.tags.filter(item => !taxonomyParentNames.has(item))" :key="tag" class="workspace-tag-selected-chip">{{ tag }}<button type="button" :disabled="contentBusy" :aria-label="`移除标签 ${tag}`" @click="removeSelectedKnowledgeTag(tag)">×</button></span><button type="button" class="workspace-tag-clear" :disabled="contentBusy" @click="clearSelectedKnowledgeTags">清空</button></div><p v-else class="workspace-tag-empty-hint">尚未选择标签</p></fieldset>
-              <label><span>可见范围</span><VirtualizedSelect v-model="contentForm.visibility" label="可见范围" :options="visibilityOptions" /></label>
+              <label><span>可见范围</span><div ref="contentVisibilitySelectHost"></div></label>
               <label><span>URL 别名</span><input class="form-control" v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
               <label><span>摘要</span><textarea class="form-control" v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
 

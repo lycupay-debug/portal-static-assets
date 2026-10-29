@@ -5,9 +5,9 @@ Collaboration: App.vue opens this lazy component with an optional resource, sync
 Boundaries: sends the existing same-origin /api/resources requests; server validation and authorization remain authoritative. No production state is changed directly.
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { ResourceWrite, TeachingResource } from '../api/generated'
-import VirtualizedSelect from './VirtualizedSelect.vue'
+import { mountVirtualizedSelect, type VirtualizedSelectOption } from './virtualizedSelect'
 import { formatFileSize } from '../utils/resourceFiles'
 
 const props = defineProps<{
@@ -38,6 +38,21 @@ const resourceUploadDone = ref(false)
 const resourceUploadResult = ref('')
 const resourceError = ref('')
 const isLocked = computed(() => props.busy || resourceUploadDone.value)
+const resourceTypeSelectHost = ref<HTMLElement | null>(null)
+const resourceGradeSelectHost = ref<HTMLElement | null>(null)
+let disposeResourceTypeSelect: (() => void) | null = null
+let disposeResourceGradeSelect: (() => void) | null = null
+const resourceTypeSelectOptions = computed<VirtualizedSelectOption[]>(() => props.resourceTypeOptions.map(type => ({ label: type, value: type })))
+const resourceGradeSelectOptions = computed<VirtualizedSelectOption[]>(() => props.resourceGradeOptions.map(grade => ({ label: grade, value: grade === '不限定年级' ? '' : grade })))
+onMounted(() => {
+  if (resourceTypeSelectHost.value) {
+    disposeResourceTypeSelect = mountVirtualizedSelect(resourceTypeSelectHost.value, { label: '教学资源类型', options: resourceTypeSelectOptions.value, value: resourceType.value, onChange: value => { resourceType.value = value } }).dispose
+  }
+  if (resourceGradeSelectHost.value) {
+    disposeResourceGradeSelect = mountVirtualizedSelect(resourceGradeSelectHost.value, { label: '年级', placeholder: '选择适用年级', options: resourceGradeSelectOptions.value, value: resourceGrade.value, onChange: value => { resourceGrade.value = value } }).dispose
+  }
+})
+onBeforeUnmount(() => { disposeResourceTypeSelect?.(); disposeResourceGradeSelect?.() })
 
 function resetResourceUpload() {
   resourceUploadProgress.value = 0
@@ -219,9 +234,9 @@ function finishResourceUpload() {
         <label class="share-dialog-label" for="resource-title">资源名称</label>
         <input id="resource-title" v-model="resourceTitle" class="form-control share-dialog-url" maxlength="200" required placeholder="例如：七年级英语听力 Unit 1" />
         <label class="share-dialog-label" for="resource-type">类型</label>
-        <VirtualizedSelect v-model="resourceType" label="教学资源类型" :options="props.resourceTypeOptions.map(type => ({ label: type, value: type }))" />
+        <div ref="resourceTypeSelectHost"></div>
         <label class="share-dialog-label" for="resource-grade">年级</label>
-        <VirtualizedSelect v-model="resourceGrade" label="年级" :options="props.resourceGradeOptions.map(grade => ({ label: grade, value: grade === '不限定年级' ? '' : grade }))" placeholder="选择适用年级" />
+        <div ref="resourceGradeSelectHost"></div>
         <label class="resource-public-toggle"><input v-model="resourceIsPublic" type="checkbox" /><span><strong>公开展示在教育资源页</strong><small>公开后访客可查看并访问资源。请确保你有权分享所提供的内容。</small></span></label>
         <label class="share-dialog-label" for="resource-description">资源说明</label>
         <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
