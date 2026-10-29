@@ -1,9 +1,19 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { apiRequest } from '../api/client'
+import { mountPermissionManagement } from './permissionManagement'
+import './permissionManagement.css'
 const SystemExecutionPolicyCenter = defineAsyncComponent(() => import('./SystemExecutionPolicyCenter.vue'))
-const PermissionManagement = defineAsyncComponent(() => import('./PermissionManagement.vue'))
 const policyView = ref<'execution' | 'permissions'>('execution')
+const permissionManagementHost = ref<HTMLElement | null>(null)
+let disposePermissionManagement: (() => void) | null = null
+watch([policyView, permissionManagementHost], ([view, host]) => {
+  disposePermissionManagement?.()
+  disposePermissionManagement = null
+  if (view === 'permissions' && host) {
+    disposePermissionManagement = mountPermissionManagement(host).dispose
+  }
+}, { flush: 'post' })
 
 type LogEntry = {
   id: number
@@ -128,7 +138,7 @@ onMounted(() => {
     warningTimer = setInterval(() => { if (!document.hidden) void loadWarnings() }, 15000)
   }
 })
-onBeforeUnmount(() => { logLoadSequence += 1; closeStream(); if (warningTimer) clearInterval(warningTimer) })
+onBeforeUnmount(() => { logLoadSequence += 1; closeStream(); if (warningTimer) clearInterval(warningTimer); disposePermissionManagement?.(); disposePermissionManagement = null })
 </script>
 
 <template>
@@ -138,7 +148,7 @@ onBeforeUnmount(() => { logLoadSequence += 1; closeStream(); if (warningTimer) c
       <button type="button" :class="{ active: policyView === 'permissions' }" @click="policyView = 'permissions'">权限管理</button>
     </nav>
     <SystemExecutionPolicyCenter v-if="policyView === 'execution'" />
-    <PermissionManagement v-else />
+    <div v-else ref="permissionManagementHost"></div>
   </section>
   <section v-else class="system-ops-center">
     <header class="ops-heading">
