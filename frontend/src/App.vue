@@ -1,12 +1,17 @@
+<!--
+Responsibility: compose portal routes, page-level reactive state, and the user-facing application template.
+Dependencies: focused composables for URL resolution, authentication, data loading, editing, and table behavior.
+Collaboration: App.vue coordinates route/session gates and view state; Go remains the authority for authentication and permissions.
+Boundaries: avoid embedding reusable business workflows here; browser lifecycle and route sequencing remain explicit,
+while extracted composables own independently testable state transitions and side effects.
+-->
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
-import { ApiRequestError, apiRequest } from './api/client'
+import { apiRequest } from './api/client'
 import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
+import { useDebouncedValue } from './composables/useDebouncedValue'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import NotificationHost from './components/NotificationHost.vue'
-const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
-const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
-const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
@@ -14,24 +19,32 @@ import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection
 import { useScrollRestoration } from './composables/useScrollRestoration'
 import { usePublicArticleActions } from './composables/usePublicArticleActions'
 import { useLegalDocuments } from './composables/useLegalDocuments'
-const taxonomyParentNames = knowledgeTaxonomyParentNames
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { useAccountTable } from './composables/useAccountTable'
-import { formatFileSize, formatResourceFileSize, resourceFileExtensions } from './utils/resourceFiles'
+import { usePortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
+import { createProtectedRouteGuard } from './composables/useProtectedRouteGuard'
+import { formatResourceFileSize } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
+import { createRetryableLazyLoader } from './utils/retryableLazyLoader'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
-import { routeAliases, routeSections, sectionRoutes } from './navigation/portalRoutes'
+import { routeSections, sectionRoutes } from './navigation/portalRoutes'
+import { resolvePortalLocation } from './navigation/resolvePortalLocation'
 import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
-import type { Content as APIContent, ContentVersion as APIContentVersion, LoginRequest, RegisterRequest, ResourceWrite, TeachingResource as APITeachingResource, User as APIUser } from './api/generated'
-const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
-const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
+import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource } from './api/generated'
 
-type PortalUser = APIUser & { isAdmin?: boolean }
+const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
+const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
+const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
+const TeachingResourceEditorDialog = defineAsyncComponent(() => import('./components/TeachingResourceEditorDialog.vue'))
+const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
+const taxonomyParentNames = knowledgeTaxonomyParentNames
+const visibilityOptions = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
+
 type PortalContent = APIContent
 type ContentVersion = APIContentVersion
 type TeachingResource = APITeachingResource
@@ -102,11 +115,7 @@ function toggleAccountGroup(groupId: string) {
 
 
 const tableQuery = ref('')
-const debouncedTableQuery = ref('')
-let tableSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
-watch(tableQuery, (query) => {
-  tableSearchDebounceTimer = setTimeout(() => { debouncedTableQuery.value = query }, 150)
-})
+const debouncedTableQuery = useDebouncedValue(tableQuery, 150)
 watch(debouncedTableQuery, (query) => {
   if (activeAccountSection.value === 'content-management') void loadContentList(query)
   else if (activeAccountSection.value === 'teaching-resources') void loadTeachingResources(query)
@@ -133,22 +142,9 @@ const teachingResources = ref<TeachingResource[]>([])
 const teachingResourceTrash = ref<TeachingResource[]>([])
 const resourceViewMode = ref<'active' | 'trash'>('active')
 const resourceDialogOpen = ref(false)
-const editingResourceId = ref<string | null>(null)
+const resourceDialogItem = ref<TeachingResource | null>(null)
 const resourceBusy = ref(false)
 const resourceError = ref('')
-const resourceTitle = ref('')
-const resourceDescription = ref('')
-const resourceFile = ref<File | null>(null)
-const resourceFiles = ref<File[]>([])
-const resourceBatchMode = ref(false)
-const resourceType = ref('听力材料')
-const resourceGrade = ref('')
-const resourceIsPublic = ref(false)
-const resourceUrl = ref('')
-const resourceUploadProgress = ref(0)
-const resourceUploadDone = ref(false)
-const resourceUploadResult = ref('')
-const resourceDialogLocked = computed(() => resourceBusy.value || (resourceUploadDone.value && resourceDialogOpen.value))
 const resourceTypeOptions = ['听力材料', '课件', '教学视频', '电子书', '练习题', '教案', '其他']
 const resourceGradeOptions = ['不限定年级', ...taxonomyChildOptions('年级').map(option => option.value)]
 watch(authError, (message) => { if (message) portalNotify.error(message, '登录或注册失败') }, { flush: 'sync' })
@@ -251,16 +247,15 @@ function onVirtualTableScroll(event: Event) {
   tableScrollTop.value = (event.target as HTMLElement).scrollTop
 }
 type ContentListLoader = ReturnType<typeof import('./composables/loadContentList').createContentListLoader>
-let contentListLoaderPromise: Promise<ContentListLoader> | undefined
-function getContentListLoader(): Promise<ContentListLoader> {
-  return contentListLoaderPromise ??= import('./composables/loadContentList').then(({ createContentListLoader }) => createContentListLoader({
+const getContentListLoader = createRetryableLazyLoader<ContentListLoader>(() =>
+  import('./composables/loadContentList').then(({ createContentListLoader }) => createContentListLoader({
     viewMode: contentViewMode,
     activeItems: contentItems,
     trashItems: contentTrashItems,
     loading: contentLoading,
     error: contentError,
-  }))
-}
+  })),
+)
 function loadContentList(searchTerm = tableQuery.value) {
   return getContentListLoader().then(loader => loader.loadContentList(searchTerm)).catch((error: unknown) => {
     contentError.value = error instanceof Error ? error.message : '网络连接失败，无法读取内容。'
@@ -274,17 +269,16 @@ function switchContentView(mode: 'active' | 'trash') {
   void loadContentList()
 }
 type TeachingResourceListLoader = ReturnType<typeof import('./composables/loadTeachingResourceList').createTeachingResourceListLoader>
-let teachingResourceListLoaderPromise: Promise<TeachingResourceListLoader> | undefined
-function getTeachingResourceListLoader(): Promise<TeachingResourceListLoader> {
-  return teachingResourceListLoaderPromise ??= import('./composables/loadTeachingResourceList').then(({ createTeachingResourceListLoader }) => createTeachingResourceListLoader({
+const getTeachingResourceListLoader = createRetryableLazyLoader<TeachingResourceListLoader>(() =>
+  import('./composables/loadTeachingResourceList').then(({ createTeachingResourceListLoader }) => createTeachingResourceListLoader({
     viewMode: resourceViewMode,
     activeItems: teachingResources,
     trashItems: teachingResourceTrash,
     loading: resourceBusy,
     error: resourceError,
     onError: message => portalNotify.error(message, '教学资源'),
-  }))
-}
+  })),
+)
 function loadTeachingResources(searchTerm = tableQuery.value) {
   return getTeachingResourceListLoader().then(loader => loader.loadTeachingResources(searchTerm)).catch((error: unknown) => {
     resourceError.value = error instanceof Error ? error.message : '读取教学资源失败。'
@@ -293,9 +287,8 @@ function loadTeachingResources(searchTerm = tableQuery.value) {
   })
 }
 type ContentManagementActions = ReturnType<typeof import('./composables/useContentManagementActions').useContentManagementActions>
-let contentManagementActionsPromise: Promise<ContentManagementActions> | undefined
-function getContentManagementActions(): Promise<ContentManagementActions> {
-  return contentManagementActionsPromise ??= import('./composables/useContentManagementActions').then(({ useContentManagementActions }) => useContentManagementActions({
+const getContentManagementActions = createRetryableLazyLoader<ContentManagementActions>(() =>
+  import('./composables/useContentManagementActions').then(({ useContentManagementActions }) => useContentManagementActions({
     routeContentId: contentEditorRouteId,
     contentItems,
     contentTrashItems,
@@ -311,8 +304,8 @@ function getContentManagementActions(): Promise<ContentManagementActions> {
     emptyContentForm,
     loadContentList,
     navigate,
-  }))
-}
+  })),
+)
 function runContentManagementAction<T>(action: (actions: ContentManagementActions) => Promise<T> | T): Promise<T | undefined> {
   return getContentManagementActions().then(action).catch((error: unknown) => {
     contentError.value = error instanceof Error ? error.message : '内容操作失败。'
@@ -329,65 +322,13 @@ function saveContent() { return runContentManagementAction(actions => actions.sa
 function changeContentStatus(id: string, action: 'publish' | 'unpublish') { return runContentManagementAction(actions => actions.changeContentStatus(id, action)) }
 function deleteContent(id: string) { return runContentManagementAction(actions => actions.deleteContent(id)) }
 
-function resetResourceUpload() { resourceUploadProgress.value = 0; resourceUploadDone.value = false; resourceUploadResult.value = '' }
-function openResourceDialog() { editingResourceId.value = null; resourceTitle.value = ''; resourceDescription.value = ''; resourceType.value = '听力材料'; resourceGrade.value = ''; resourceIsPublic.value = false; resourceUrl.value = ''; resourceFile.value = null; resourceFiles.value = []; resourceBatchMode.value = false; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
-function openResourceEdit(item: TeachingResource) { editingResourceId.value = item.id; resourceTitle.value = item.title; resourceDescription.value = item.description || ''; resourceType.value = item.type || '其他'; resourceGrade.value = item.grade || ''; resourceIsPublic.value = item.isPublic === true; resourceUrl.value = item.url || ''; resourceFile.value = null; resourceFiles.value = []; resourceBatchMode.value = false; resourceError.value = ''; resetResourceUpload(); resourceDialogOpen.value = true }
+function openResourceDialog() { resourceDialogItem.value = null; resourceDialogOpen.value = true }
+function openResourceEdit(item: TeachingResource) { resourceDialogItem.value = item; resourceDialogOpen.value = true }
 function openResourceEditById(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item) openResourceEdit(item) }
 function openResourceDetails(id: string) { selectedResourceDetail.value = [...teachingResources.value, ...teachingResourceTrash.value].find((resource) => resource.id === id) || null }
 function closeResourceDetails() { selectedResourceDetail.value = null }
-function handleResourceFileChange(event: Event) { const input = event.target as HTMLInputElement; const files = Array.from(input.files || []); if (resourceBatchMode.value && !editingResourceId.value) { resourceFiles.value = files; resourceFile.value = files[0] || null } else { resourceFile.value = files[0] || null; resourceFiles.value = [] }; resourceError.value = '' }
-function clearResourceSelectionForMode() { resourceFile.value = null; resourceFiles.value = []; resourceError.value = '' }
-function requestWithUploadProgress(url: string, method: string, body: ResourceWrite): Promise<{ response: number; result: { item?: TeachingResource; error?: string } }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest(); xhr.open(method, url); xhr.withCredentials = true; xhr.setRequestHeader('Content-Type', 'application/json'); xhr.setRequestHeader('Accept', 'application/json')
-    xhr.upload.onprogress = (event) => { if (event.lengthComputable) resourceUploadProgress.value = Math.min(99, Math.round(event.loaded / event.total * 100)) }
-    xhr.onerror = () => reject(new Error('网络连接失败，资源未能保存。'))
-    xhr.onload = () => { let result: { item?: TeachingResource; error?: string } = {}; try { result = JSON.parse(xhr.responseText) } catch {} if (xhr.status < 200 || xhr.status >= 300) { reject(new Error(result.error || '保存资源失败。')); return } resourceUploadProgress.value = 100; resolve({ response: xhr.status, result }) }
-    xhr.send(JSON.stringify(body))
-  })
-}
-async function createTeachingResource() {
-  if (!resourceTitle.value.trim()) { resourceError.value = '请填写资源名称。'; return }
-  const batch = resourceBatchMode.value && !editingResourceId.value
-  const files = batch ? resourceFiles.value : (resourceFile.value ? [resourceFile.value] : [])
-  if (batch && !files.length) { resourceError.value = '批量上传至少选择一个文件。'; return }
-  if (!files.length && !resourceUrl.value.trim() && !editingResourceId.value) { resourceError.value = '请上传文件或粘贴资源 URL 链接。'; return }
-  if (resourceUrl.value.trim() && !/^https?:\/\//i.test(resourceUrl.value.trim())) { resourceError.value = '资源 URL 必须以 http:// 或 https:// 开头。'; return }
-  for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) { resourceError.value = `文件“${file.name}”格式不受支持。请使用 PPT、PPTX、MP3、PDF、DOC、DOCX 或 TXT。`; return }
-    if (file.size > 25 * 1024 * 1024) { resourceError.value = `文件“${file.name}”超过 25 MB。`; return }
-  }
-  resourceBusy.value = true; resourceError.value = ''; resetResourceUpload()
-  try {
-    const common = { title: resourceTitle.value.trim(), description: resourceDescription.value.trim(), type: resourceType.value, grade: (resourceGrade.value || null) as ResourceWrite['grade'], isPublic: resourceIsPublic.value, url: resourceUrl.value.trim() || null }
-    const created: TeachingResource[] = []
-    const failures: string[] = []
-    for (const file of (files.length ? files : [null])) {
-      try {
-        let data = ''
-        if (file) data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('读取文件失败。')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file) })
-        const payload: ResourceWrite = { ...common, ...(file ? { filename: file.name, data } : {}) }
-        const endpoint = editingResourceId.value ? `/api/resources/${encodeURIComponent(editingResourceId.value)}` : '/api/resources'
-        const { result } = await requestWithUploadProgress(endpoint, editingResourceId.value ? 'PATCH' : 'POST', payload)
-        if (!result.item) throw new Error('服务器未返回已保存的资源。')
-        created.push(result.item)
-        if (editingResourceId.value) teachingResources.value = teachingResources.value.map((item) => item.id === result.item!.id ? result.item! : item)
-      } catch (error) { failures.push(`${file?.name || '资源链接'}：${error instanceof Error ? error.message : '保存失败'}`) }
-    }
-    if (created.length) teachingResources.value = [...created.slice().reverse(), ...teachingResources.value.filter((item) => !created.some((createdItem) => createdItem.id === item.id))]
-    if (created.length && !failures.length) {
-      resourceUploadDone.value = true
-      resourceUploadResult.value = batch ? `批量上传完成：${created.length} 个文件已分别创建为独立资源。请点击下方“完成”关闭窗口。` : (editingResourceId.value ? '资源已更新。请点击下方“完成”关闭窗口。' : '资源已保存。请点击下方“完成”关闭窗口。')
-    } else if (created.length) {
-      resourceUploadDone.value = true
-      resourceUploadResult.value = `已成功创建 ${created.length} 条资源，失败 ${failures.length} 条。失败详情：${failures.join('；')}`
-    } else { throw new Error(failures.join('；') || '资源保存失败。') }
-    if (created.length) { resourceFiles.value = []; resourceFile.value = null; await loadTeachingResources() }
-  } catch (error) { resourceError.value = error instanceof Error ? error.message : '保存资源失败。'; resourceUploadProgress.value = 0 }
-  finally { resourceBusy.value = false }
-}
-function finishResourceUpload() { if (!resourceUploadDone.value) return; resourceDialogOpen.value = false; editingResourceId.value = null; resetResourceUpload(); portalNotify.success('教学资源已保存。') }
+function onResourceDialogSaved() { void loadTeachingResources() }
+function onResourceDialogCompleted() { portalNotify.success('教学资源已保存。') }
 async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 'permanent') {
   const message = action === 'permanent' ? '永久删除后将同时删除服务器文件，无法恢复。确定继续？' : action === 'trash' ? '将该资源移入回收站？' : ''
   if (message && !window.confirm(message)) return
@@ -402,25 +343,6 @@ async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 
 function switchResourceView() { resourceViewMode.value = resourceViewMode.value === 'active' ? 'trash' : 'active'; tableQuery.value = ''; void loadTeachingResources() }
 function downloadTeachingResource(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item?.url) window.open(item.url, '_blank', 'noopener,noreferrer'); else window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
 
-function handleResourcePaste(event: ClipboardEvent) {
-  if (resourceBusy.value || resourceUploadDone.value) return
-  const clipboard = event.clipboardData
-  if (!clipboard) return
-  const files = Array.from(clipboard.files || [])
-  if (!files.length) for (const item of Array.from(clipboard.items || [])) { if (item.kind === 'file') { const file = item.getAsFile(); if (file) files.push(file) } }
-  if (!files.length) return
-  event.preventDefault()
-  const accepted: File[] = []; const errors: string[] = []
-  for (const file of files) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!resourceFileExtensions.has(extension)) errors.push(`${file.name}：格式不受支持`)
-    else if (file.size > 25 * 1024 * 1024) errors.push(`${file.name}：超过 25 MB`)
-    else accepted.push(file)
-  }
-  if (resourceBatchMode.value && !editingResourceId.value) { resourceFiles.value = accepted; resourceFile.value = accepted[0] || null }
-  else { resourceFile.value = accepted[0] || null; resourceFiles.value = [] }
-  resourceError.value = errors.length ? `部分文件未添加：${errors.join('；')}` : ''
-}
 
 function selectAccountSection(id: string) {
   activeAccountSection.value = id
@@ -507,18 +429,11 @@ const {
 
 function closeMenu() { menuOpen.value = false }
 function setRouteFromLocation() {
-  const rawPath = decodeURI(window.location.pathname || '/')
-  const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath
-  route.value = routeAliases[pathname] || pathname
+  const resolved = resolvePortalLocation(window.location.pathname, window.location.search)
+  route.value = resolved.route
   if (route.value === '/knowledge') {
-    const params = new URLSearchParams(window.location.search)
-    const requestedCategory = params.get('category') || 'recent'
-    const validCategory = knowledgeCategoryMenus.some(category => category.value === requestedCategory)
-    const category = validCategory ? requestedCategory : 'recent'
-    const requestedSubcategory = params.get('subcategory') || ''
-    const categoryDefinition = knowledgeCategoryMenus.find(item => item.value === category)
-    knowledgeCategory.value = category
-    knowledgeSubcategory.value = categoryDefinition?.children.includes(requestedSubcategory) ? requestedSubcategory : ''
+    knowledgeCategory.value = resolved.knowledgeCategory
+    knowledgeSubcategory.value = resolved.knowledgeSubcategory
     knowledgeVisibleCount.value = knowledgePageSize
   }
   if (isAccountPage.value) {
@@ -530,13 +445,8 @@ function setRouteFromLocation() {
 const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route)
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicDirectoryData').createPublicDirectoryLoader>
-let publicDirectoryLoaderPromise: Promise<PublicDirectoryLoader> | undefined
-let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined
-let publicResourceSearchTimer: ReturnType<typeof setTimeout> | undefined
-let navigationSequence = 0
-let sessionRequestSequence = 0
-function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
-  return publicDirectoryLoaderPromise ??= import('./composables/loadPublicDirectoryData').then(({ createPublicDirectoryLoader }) => createPublicDirectoryLoader({
+const getPublicDirectoryLoader = createRetryableLazyLoader<PublicDirectoryLoader>(() =>
+  import('./composables/loadPublicDirectoryData').then(({ createPublicDirectoryLoader }) => createPublicDirectoryLoader({
     publicContents,
     publicTeachingResources,
     publicContentLoading,
@@ -545,35 +455,42 @@ function getPublicDirectoryLoader(): Promise<PublicDirectoryLoader> {
     educationResourceError,
     knowledgeVisibleCount,
     knowledgePageSize,
-  }))
-}
+    isContentViewCurrent: () => route.value === '/' || route.value === '/knowledge' || (isPublicDirectoryPage.value && route.value !== '/education-resources'),
+  })),
+)
+const debouncedKnowledgeSearchQuery = useDebouncedValue(knowledgeSearchQuery, 220)
+const debouncedEducationResourceSearchQuery = useDebouncedValue(educationResourceSearch, 220)
+let navigationSequence = 0
 function loadPublicContents(searchTerm = '') {
-  return getPublicDirectoryLoader().then(loader => loader.loadPublicContents(searchTerm))
+  return getPublicDirectoryLoader().then(loader => loader.loadPublicContents(searchTerm)).catch((error: unknown) => {
+    publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
+    publicContentLoading.value = false
+  })
 }
 function loadPublicTeachingResources(searchTerm = '') {
-  return getPublicDirectoryLoader().then(loader => loader.loadPublicTeachingResources(searchTerm))
+  return getPublicDirectoryLoader().then(loader => loader.loadPublicTeachingResources(searchTerm)).catch((error: unknown) => {
+    educationResourceError.value = error instanceof Error ? error.message : '读取公开教育资源失败。'
+    educationResourceLoading.value = false
+  })
 }
-watch(knowledgeSearchQuery, (query) => {
+watch(debouncedKnowledgeSearchQuery, (query) => {
   if (route.value !== '/knowledge') return
-  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
-  publicContentSearchTimer = setTimeout(() => { void loadPublicContents(query) }, 220)
+  void loadPublicContents(query)
 })
-watch(educationResourceSearch, (query) => {
+watch(debouncedEducationResourceSearchQuery, (query) => {
   if (route.value !== '/education-resources') return
-  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
-  publicResourceSearchTimer = setTimeout(() => { void loadPublicTeachingResources(query) }, 220)
+  void loadPublicTeachingResources(query)
 })
 type PublicArticleLoader = ReturnType<typeof import('./composables/loadPublicArticle').createPublicArticleLoader>
-let publicArticleLoaderPromise: Promise<PublicArticleLoader> | undefined
-function getPublicArticleLoader(): Promise<PublicArticleLoader> {
-  return publicArticleLoaderPromise ??= import('./composables/loadPublicArticle').then(({ createPublicArticleLoader }) => createPublicArticleLoader({
+const getPublicArticleLoader = createRetryableLazyLoader<PublicArticleLoader>(() =>
+  import('./composables/loadPublicArticle').then(({ createPublicArticleLoader }) => createPublicArticleLoader({
     route,
     article: publicArticle,
     html: publicArticleHtml,
     loading: publicContentLoading,
     error: publicContentError,
-  }))
-}
+  })),
+)
 function loadPublicArticle(slug: string) {
   return getPublicArticleLoader().then(loader => loader.loadPublicArticle(slug)).catch((error: unknown) => {
     publicContentError.value = error instanceof Error ? error.message : '读取内容失败。'
@@ -596,6 +513,17 @@ function loadRouteData(): void {
   if (legalSlug.value) void loadLegalDocument(legalSlug.value)
 }
 
+const { ensureRouteAccess } = createProtectedRouteGuard({
+  isProtected: () => isProtectedPage.value,
+  loadSession: () => loadSession(),
+  isCurrent: (navigationId: number) => navigationId === navigationSequence,
+  redirectToLogin: () => {
+    history.replaceState({}, '', '/login')
+    route.value = '/login'
+    authNotice.value = '请先登录，再进入工作空间。'
+  },
+})
+
 async function navigate(target: string) {
   const navigationId = ++navigationSequence
   saveScrollPosition()
@@ -605,16 +533,7 @@ async function navigate(target: string) {
   void loadPublishedLegalDocuments()
   authError.value = ''
   authNotice.value = ''
-  if (isProtectedPage.value) {
-    const valid = await loadSession()
-    if (navigationId !== navigationSequence) return
-    if (!valid) {
-      history.replaceState({}, '', '/login')
-      route.value = '/login'
-      authNotice.value = '请先登录，再进入工作空间。'
-      return
-    }
-  }
+  if (!await ensureRouteAccess(navigationId)) return
   if (route.value === '/content-management') {
     await loadContentList()
     if (navigationId !== navigationSequence) return
@@ -641,69 +560,25 @@ async function navigate(target: string) {
     }
   }
 }
-async function loadSession(): Promise<boolean> {
-  const requestId = ++sessionRequestSequence
-  authLoading.value = true
-  try {
-    const result = await apiRequest<{ user: PortalUser }>('/auth/me')
-    if (requestId === sessionRequestSequence) user.value = result.user
-    return true
-  } catch {
-    if (requestId === sessionRequestSequence) user.value = null
-    return false
-  } finally {
-    if (requestId === sessionRequestSequence) authLoading.value = false
-  }
-}
-async function submitAuth() {
-  authBusy.value = true
-  authError.value = ''
-  authNotice.value = ''
-  try {
-    const endpoint = isRegister.value ? '/api/auth/register' : '/api/auth/login'
-    const payload: RegisterRequest | LoginRequest = isRegister.value
-      ? { displayName: authForm.value.displayName.trim(), email: authForm.value.email.trim(), password: authForm.value.password }
-      : { email: authForm.value.email.trim(), password: authForm.value.password }
-    const result = await apiRequest<{ user?: PortalUser; error?: string }>(endpoint.slice('/api'.length), {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }, '操作失败，请稍后再试。')
-    if (!result.user) throw new Error(result.error || '操作失败，请稍后再试。')
-    user.value = result.user
-    authForm.value.password = ''
-    await navigate('/account')
-    portalNotify.success(isRegister.value ? '账户创建成功。' : '登录成功。', isRegister.value ? '注册成功' : '登录成功')
-  } catch (error) {
-    authError.value = error instanceof Error ? error.message : '网络连接失败，请稍后再试。'
-  } finally { authBusy.value = false }
-}
-async function logout() {
-  authBusy.value = true
-  try {
-    await apiRequest<unknown>('/auth/logout', { method: 'POST' })
-  } finally {
-    user.value = null
-    authBusy.value = false
-    await navigate('/')
-    portalNotify.success('已安全退出登录。', '退出登录成功')
-  }
-}
+const { loadSession, submitAuth, logout } = usePortalAuthentication({
+  user,
+  authLoading,
+  authBusy,
+  authError,
+  authNotice,
+  authForm,
+  isRegister,
+  navigate,
+  notifySuccess: (message, title) => portalNotify.success(message, title),
+  notifyError: (message, title) => portalNotify.error(message, title),
+})
 function onPopState() {
   const navigationId = ++navigationSequence
   setRouteFromLocation()
   closeMenu()
   authError.value = ''
   const continueNavigation = async () => {
-    if (isProtectedPage.value) {
-      const valid = await loadSession()
-      if (navigationId !== navigationSequence) return
-      if (!valid) {
-        history.replaceState({}, '', '/login')
-        route.value = '/login'
-        authNotice.value = '请先登录，再进入工作空间。'
-        return
-      }
-    }
+    if (!await ensureRouteAccess(navigationId)) return
     if (navigationId !== navigationSequence) return
     if (route.value === '/content-management') void loadContentList()
     if (route.value === '/education/teaching-resources') void loadTeachingResources()
@@ -721,14 +596,8 @@ onMounted(() => {
   window.addEventListener('beforeunload', saveScrollPosition)
   void loadPublishedLegalDocuments()
   if (isProtectedPage.value) {
-    void loadSession().then((valid) => {
-      if (navigationId !== navigationSequence) return
-      if (!valid) {
-        history.replaceState({}, '', '/login')
-        route.value = '/login'
-        authNotice.value = '请先登录，再进入工作空间。'
-        return
-      }
+    void ensureRouteAccess(navigationId).then((allowed) => {
+      if (!allowed || navigationId !== navigationSequence) return
       if (route.value === '/content-management') void loadContentList()
       if (route.value === '/education/teaching-resources') void loadTeachingResources()
       loadRouteData()
@@ -736,20 +605,12 @@ onMounted(() => {
     })
   } else {
     loadRouteData()
-    void loadSession().then((valid) => {
-      if (navigationId !== navigationSequence) return
-      if (isProtectedPage.value && !valid) {
-        history.replaceState({}, '', '/login')
-        route.value = '/login'
-        authNotice.value = '请先登录，再进入工作空间。'
-      }
-    })
+    // Public pages still load the session so the header reflects an existing login.
+    void loadSession()
     void restoreScrollPosition()
   }
 })
 onBeforeUnmount(() => {
-  if (publicContentSearchTimer) clearTimeout(publicContentSearchTimer)
-  if (publicResourceSearchTimer) clearTimeout(publicResourceSearchTimer)
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
   educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
@@ -1226,45 +1087,17 @@ onBeforeUnmount(() => {
 
     <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="btn btn-dark button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
 
-    <div v-if="resourceDialogOpen" class="share-dialog-backdrop resource-upload-backdrop" @click.self="!resourceDialogLocked && (resourceDialogOpen = false)" @keydown.esc="!resourceDialogLocked && (resourceDialogOpen = false)">
-      <section class="share-dialog resource-create-dialog" role="dialog" aria-modal="true" aria-labelledby="resource-create-title">
-        <button v-if="!resourceDialogLocked && !resourceUploadDone" type="button" class="share-dialog-close" aria-label="关闭" @click="resourceDialogOpen = false"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
-        <span class="share-dialog-eyebrow">TEACHING LIBRARY</span>
-        <h2 id="resource-create-title">{{ editingResourceId ? '编辑教学资源' : '创建教学资源' }}</h2>
-        <p>{{ editingResourceId ? '可更新资源名称、类型、说明、分享链接；选择新文件才会替换原文件。' : '文件上传与 URL 分享二选一，也可以同时填写。' }}</p>
-        <form v-if="!resourceUploadDone" class="resource-create-form" @submit.prevent="createTeachingResource" @paste="handleResourcePaste">
-          <label class="share-dialog-label" for="resource-title">资源名称</label>
-          <input id="resource-title" v-model="resourceTitle" class="form-control share-dialog-url" maxlength="200" required placeholder="例如：七年级英语听力 Unit 1" />
-          <label class="share-dialog-label" for="resource-type">类型</label>
-          <VirtualizedSelect v-model="resourceType" label="教学资源类型" :options="resourceTypeOptions.map(type => ({ label: type, value: type }))" />
-          <label class="share-dialog-label" for="resource-grade">年级</label>
-          <VirtualizedSelect v-model="resourceGrade" label="年级" :options="resourceGradeOptions.map(grade => ({ label: grade, value: grade === '不限定年级' ? '' : grade }))" placeholder="选择适用年级" />
-          <label class="resource-public-toggle"><input v-model="resourceIsPublic" type="checkbox" /><span><strong>公开展示在教育资源页</strong><small>公开后访客可查看并访问资源。请确保你有权分享所提供的内容。</small></span></label>
-          <label class="share-dialog-label" for="resource-description">资源说明</label>
-          <textarea id="resource-description" v-model="resourceDescription" class="form-control share-dialog-url resource-description-input" maxlength="2000" placeholder="资源内容、课程、章节或使用说明（选填）"></textarea>
-          <label v-if="!editingResourceId" class="resource-batch-toggle"><input v-model="resourceBatchMode" type="checkbox" @change="clearResourceSelectionForMode" /><span>批量上传（每个文件单独创建一条资源）</span></label>
-          <label class="share-dialog-label" for="resource-file">{{ resourceBatchMode && !editingResourceId ? '上传文件（可多选）' : '上传文件（选填）' }}</label>
-          <input id="resource-file" class="form-control resource-file-input" type="file" :multiple="resourceBatchMode && !editingResourceId" accept=".ppt,.pptx,.mp3,.pdf,.doc,.docx,.txt" @change="handleResourceFileChange" />
-          <p class="resource-file-hint">支持 PPT / PPTX、MP3、PDF、DOC / DOCX、TXT；单个文件不超过 25 MB。批量模式下，每个文件都会创建一条独立资源，其他填写信息共用。也可复制文件后在表单中按 Ctrl+V 粘贴（取决于浏览器支持）。不上传文件时可直接使用 URL。</p>
-          <p v-if="resourceBatchMode && resourceFiles.length" class="resource-selected-file">已选择 {{ resourceFiles.length }} 个文件：{{ resourceFiles.map(file => file.name).join('、') }}</p>
-          <p v-else-if="resourceFile" class="resource-selected-file">{{ resourceFile.name }} · {{ formatFileSize(resourceFile.size) }}{{ editingResourceId ? ' · 上传后替换原文件' : '' }}</p>
-          <label class="share-dialog-label" for="resource-url">URL 链接（选填）</label>
-          <input id="resource-url" v-model="resourceUrl" type="url" class="form-control share-dialog-url" placeholder="粘贴可分享的 https:// 链接" />
-          <div v-if="resourceBusy" class="resource-upload-live-progress">
-            <div class="resource-upload-progress-track" role="progressbar" :aria-valuenow="resourceUploadProgress" aria-valuemin="0" aria-valuemax="100"><div class="resource-upload-progress-bar" :style="{ width: resourceUploadProgress + '%' }"></div></div>
-            <div class="resource-upload-progress-label"><span>{{ resourceUploadProgress >= 100 ? '正在等待服务器确认保存' : '正在上传并保存，请勿关闭窗口' }}</span><strong>{{ resourceUploadProgress }}%</strong></div>
-          </div>
-          <p v-if="resourceError" class="resource-error">{{ resourceError }}</p>
-          <div class="resource-form-actions"><button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="resourceDialogOpen = false">取消</button><button type="submit" class="btn content-primary-button" :disabled="resourceBusy">{{ resourceBusy ? '正在保存…' : (editingResourceId ? '保存并处理' : '保存资源') }}</button></div>
-        </form>
-        <div v-else class="resource-upload-completion">
-          <p>{{ resourceUploadResult }}</p>
-          <div class="resource-upload-progress-track" role="progressbar" :aria-valuenow="resourceUploadProgress" aria-valuemin="0" aria-valuemax="100"><div class="resource-upload-progress-bar" :style="{ width: resourceUploadProgress + '%' }"></div></div>
-          <div class="resource-upload-progress-label"><span>{{ resourceUploadProgress >= 100 ? '处理完成' : '正在处理' }}</span><strong>{{ resourceUploadProgress }}%</strong></div>
-          <button type="button" class="btn content-primary-button" :disabled="resourceUploadProgress < 100 || !resourceUploadDone" @click="finishResourceUpload">完成</button>
-        </div>
-      </section>
-    </div>
+    <TeachingResourceEditorDialog
+      v-if="resourceDialogOpen"
+      :resource="resourceDialogItem"
+      :resource-type-options="resourceTypeOptions"
+      :resource-grade-options="resourceGradeOptions"
+      :busy="resourceBusy"
+      @close="resourceDialogOpen = false"
+      @update:busy="resourceBusy = $event"
+      @saved="onResourceDialogSaved"
+      @completed="onResourceDialogCompleted"
+    />
 
     <div v-if="selectedTableCell" class="table-cell-detail-backdrop" @click.self="selectedTableCell = null" @keydown.esc="selectedTableCell = null">
       <section class="table-cell-detail" role="dialog" aria-modal="true" :aria-label="selectedTableCell.label">
