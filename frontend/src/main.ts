@@ -4,6 +4,7 @@ import './bootstrap-icons-local.css'
 import { createApp } from 'vue'
 import App from './App.vue'
 import './monochrome.css'
+import './notification.css'
 import { initializeResponsiveLayout } from './utils/responsiveLayout'
 
 initializeResponsiveLayout()

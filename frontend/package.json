@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run type-check && vite build && node scripts/check-bundle-budget.mjs",
+    "build": "npm run test && npm run type-check && vite build && node scripts/check-bundle-budget.mjs",
+    "test": "tsx --test test/*.test.ts",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",

@@ -11,7 +11,7 @@ import { apiRequest } from './api/client'
 import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
 import { useDebouncedValue } from './composables/useDebouncedValue'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
-import NotificationHost from './components/NotificationHost.vue'
+import { mountNotificationHost } from './components/notificationHost'
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
@@ -587,7 +587,9 @@ function onPopState() {
   }
   void continueNavigation()
 }
+let disposeNotificationHost: (() => void) | null = null
 onMounted(() => {
+  disposeNotificationHost = mountNotificationHost(document.body)
   const navigationId = ++navigationSequence
   setRouteFromLocation()
   void nextTick().then(observeVirtualTableWidth)
@@ -611,6 +613,8 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  disposeNotificationHost?.()
+  disposeNotificationHost = null
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
   educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
@@ -1109,7 +1113,6 @@ onBeforeUnmount(() => {
 
     <TeachingResourceDrawer v-if="selectedResourceDetail" :resource="selectedResourceDetail" :resource-view-mode="resourceViewMode" @close="closeResourceDetails" @edit="(id) => { closeResourceDetails(); openResourceEditById(id) }" @download="downloadTeachingResource" />
 
-    <NotificationHost />
 
     <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span><nav v-if="publishedLegalDocuments.length" class="site-footer-policies" aria-label="网站政策"> <a v-for="doc in publishedLegalDocuments" :key="doc.slug" :href="`/legal/${doc.slug}`" @click.prevent="navigate(`/legal/${doc.slug}`)">{{ doc.title }}</a></nav></footer>
     <button type="button" class="scroll-to-top" aria-label="返回页面顶部" title="返回顶部" @click="scrollToTop"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>
