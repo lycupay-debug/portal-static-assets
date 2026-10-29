@@ -16,7 +16,8 @@
     "check:static-assets": "node ../scripts/check-static-assets-layout.mjs dist",
     "package:static-assets": "node ../scripts/package-static-assets.mjs dist",
     "build:static-origin": "npm run type-check && vite build --base=https://assets.lycupaynotion.top/ --outDir dist-static-origin && node scripts/check-bundle-budget.mjs dist-static-origin && node ../scripts/check-static-origin-build.mjs dist-static-origin",
-    "package:static-origin": "node ../scripts/package-static-origin.mjs dist-static-origin"
+    "package:static-origin": "node ../scripts/package-static-origin.mjs dist-static-origin",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@tiptap/extension-drag-handle": "^3.32.0",
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "0.99.0",
+    "@playwright/test": "^1.64.1",
     "@redocly/cli": "^2.64.0",
     "@tsconfig/node24": "^24.0.5",
     "@types/node": "^24.13.4",
