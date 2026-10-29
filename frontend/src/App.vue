@@ -12,6 +12,7 @@ import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
 import { useDebouncedValue } from './composables/useDebouncedValue'
 import VirtualizedSelect from './components/VirtualizedSelect.vue'
 import { mountNotificationHost } from './components/notificationHost'
+import { mountTeachingResourceDrawer } from './components/teachingResourceDrawer'
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
@@ -39,7 +40,6 @@ import type { Content as APIContent, ContentVersion as APIContentVersion, Teachi
 
 const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
 const SystemOpsCenter = defineAsyncComponent(() => import('./components/SystemOpsCenter.vue'))
-const TeachingResourceDrawer = defineAsyncComponent(() => import('./components/TeachingResourceDrawer.vue'))
 const TeachingResourceEditorDialog = defineAsyncComponent(() => import('./components/TeachingResourceEditorDialog.vue'))
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 const taxonomyParentNames = knowledgeTaxonomyParentNames
@@ -126,6 +126,8 @@ const virtualTableViewportWidth = ref(0)
 let tableResizeObserver: ResizeObserver | null = null
 const selectedTableCell = ref<{ label: string; value: string } | null>(null)
 const selectedResourceDetail = ref<TeachingResource | null>(null)
+const teachingResourceDrawerHost = ref<HTMLElement | null>(null)
+let disposeTeachingResourceDrawer: (() => void) | null = null
 const contentItems = ref<PortalContent[]>([])
 const contentTrashItems = ref<PortalContent[]>([])
 const contentViewMode = ref<'active' | 'trash'>('active')
@@ -342,6 +344,16 @@ async function changeTeachingResource(id: string, action: 'trash' | 'restore' | 
 }
 function switchResourceView() { resourceViewMode.value = resourceViewMode.value === 'active' ? 'trash' : 'active'; tableQuery.value = ''; void loadTeachingResources() }
 function downloadTeachingResource(id: string) { const item = teachingResources.value.find((resource) => resource.id === id); if (item?.url) window.open(item.url, '_blank', 'noopener,noreferrer'); else window.location.href = `/api/resources/${encodeURIComponent(id)}/download` }
+watch([selectedResourceDetail, resourceViewMode], ([resource, mode]) => {
+  disposeTeachingResourceDrawer?.()
+  disposeTeachingResourceDrawer = null
+  if (!resource || !teachingResourceDrawerHost.value) return
+  disposeTeachingResourceDrawer = mountTeachingResourceDrawer(teachingResourceDrawerHost.value, resource, mode, {
+    onClose: closeResourceDetails,
+    onEdit: (id) => { closeResourceDetails(); openResourceEditById(id) },
+    onDownload: downloadTeachingResource,
+  })
+}, { flush: 'post' })
 
 
 function selectAccountSection(id: string) {
@@ -615,6 +627,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   disposeNotificationHost?.()
   disposeNotificationHost = null
+  disposeTeachingResourceDrawer?.()
+  disposeTeachingResourceDrawer = null
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
   educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
@@ -1111,7 +1125,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <TeachingResourceDrawer v-if="selectedResourceDetail" :resource="selectedResourceDetail" :resource-view-mode="resourceViewMode" @close="closeResourceDetails" @edit="(id) => { closeResourceDetails(); openResourceEditById(id) }" @download="downloadTeachingResource" />
+    <div ref="teachingResourceDrawerHost"></div>
 
 
     <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span><nav v-if="publishedLegalDocuments.length" class="site-footer-policies" aria-label="网站政策"> <a v-for="doc in publishedLegalDocuments" :key="doc.slug" :href="`/legal/${doc.slug}`" @click.prevent="navigate(`/legal/${doc.slug}`)">{{ doc.title }}</a></nav></footer>
