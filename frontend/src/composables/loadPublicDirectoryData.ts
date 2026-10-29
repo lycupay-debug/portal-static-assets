@@ -23,12 +23,14 @@ interface PublicDirectoryDataOptions {
   educationResourceError: Ref<string>
   knowledgeVisibleCount: Ref<number>
   knowledgePageSize: number
+  isContentViewCurrent?: () => boolean
   request?: Requester
 }
 
 /** Loads public directory lists; request sequences prevent older responses overwriting newer searches. */
 export function createPublicDirectoryLoader(options: PublicDirectoryDataOptions) {
   const request = options.request || apiRequest
+  const isContentViewCurrent = options.isContentViewCurrent || (() => true)
   let contentRequestSequence = 0
   let resourceRequestSequence = 0
 
@@ -40,13 +42,15 @@ export function createPublicDirectoryLoader(options: PublicDirectoryDataOptions)
       const params = new URLSearchParams()
       if (searchTerm.trim()) params.set('q', searchTerm.trim())
       const result = await request<{ items?: PublicContentCard[]; error?: string }>(`/public/content${params.size ? `?${params}` : ''}`, {}, '读取公开内容失败。')
-      if (requestId !== contentRequestSequence) return
+      if (requestId !== contentRequestSequence || !isContentViewCurrent()) return
       options.publicContents.value = result.items || []
       options.knowledgeVisibleCount.value = options.knowledgePageSize
     } catch (error) {
-      if (requestId === contentRequestSequence) options.publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
+      if (requestId === contentRequestSequence && isContentViewCurrent()) {
+        options.publicContentError.value = error instanceof Error ? error.message : '读取公开内容失败。'
+      }
     } finally {
-      if (requestId === contentRequestSequence) options.publicContentLoading.value = false
+      if (requestId === contentRequestSequence && isContentViewCurrent()) options.publicContentLoading.value = false
     }
   }
 

@@ -458,6 +458,7 @@ const getPublicDirectoryLoader = createRetryableLazyLoader<PublicDirectoryLoader
     educationResourceError,
     knowledgeVisibleCount,
     knowledgePageSize,
+    isContentViewCurrent: () => route.value === '/' || route.value === '/knowledge' || (isPublicDirectoryPage.value && route.value !== '/education-resources'),
   })),
 )
 let publicContentSearchTimer: ReturnType<typeof setTimeout> | undefined

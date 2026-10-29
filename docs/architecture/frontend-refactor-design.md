@@ -544,3 +544,35 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 ### 下一批候选
 
 - 对照同样的 route + request sequence 不变量检查法律文档和其他共享 loading/error ref 的 loader，区分已被测试覆盖的保护与真实缺口，不做无证据的统一重构。
+
+## Batch 19 — 公开目录请求离开当前视图后的状态隔离（2026-10-29）
+
+### 复现与根因
+
+- 延续 Batch 18 对共享 `publicContentLoading` / `publicContentError` 的审查，检查 `loadPublicDirectoryData.ts` 与文章 loader 的协作。目录 loader 只有自己的搜索 request sequence，不知道当前路由是否仍由目录页拥有。
+- 使用可控 Promise 先添加测试，复现公开目录请求未完成时切换到文章路由、随后旧请求 reject 的情况：旧请求仍写入 `stale directory request failed`，并可能清除新文章加载的共享 loading 状态。另补充成功响应场景，验证旧目录结果也不能提交到已切换的视图。
+
+### 修改
+
+- 为 `createPublicDirectoryLoader` 增加可选的 `isContentViewCurrent` 判定，默认返回 true，保持独立调用方和既有测试的兼容性。
+- 公开内容请求在提交列表/页大小、写错误或释放共享 loading 前，除 request sequence 外，还需满足当前仍处于公开内容目录视图。
+- `App.vue` 注入当前视图判定：主页、知识目录和其他公开内容目录页共享数据；教育资源页与文章详情页不被误判为内容目录。
+- 新增两项回归测试：过期目录失败不污染错误/loading；过期目录成功不覆盖当前视图数据，也不清除新路由的 loading 状态。
+- 公开教育资源使用独立的 loading/error refs，本批不改变其请求语义；没有引入取消请求或重放 API 的逻辑。
+
+### 验证证据
+
+- 两个新增回归测试均在实现前复现失败，接入 route guard 后通过。
+- `npm run type-check`：通过；`npm test`：187/187 通过。
+- `npm run build`：通过；首屏 JS（含 modulepreload）61.95 KiB gzip / 65 KiB 预算，首屏 CSS 82.32 KiB gzip / 85 KiB，懒加载编辑器 206.79 KiB gzip / 230 KiB，Markdown 24.67 KiB gzip / 30 KiB。
+- `npm run build:static-origin`：通过；首屏 JS 61.97 KiB gzip / 65 KiB，首屏 CSS 82.39 KiB gzip / 85 KiB，懒加载编辑器 206.80 KiB gzip / 230 KiB；16 个 JS bundle、5 个 CSS bundle、74 个 icon URL，API 路径仍为根相对路径。
+- `npm run check:static-assets`：通过（61 个文件、1 个 HTML）；`npm run test:static-assets`、`git diff --check` 均通过；前端源码/HTML 公共 CDN 扫描无匹配。
+
+### 限制与安全边界
+
+- 以注入式路由判定和可控 Promise 验证视图所有权；不替代浏览器真实导航/网络集成测试。请求仍会完成，只是过期响应不再修改当前视图状态。
+- 生产目录未修改；未部署、未重启服务、未合并 PR、未运行 GitHub Actions；bundle 预算未放宽。
+
+### 下一批候选
+
+- 审查法律文档、公开资源和其他共享 refs 的路由/请求所有权边界；只有发现可复现的跨视图写入才修改，并保留各 loader 的既有请求语义。
