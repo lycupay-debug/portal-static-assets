@@ -50,24 +50,31 @@ export PGDATABASE="$db_name"
 PERSONAL_PORTAL_MIGRATION_AS_POSTGRES=1
 export PERSONAL_PORTAL_MIGRATION_AS_POSTGRES
 
+# Query migration state as the local PostgreSQL administrator. The runtime
+# role intentionally does not receive privileges on the migration ledger.
+portal_migration_query() {
+  sql=$1
+  su -m postgres -c "env -u PGHOST -u PGPORT -u PGUSER -u PGPASSWORD -u PGSSLMODE '$psql_bin' -At -v ON_ERROR_STOP=1 -d '$db_name' -c \"$sql\""
+}
+
 for migration in "$migration_dir"/[0-9][0-9][0-9]_*.sql; do
   version=$(basename "$migration" | cut -d_ -f1)
   if [ "$version" = "001" ]; then
-    exists=$("$psql_bin" -At -v ON_ERROR_STOP=1 -d "$db_name" -c "SELECT to_regclass('portal.schema_migrations') IS NOT NULL" 2>/dev/null || true)
+    exists=$(portal_migration_query "SELECT to_regclass('portal.schema_migrations') IS NOT NULL" 2>/dev/null || true)
     if [ "$exists" = "t" ]; then
-      applied=$("$psql_bin" -At -v ON_ERROR_STOP=1 -d "$db_name" -c "SELECT EXISTS(SELECT 1 FROM portal.schema_migrations WHERE version=1)")
+      applied=$(portal_migration_query "SELECT EXISTS(SELECT 1 FROM portal.schema_migrations WHERE version=1)")
       if [ "$applied" = "t" ]; then
         echo "SKIP migration 001 (already applied)"
         continue
       fi
     fi
   else
-    exists=$("$psql_bin" -At -v ON_ERROR_STOP=1 -d "$db_name" -c "SELECT to_regclass('portal.schema_migrations') IS NOT NULL")
+    exists=$(portal_migration_query "SELECT to_regclass('portal.schema_migrations') IS NOT NULL")
     if [ "$exists" != "t" ]; then
       echo "Migration ledger missing before $migration; applying foundation first is required." >&2
       exit 1
     fi
-    applied=$("$psql_bin" -At -v ON_ERROR_STOP=1 -d "$db_name" -c "SELECT EXISTS(SELECT 1 FROM portal.schema_migrations WHERE version=$version)")
+    applied=$(portal_migration_query "SELECT EXISTS(SELECT 1 FROM portal.schema_migrations WHERE version=$version)")
     if [ "$applied" = "t" ]; then
       echo "SKIP migration $version (already applied)"
       continue
