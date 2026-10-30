@@ -18,6 +18,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const dummyLoginPasswordHash = "$2a$12$93GixgSd39NVDadst0KoHOgSJjg7jLOIBi3/9fG2OiP.ubz58RJXy"
+
 func tokenHash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -168,7 +170,17 @@ func (a *portalAPI) auth(w http.ResponseWriter, r *http.Request) {
 		var u portalUser
 		var hash string
 		err := a.db.QueryRowContext(r.Context(), `SELECT user_id::text,email,display_name,password_hash,created_at,is_admin FROM portal.portal_users WHERE email=$1`, b.Email).Scan(&u.ID, &u.Email, &u.DisplayName, &hash, &u.CreatedAt, &u.IsAdmin)
-		if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(b.Password)) != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Keep the missing-account path close to the wrong-password path.
+			_ = bcrypt.CompareHashAndPassword([]byte(dummyLoginPasswordHash), []byte(b.Password))
+			writeError(w, 401, "邮箱或密码不正确。", nil)
+			return
+		}
+		if err != nil {
+			a.dbError(w, err, "登录账户查询失败。")
+			return
+		}
+		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(b.Password)) != nil {
 			writeError(w, 401, "邮箱或密码不正确。", nil)
 			return
 		}

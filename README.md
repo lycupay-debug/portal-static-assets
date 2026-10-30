@@ -49,7 +49,7 @@ npm run build
 
 ## 当前状态
 
-当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-31 已新增迁移 031，完整移除特权命令任务执行器及其数据库对象；FreeBSD 隔离 PostgreSQL 集群已实测 001–031 共 31 个迁移全部通过。当前 Go 测试覆盖 RBAC 读写权限矩阵、认证登出撤销失败处理、密码会话边界、安全 UUIDv4 与熵源失败、内容/资源所有权、图片私有与公开引用、历史版本图片引用保留、内容新增引用与永久删除的两种并发锁顺序、托管文件路径隔离、资源并发替换与持久化清理、事件租约/重试及真实 Go/C IPC 重连；C 测试覆盖真实 kqueue socket、64 客户端上限、畸形/超长帧、空闲/ACK 超时、SUBSCRIBE/PUBLISH/ACK、SIGTERM 清理和同路径重启。前端当前 103/103 测试、类型检查、OpenAPI 检查和 bundle 预算通过。FreeBSD 本机不支持 Playwright；Chromium E2E 以 GitHub Actions 结果为准。当前公网门户是开发版，使用 `personal_portal_dev`，开发部署由 `deploy/freebsd/deploy-dev.sh` 执行；正式生产数据库、二进制和 Caddy 模板与开发版隔离。开发部署不代表第二阶段完成或生产发布。
+当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-31 已新增迁移 031，完整移除特权命令任务执行器及其数据库对象；FreeBSD 隔离 PostgreSQL 集群已实测 001–031 共 31 个迁移全部通过。当前 Go 测试覆盖 RBAC 读写权限矩阵、认证数据库故障与错误凭据区分、未知账户的通用响应、登出撤销失败处理、安全 UUIDv4 与熵源失败、内容/资源所有权、图片私有与公开引用、历史版本图片引用保留、内容新增引用与永久删除的两种并发锁顺序、托管文件路径隔离、资源并发替换与持久化清理、事件租约/重试及真实 Go/C IPC 重连；C 测试覆盖真实 kqueue socket、64 客户端上限、畸形/超长帧、空闲/ACK 超时、SUBSCRIBE/PUBLISH/ACK、SIGTERM 清理和同路径重启。前端当前 103/103 测试、类型检查、OpenAPI 检查和 bundle 预算通过。FreeBSD 本机不支持 Playwright；Chromium E2E 以 GitHub Actions 结果为准。当前公网门户是开发版，使用 `personal_portal_dev`，开发部署由 `deploy/freebsd/deploy-dev.sh` 执行；正式生产数据库、二进制和 Caddy 模板与开发版隔离。开发部署不代表第二阶段完成或生产发布。
 
 ---
 
