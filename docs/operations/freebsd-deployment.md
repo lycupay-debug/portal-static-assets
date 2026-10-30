@@ -17,15 +17,15 @@
 
 ## 一键部署
 
-部署脚本要求仓库干净且所有变更已经提交。脚本会执行许可证/资产预检、OpenAPI lint 与类型生成一致性检查、前端类型检查/测试/生产构建；随后创建独立临时 PostgreSQL 数据库，按顺序应用迁移 001–030 并运行所有 PostgreSQL 集成测试与 Go race tests，结束后自动删除测试数据库。之后运行 Go vet/build、C 事件核心编译与 IPC 测试，创建完整生产 PostgreSQL 备份并执行尚未应用的迁移，再安装 Go/C 二进制、切换门户静态 release 与 Caddy 配置，最后执行线上健康检查。
+部署脚本要求仓库干净且所有变更已经提交。脚本会执行许可证/资产预检、OpenAPI lint 与类型生成一致性检查、前端类型检查/测试/生产构建；随后创建独立临时 PostgreSQL 数据库，按顺序应用迁移 001–031 并运行 PostgreSQL 迁移/运行角色测试与 Go race tests，结束后自动删除测试数据库。之后运行 Go vet/build、C 事件核心编译与 IPC 测试，创建完整生产 PostgreSQL 备份并执行尚未应用的迁移，再安装 Go/C 二进制、切换门户静态 release 与 Caddy 配置，最后执行线上健康检查。若检测到旧 `personal_portal_task_executor` 服务、启用项或残留 root worker，必须显式设置 `PERSONAL_PORTAL_RETIRE_COMMAND_EXECUTOR=1` 才会调用退役脚本；脚本停止并禁用旧服务、确认无残留进程后删除专属运行目录，保留历史日志与数据库备份。
 
     cd /opt/personal-portal
     git status --short
     ./deploy/freebsd/deploy.sh
 
-部署过程会在 `/var/backups/personal-portal/` 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用已退役的 `personal_portal_auth_api` 服务；Caddy 不再将任何业务 API 转发到 8082。完整回滚只恢复上一版 Go/C 二进制、Caddyfile 与前端 release，不会重新启用 Node.js API，也不会自动恢复数据库。
+部署过程会在 `/var/backups/personal-portal/` 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用已退役的 `personal_portal_auth_api` 服务；Caddy 不再将任何业务 API 转发到 8082。命令任务执行器在显式授权后退役，不再随部署安装或启动。完整回滚只恢复上一版 Go/C 二进制、Caddyfile 与前端 release，不会重新启用 Node.js API 或 root 命令执行器，也不会自动恢复数据库。
 
-**数据库迁移安全：** 发布前先生成并保留完整 PostgreSQL dump。迁移按版本顺序执行；包含显式 `BEGIN/COMMIT` 的迁移由自身控制事务，历史上没有显式事务的迁移由 `psql --single-transaction` 包裹，避免单个迁移中途失败留下半套 DDL。迁移采用向前兼容优先的策略，不在部署失败时自动执行反向 SQL，也不会自动恢复整库 dump；恢复数据库属于单独的人工恢复决策，必须先评估发布后新增数据是否会丢失。
+**数据库迁移安全：** 发布前先生成并保留完整 PostgreSQL dump。迁移按版本顺序执行；包含显式 `BEGIN/COMMIT` 的迁移由自身控制事务，历史上没有显式事务的迁移由 `psql --single-transaction` 包裹，避免单个迁移中途失败留下半套 DDL。迁移采用向前兼容优先的策略，不在部署失败时自动执行反向 SQL，也不会自动恢复整库 dump。迁移 031 是经负责人明确授权的破坏性退役迁移：删除命令队列/心跳/运行模式表和旧管理权限，并清除尚未分发的旧命令唤醒事件；必须先完成完整 dump 并确保旧 root worker 已停止。恢复数据库属于单独的人工恢复决策，必须先评估发布后新增数据是否会丢失。
 
 **部署期保护规则：自动回退入口已全局禁用。** 无论 `PERSONAL_PORTAL_RELEASE_MODE`、`PERSONAL_PORTAL_AUTO_ROLLBACK` 如何设置，部署失败后都不会自动调用 `rollback.sh`；脚本只输出诊断目录与人工恢复提示，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。自动回退策略函数始终返回禁用，Shell 测试覆盖 development/stable/production 与多种环境变量组合。手动回退脚本保留，只有操作者明确执行时才会恢复旧 Go/C 二进制、Caddyfile 与前端 release。数据库备份与迁移前置检查仍然执行；手动回退不等于数据库反向迁移。
 

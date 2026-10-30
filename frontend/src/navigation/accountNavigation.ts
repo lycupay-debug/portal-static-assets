@@ -55,9 +55,9 @@ export const accountGroups: AccountNavigationGroup[] = [
   },
   {
     id: 'system-ops', label: '系统运维', items: [
-      { id: 'system-warnings', label: '系统警告', description: '查看服务器异常、失败任务和需要人工处理的运维警告。' },
+      { id: 'system-warnings', label: '系统警告', description: '查看服务器异常、文件清理失败和需要人工处理的运维警告。' },
       { id: 'system-logs', label: '系统日志', description: '实时查看服务器运行日志和 GPT 连接 SSH 的操作审计日志。' },
-      { id: 'system-execution-policy', label: '运行模式与任务策略', description: '切换开发者模式与稳定运行模式，管理服务器任务权限策略。' },
+      { id: 'system-permissions', label: '权限管理', description: '管理门户账户角色与权限分配。' },
     ],
   },
 ]

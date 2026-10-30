@@ -64,7 +64,7 @@ func TestReceiveEventHandlerRejectsPrivilegedEventBeforePersistence(t *testing.T
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusForbidden, recorder.Body.String())
 	}
 	if store.calls != 0 {
-		t.Fatalf("store called %d times; privileged event must be rejected before persistence", store.calls)
+		t.Fatalf("store called %d times; retired command event must be rejected before persistence", store.calls)
 	}
 }
 
@@ -265,64 +265,6 @@ func TestRateLimitMapCapacityBoundsMemory(t *testing.T) {
 	}
 	if _, ok := withExpired.rate["192.0.2.1:/auth/login"]; !ok {
 		t.Fatal("new client key was not recorded after expired-entry reclamation")
-	}
-}
-
-func TestDecideSystemTaskPolicy(t *testing.T) {
-	tests := []struct {
-		name  string
-		mode  systemExecutionMode
-		class systemTaskClass
-		want  string
-	}{
-		{"developer read-only", systemModeDeveloper, taskReadOnly, "allow_authorized_scope"},
-		{"developer deploy", systemModeDeveloper, taskDeploy, "allow_authorized_scope"},
-		{"developer restart always requires approval", systemModeDeveloper, taskRestart, "require_approval"},
-		{"stable read-only", systemModeStable, taskReadOnly, "allow_read_only"},
-		{"stable file inspection", systemModeStable, taskFileInspection, "require_path_scope"},
-		{"stable test", systemModeStable, taskTest, "require_registered_task"},
-		{"stable build", systemModeStable, taskBuild, "require_workspace_scope"},
-		{"stable code change", systemModeStable, taskCodeChange, "require_change_scope"},
-		{"stable system admin", systemModeStable, taskSystemAdmin, "require_operation_scope"},
-		{"stable deploy", systemModeStable, taskDeploy, "require_approval"},
-		{"stable restart", systemModeStable, taskRestart, "require_approval"},
-		{"stable database change", systemModeStable, taskDatabaseChange, "require_approval"},
-		{"stable destructive", systemModeStable, taskDestructive, "require_approval"},
-		{"ssh mcp is always manual", systemModeDeveloper, taskSSHMCP, "manual_only"},
-		{"unknown class denied", systemModeStable, systemTaskClass("unknown"), "deny_unknown"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := decideSystemTaskPolicy(test.mode, test.class)
-			if got.Decision != test.want {
-				t.Fatalf("decision = %q, want %q (reason: %s)", got.Decision, test.want, got.Reason)
-			}
-			if got.Reason == "" {
-				t.Fatal("policy decision must include an explanation")
-			}
-		})
-	}
-}
-
-func TestMandatoryTaskClass(t *testing.T) {
-	tests := []struct {
-		name string
-		req  commandTaskRequest
-		want systemTaskClass
-	}{
-		{"remove is destructive", commandTaskRequest{Class: taskReadOnly, Executable: "/bin/rm"}, taskDestructive},
-		{"database tool is database change", commandTaskRequest{Class: taskReadOnly, Executable: "/usr/local/bin/psql"}, taskDatabaseChange},
-		{"service restart is restart", commandTaskRequest{Class: taskReadOnly, Executable: "/usr/sbin/service", Arguments: []string{"caddy", "restart"}}, taskRestart},
-		{"git reset is destructive", commandTaskRequest{Class: taskCodeChange, Executable: "/usr/local/bin/git", Arguments: []string{"reset", "--hard"}}, taskDestructive},
-		{"ssh mcp marker is manual", commandTaskRequest{Class: taskReadOnly, Executable: "/usr/bin/env", Arguments: []string{"ssh-mcp"}}, taskSSHMCP},
-		{"ordinary read command keeps class", commandTaskRequest{Class: taskReadOnly, Executable: "/usr/bin/uname"}, taskReadOnly},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := mandatoryTaskClass(test.req); got != test.want {
-				t.Fatalf("mandatoryTaskClass() = %q, want %q", got, test.want)
-			}
-		})
 	}
 }
 

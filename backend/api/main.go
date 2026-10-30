@@ -141,15 +141,6 @@ func main() {
 
 	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if len(os.Args) > 1 && os.Args[1] == "--task-executor" {
-		if os.Geteuid() != 0 {
-			fmt.Fprintln(os.Stderr, "privileged task executor must run as root")
-			os.Exit(1)
-		}
-		runCommandTaskExecutor(rootCtx, db)
-		return
-	}
-
 	ipc := IPCClient{SocketPath: socketPath, Timeout: 750 * time.Millisecond}
 	// The C core acknowledgement wakes Go workers immediately. This buffered
 	// channel is intentionally lossy: the database is durable and periodic

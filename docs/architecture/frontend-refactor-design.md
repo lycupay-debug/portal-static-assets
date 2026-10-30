@@ -190,7 +190,9 @@ For each batch: `npm run type-check`, `npm test`, `npm run build`, `npm run buil
 
 - Continue the Notion sequence with the system execution policy and system operations centers, first mapping frontend role visibility against backend RBAC and testing denial/error paths. Do not rely on UI gating as an authorization control; the Go API remains authoritative.
 
-## Batch 7 — preserve execution-policy mutation errors during reconciliation (2026-10-29)
+> Historical implementation record: the system execution-policy and privileged command-task feature described below was fully retired on 2026-10-31 by project-owner decision. The code, routes, UI, worker, service and database objects are removed in the current source; this section remains only to preserve the original engineering history.
+
+## Batch 7 — preserve execution-policy mutation errors during reconciliation (2026-10-29; historical, feature retired 2026-10-31)
 
 ### Goal and evidence-based defect
 

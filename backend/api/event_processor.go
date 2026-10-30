@@ -28,7 +28,6 @@ func registeredEventHandlers() map[string]EventHandler {
 	return map[string]EventHandler{
 		"portal.content.validate": validateContentEvent,
 		fileCleanupEventType:      fileCleanupEventHandler,
-		commandTaskEventType:      commandTaskWakeHandler,
 	}
 }
 

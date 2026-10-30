@@ -49,7 +49,7 @@ export function mountPortalRootView(
     if (state.accountPage) {
       const section = ['overview', 'profile', 'security'].includes(state.accountSection) ? 'identity'
         : state.accountSection === 'copyright-compliance' ? 'compliance'
-          : ['system-warnings', 'system-logs', 'system-execution-policy'].includes(state.accountSection) ? 'system-ops' : 'table'
+          : ['system-warnings', 'system-logs', 'system-permissions'].includes(state.accountSection) ? 'system-ops' : 'table'
       return `account:${section}`
     }
     if (state.authPage) return 'auth'
@@ -114,7 +114,7 @@ export function mountPortalRootView(
       const content = document.createElement('section'); content.className = `account-content${state.accountTableMode ? ' account-content-table-mode' : ''}`
       if (['overview', 'profile', 'security'].includes(state.accountSection)) content.append(createHost('accountIdentityHost'))
       else if (state.accountSection === 'copyright-compliance') content.append(createHost('complianceCenterHost'))
-      else if (['system-warnings', 'system-logs', 'system-execution-policy'].includes(state.accountSection)) content.append(createHost('systemOpsHost'))
+      else if (['system-warnings', 'system-logs', 'system-permissions'].includes(state.accountSection)) content.append(createHost('systemOpsHost'))
       else content.append(createHost('accountTableViewHost'))
       main.append(content); shell.append(main)
     } else {

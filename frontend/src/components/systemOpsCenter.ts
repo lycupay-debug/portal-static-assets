@@ -1,17 +1,16 @@
 /**
- * Responsibility: render system warnings, live logs, and the policy/permissions tab shell with native DOM.
- * Dependencies: same-origin apiRequest transport plus the two native policy/permission modules.
- * Collaboration: portalApplication.ts owns route selection and mounts this module only for protected system-ops sections;
- * this module owns EventSource, polling, filters, cursor state, tab child lifecycles, and local DOM listeners.
- * Boundaries: logs are display-only; this module never executes commands or changes server policy itself.
+ * Responsibility: render system warnings, live logs, and the account role/permission management view.
+ * Dependencies: same-origin apiRequest transport and the native permission-management module.
+ * Collaboration: portalApplication.ts selects the protected view; this module owns log/warning lifecycles
+ * and delegates role/permission state to the permission-management controller.
+ * Boundaries: logs are display-only; no privileged command execution or server execution policy is exposed.
  * Side effects: warnings poll every 15s while mounted; logs open one credentialed EventSource while mounted;
- * policy tabs delegate to their own modules. dispose closes streams, timers, child controllers and listeners.
+ * dispose closes streams, timers, child controllers and listeners.
  */
 import { apiRequest } from '../api/client'
 import { mountPermissionManagement } from './permissionManagement'
-import { mountSystemExecutionPolicyCenter } from './systemExecutionPolicyCenter'
 
-type View = 'warnings' | 'logs' | 'policy'
+type View = 'warnings' | 'logs' | 'permissions'
 type Source = 'server' | 'ssh'
 type ConnectionState = 'connecting' | 'live' | 'paused' | 'offline'
 type LogEntry = {
@@ -36,7 +35,6 @@ type State = {
   cursor: number
   failedFileCleanupEvents: number
   checkedAt: string
-  policyView: 'execution' | 'permissions'
 }
 
 export type SystemOpsController = { readonly ready: Promise<void>; dispose: () => void }
@@ -65,7 +63,7 @@ export function mountSystemOpsCenter(host: HTMLElement, options: { view: View })
   const state: State = {
     activeSource: 'server', logs: [], warnings: [], searchQuery: '', levelFilter: 'all', loading: false,
     error: '', connectionState: 'connecting', paused: false, cursor: 0, failedFileCleanupEvents: 0,
-    checkedAt: '', policyView: 'execution',
+    checkedAt: '',
   }
   let disposed = false
   let stream: EventSource | null = null
@@ -73,7 +71,6 @@ export function mountSystemOpsCenter(host: HTMLElement, options: { view: View })
   let warningTimer: number | undefined
   let childDispose: (() => void) | null = null
   let ready: Promise<void> = Promise.resolve()
-  let childHost: HTMLElement | null = null
   host.replaceChildren(root)
 
   async function api<T>(path: string): Promise<T> {
@@ -220,32 +217,10 @@ export function mountSystemOpsCenter(host: HTMLElement, options: { view: View })
     })
   }
 
-  function renderPolicyShell(): void {
-    root.replaceChildren()
-    const tabs = el(document, 'nav', 'ops-source-tabs')
-    tabs.setAttribute('aria-label', '运维管理功能')
-    const executionTab = button(document, '运行模式与任务策略', 'policy-execution')
-    const permissionTab = button(document, '权限管理', 'policy-permissions')
-    executionTab.classList.toggle('active', state.policyView === 'execution')
-    permissionTab.classList.toggle('active', state.policyView === 'permissions')
-    tabs.append(executionTab, permissionTab)
-    childHost = el(document, 'div')
-    root.append(tabs, childHost)
-    if (state.policyView === 'execution') {
-      const controller = mountSystemExecutionPolicyCenter(childHost)
-      childDispose = controller.dispose
-      ready = controller.ready
-    } else {
-      const controller = mountPermissionManagement(childHost)
-      childDispose = controller.dispose
-      ready = controller.ready
-    }
-  }
-
   function renderWarnings(): void {
     const heading = el(document, 'header', 'ops-heading')
     const copy = el(document, 'div')
-    copy.append(el(document, 'p', 'ops-eyebrow', 'SYSTEM OPERATIONS'), el(document, 'h1', 'account-page-title', '系统警告'), el(document, 'p', 'ops-intro', '集中查看服务器异常、执行失败和需要人工处理的运维事件。'))
+    copy.append(el(document, 'p', 'ops-eyebrow', 'SYSTEM OPERATIONS'), el(document, 'h1', 'account-page-title', '系统警告'), el(document, 'p', 'ops-intro', '集中查看服务器异常、文件清理失败和需要人工处理的运维事件。'))
     heading.append(copy, button(document, '刷新警告', 'refresh-warnings'))
     root.append(heading)
 
@@ -377,10 +352,7 @@ export function mountSystemOpsCenter(host: HTMLElement, options: { view: View })
 
   function render(): void {
     if (disposed) return
-    if (options.view === 'policy') {
-      renderPolicyShell()
-      return
-    }
+    if (options.view === 'permissions') return
     const active = document.activeElement as HTMLElement | null
     const focusId = active?.dataset.focusId
     const activeInput = active?.tagName === 'INPUT' ? active as HTMLInputElement : null
@@ -428,17 +400,6 @@ export function mountSystemOpsCenter(host: HTMLElement, options: { view: View })
         if (state.activeSource !== 'ssh') { state.activeSource = 'ssh'; state.paused = false; void loadLogs(true) }
         break
       case 'toggle-pause': togglePause(); break
-      case 'policy-execution':
-      case 'policy-permissions': {
-        const next = control.dataset.action === 'policy-execution' ? 'execution' : 'permissions'
-        if (state.policyView !== next) {
-          childDispose?.()
-          childDispose = null
-          state.policyView = next
-          renderPolicyShell()
-        }
-        break
-      }
     }
   }
 
@@ -452,7 +413,9 @@ export function mountSystemOpsCenter(host: HTMLElement, options: { view: View })
   } else if (options.view === 'logs') {
     ready = loadLogs(true)
   } else {
-    renderPolicyShell()
+    const controller = mountPermissionManagement(root)
+    childDispose = controller.dispose
+    ready = controller.ready
   }
 
   return {

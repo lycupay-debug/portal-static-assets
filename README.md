@@ -49,7 +49,7 @@ npm run build
 
 ## 当前状态
 
-当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-30 已将 Go `go test -race ./...`、C `make test` 和 PostgreSQL 空库迁移/运行角色权限检查加入 CI：FreeBSD 开发机实测 Go 单元测试、竞态检测、`go vet`、C 协议测试、生产目标编译，以及 001–030 全量迁移和运行角色权限检查均通过；GitHub Actions 对最新提交的远端执行结果仍待核验。Go 测试现覆盖纯函数/HTTP 边界、并发事件幂等写入、处理租约归属/过期/重试、分发租约过期重领；仍未覆盖进程崩溃恢复、Go/C 真实 IPC 重连和端到端服务重启。C 当前测试验证协议解析与订阅 ACK/FIFO 状态，不覆盖真实 kqueue 并发、信号退出或服务重启。真实 FreeBSD 端到端验证仍需单独记录。部署脚本仅作为受控部署工具；第二阶段开发工作不代表生产部署授权。
+当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-30 已将 Go `go test -race ./...`、C `make test` 和 PostgreSQL 空库迁移/运行角色权限检查加入 CI。2026-10-31 新增迁移 031，完整移除特权命令任务执行器及其数据库对象；FreeBSD 隔离 PostgreSQL 集群已实测 001–031 共 31 个迁移全部通过，并验证旧任务表、旧执行策略、旧管理权限及待处理命令唤醒事件均已清除；本地 Go race tests、`go vet`、前端测试/类型检查/构建和 OpenAPI 检查通过。FreeBSD 本机不支持 Playwright；Chromium E2E 以 GitHub Actions 结果为准。Go 测试现覆盖纯函数/HTTP 边界、并发事件幂等写入、处理租约归属/过期/重试、分发租约过期重领；仍未覆盖进程崩溃恢复、Go/C 真实 IPC 重连和端到端服务重启。C 当前测试验证协议解析与订阅 ACK/FIFO 状态，不覆盖真实 kqueue 并发、信号退出或服务重启。真实 FreeBSD 端到端验证仍需单独记录。部署脚本仅作为受控部署工具；第二阶段开发工作不代表生产部署授权。
 
 ---
 
@@ -170,7 +170,7 @@ PostgreSQL（portal schema）
 ## 5. PostgreSQL 与 SQL 迁移规范（优先级 P2）
 
 - 数据库：`personal_portal`；业务 schema：`portal`；应用角色：`personal_portal_app`。不得访问 n8n 或 Host MCP 的数据库/凭据。
-- 迁移目录：`backend/migrations/`，编号文件是唯一迁移顺序；`portal.schema_migrations` 记录应用版本。当前仓库包含 `001` 至 `030` 共 30 个迁移文件。新增迁移从 `031` 开始；不得改写已经应用到任何共享环境的历史迁移。
+- 迁移目录：`backend/migrations/`，编号文件是唯一迁移顺序；`portal.schema_migrations` 记录应用版本。当前仓库包含 `001` 至 `031` 共 31 个迁移文件。新增迁移从 `032` 开始；不得改写已经应用到任何共享环境的历史迁移。
 - 应用启动不自动执行 DDL。生产迁移通过 `deploy/freebsd/migrate.sh` 显式运行，先做完整 PostgreSQL dump，再按版本顺序应用。
 - 每个迁移必须具备明确的事务语义：自带 `BEGIN/COMMIT` 的文件自行管理；不带显式事务的迁移由 `psql --single-transaction` 包裹。迁移失败必须停止，不得继续应用后续版本。
 - 迁移必须检查主键、外键、唯一约束、`NOT NULL`、检查约束、必要索引和并发访问成本。索引要服务于实际查询与租约领取模式，不盲目增加。
@@ -255,12 +255,14 @@ git status --short --branch
 | Go-only 生产业务后端 | 已实施 | Go API 处理业务；旧 Node API 不在正常生产流量路径，部署后已禁用旧认证服务 |
 | 原生 TypeScript + DOM（第一阶段） | 已完成 | 第一阶段完成提交 `c31036badc52f58f251dde7f04958bb3ee55caef`；Vue SFC 为 0，Vue runtime / 插件 / vue-tsc 依赖已移除；当前前端行为测试 106 项通过，类型检查与构建通过（2026-10-30 FreeBSD 开发工作区实测） |
 | OpenAPI 共享契约 | 已扩展 | `api/openapi.yaml` 覆盖现有客户端路由、admin/RBAC、compliance、public legal 和根路径上传图片读取；角色/权限及合规写入请求使用明确 schema；生成 TypeScript 类型并纳入 lint/CI 同步检查 |
-| PostgreSQL 版本化迁移 | 当前 001–030 全量空库回放通过 | 新增 `scripts/test-postgres-migrations.sh` 并纳入 CI；FreeBSD 临时隔离 PostgreSQL 17.11 集群实测 30 个迁移全部通过，验证 owner/runtime 分离、默认 user 角色触发器及禁止 runtime CREATE/TRUNCATE；不触碰现有 PostgreSQL 服务或业务库 |
+| PostgreSQL 版本化迁移 | 当前 001–031 全量空库回放通过 | `scripts/test-postgres-migrations.sh` 纳入 CI；FreeBSD 独立临时 PostgreSQL 集群实测 31 个迁移全部通过，验证 owner/runtime 分离、默认 user 角色触发器、禁止 runtime CREATE/TRUNCATE，以及命令执行器退役后的表/权限/事件清理；不触碰现有 PostgreSQL 服务或业务库 |
 | Go 事件接收、分发、租约、处理和恢复 | 单元与部分 PostgreSQL 集成测试已纳入 CI | 覆盖并发幂等接收、处理租约唯一领取/归属校验/重试/最终尝试过期、分发租约过期重领；真实进程崩溃恢复、Go/C IPC 重连与服务重启仍未覆盖 |
 | C IPC v2 | 协议实现存在；局部单元测试已补充 | 当前 `make test` 覆盖请求/事件标识校验、PING/STATUS/EVENT、v1 拒绝、未知命令、订阅推送、错配/成功 ACK、FIFO 顺序和 32 项上限；真实 socket/kqueue、并发客户端、超时、信号退出与重启恢复未由该测试覆盖 |
 | C 核心资源边界 | 已实施 | C 只处理事件元数据通知，不处理业务 payload |
 | 部署与恢复策略 | 已实施 | 备份、迁移、健康检查、手动回滚；开发期默认不自动回滚；隔离沙箱回滚演练 |
-| 系统运行模式与任务执行 | 已部署；执行器心跳正常；专用 PostgreSQL 集成测试通过 | `/account/system-ops/policy`；`portal.system_execution_policy`、`portal.command_tasks`、`portal.command_executor_heartbeat`；审批/执行审计；SSH_MCP 任务只登记、不代执行 |
+| 特权命令任务执行器 | 已移除（2026-10-31） | Go root worker、developer/stable 模式、任务队列/API/UI/rc.d 服务已从当前源码移除；迁移 031 删除相关数据库对象与管理权限；系统运维仅保留只读告警/日志及独立 RBAC 权限管理 |
+
+门户不再提供远程命令执行、root 任务队列或执行策略切换功能。服务器维护继续通过独立授权的 GSM/SSH 运维通道完成；门户中的系统运维页面仅提供告警、日志和账户 RBAC 管理。
 | 安全响应头与 Cloudflare 代理信任 | 已部署并验证 | 生产 Caddyfile 与仓库配置一致；本机及公网检查响应头；内部路由边界测试通过 |
 | 历史架构/部署 CI | 历史记录 | `f7e8aba`：`https://github.com/lycupay-debug/personal-portal/actions/runs/38876797502`；该 run 属于旧 `personal-portal` 仓库，不作为当前 `portal-static-assets` 的 CI 证据 |
 | 最新生产部署 | 已完成 | 2026-10-16 UTC；部署脚本输出 stamp `20261016T085236Z`；发布后 health-check 通过 |

@@ -112,16 +112,27 @@ rm -f "$dump_tmp"
 
 cp "$bin_dir/api" "$bin_dir/api.pre-go-cutover-$stamp"
 cp "$bin_dir/event-core" "$bin_dir/event-core.pre-go-cutover-$stamp"
-if [ -f /usr/local/etc/rc.d/personal_portal_task_executor ]; then
-  cp /usr/local/etc/rc.d/personal_portal_task_executor "$backup_dir/personal_portal_task_executor.pre-go-cutover-$stamp"
-fi
 cp "$caddy_file" "$caddy_file.pre-go-cutover-$stamp"
 readlink "$www_base/current" > "$backup_dir/frontend-current-$stamp"
 readlink "$static_www_base/current" > "$backup_dir/static-current-$stamp"
 chmod 0600 "$backup_dir/static-current-$stamp"
 chmod 0600 "$backup_dir/frontend-current-$stamp"
 
-# Forward-only additive migrations run after the full backup.
+# Retire the legacy root executor only after a full backup and only with explicit operator authorization.
+legacy_executor_enabled=$(sysrc -n personal_portal_task_executor_enable 2>/dev/null || echo NO)
+legacy_executor_process=0
+if pgrep -f '[/]usr/local/libexec/personal-portal/api --task-executor' >/dev/null 2>&1; then
+  legacy_executor_process=1
+fi
+if [ -f /usr/local/etc/rc.d/personal_portal_task_executor ] || [ "$legacy_executor_enabled" = "YES" ] || [ "$legacy_executor_process" = "1" ]; then
+  if [ "${PERSONAL_PORTAL_RETIRE_COMMAND_EXECUTOR:-0}" != "1" ]; then
+    echo "Legacy root command executor detected. Re-run with PERSONAL_PORTAL_RETIRE_COMMAND_EXECUTOR=1 to authorize its decommission before migration 031." >&2
+    exit 1
+  fi
+  "$repo/deploy/freebsd/retire-command-executor.sh"
+fi
+
+# Forward-only migrations run after the full backup. Migration 031 removes the retired task tables.
 PERSONAL_PORTAL_MIGRATION_BACKUP="$backup_dir/pre-go-cutover-$stamp.dump" "$repo/deploy/freebsd/migrate.sh"
 
 release="$www_base/releases/${stamp}-go-backend"
@@ -142,31 +153,17 @@ done
 chmod -R a+rX "$static_release"
 
 deployment_changed=1
-if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ] && [ -x /usr/local/etc/rc.d/personal_portal_task_executor ]; then
-  service personal_portal_task_executor stop || true
-fi
 service personal_portal_api stop
 service personal_portal_event_core stop
 install -o root -g wheel -m 0555 "$work/api" "$bin_dir/api"
 install -o root -g wheel -m 0555 "$repo/event-core/event-core" "$bin_dir/event-core"
-install -o root -g wheel -m 0555 "$repo/deploy/freebsd/personal_portal_task_executor" /usr/local/etc/rc.d/personal_portal_task_executor
-install -d -o personalportal -g personalportal -m 0700 /var/db/personal-portal/task-home
-install -d -o personalportal -g personalportal -m 0700 /var/db/personal-portal/task-home/go/pkg/mod
-if [ -d /root/go/pkg/mod ] && [ ! -d /var/db/personal-portal/task-home/go/pkg/mod/cache/download ]; then
-  cp -Rp /root/go/pkg/mod/. /var/db/personal-portal/task-home/go/pkg/mod/
-  chown -R personalportal:personalportal /var/db/personal-portal/task-home/go/pkg/mod
-fi
 install -d -o personalportal -g personalportal -m 0750 "$repo/frontend/dist"
 install -d -o personalportal -g personalportal -m 0700 "$repo/frontend/node_modules/.tmp" "$repo/frontend/node_modules/.cache"
 chown personalportal:personalportal "$repo/frontend/dist" "$repo/frontend/node_modules/.tmp" "$repo/frontend/node_modules/.cache"
 chmod 0750 "$repo/frontend/dist"
 chmod 0700 "$repo/frontend/node_modules/.tmp" "$repo/frontend/node_modules/.cache"
-sysrc personal_portal_task_executor_enable=YES >/dev/null
 service personal_portal_event_core start
 service personal_portal_api start
-if [ "${PERSONAL_PORTAL_TASK_EXECUTOR_DEPLOY:-0}" != "1" ]; then
-  service personal_portal_task_executor start
-fi
 
 # Service supervisors return before the child process has necessarily bound
 # its socket. Wait for actual readiness instead of racing the first request.
@@ -192,18 +189,6 @@ wait_for_url http://127.0.0.1:8081/dbz '"status":"ok'
 wait_for_url http://127.0.0.1:8081/readyz '"status":"ready'
 wait_for_url http://127.0.0.1:8081/metrics 'personal_portal_events'
 
-# The privileged executor must report a fresh heartbeat before traffic switches.
-attempt=0
-while [ "$attempt" -lt 30 ]; do
-  heartbeat=$(su -m postgres -c "psql -d personal_portal -X -At -v ON_ERROR_STOP=1 -c \"SELECT 1 FROM portal.command_executor_heartbeat WHERE singleton=TRUE AND status='ready' AND last_seen_at > now()-interval '15 seconds'\"" 2>/dev/null || true)
-  if [ "$heartbeat" = "1" ]; then break; fi
-  attempt=$((attempt + 1))
-  sleep 1
-done
-if [ "$heartbeat" != "1" ]; then
-  echo "Privileged command executor did not become ready; inspect /var/log/personal-portal/task-executor.log" >&2
-  exit 1
-fi
 
 install -o root -g wheel -m 0644 "$repo/deploy/freebsd/Caddyfile" "$caddy_file"
 caddy validate --config "$caddy_file"

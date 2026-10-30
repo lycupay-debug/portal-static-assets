@@ -95,10 +95,10 @@ func receiveEventHandler(store EventStore) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
-		// Privileged command-task events are internal-only. Public event intake must
-		// never be able to create or wake a root command by choosing an event type.
-		if event.EventType == commandTaskEventType {
-			writeError(w, http.StatusForbidden, "privileged command events are internal-only", nil)
+		// Keep the retired privileged event name reserved so stale clients cannot
+		// enqueue work that no longer has a handler or executor.
+		if event.EventType == "portal.command.execute" {
+			writeError(w, http.StatusForbidden, "unsupported event type", nil)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)

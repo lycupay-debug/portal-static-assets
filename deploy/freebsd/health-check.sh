@@ -23,12 +23,6 @@ expect_http() {
 curl -fsS "$api/healthz" | grep -q '"status":"ok'
 curl -fsS "$api/dbz" | grep -q '"status":"ok'
 curl -fsS "$api/readyz" | grep -q '"status":"ready'
-if ! su -m postgres -c "psql -d personal_portal -X -At -v ON_ERROR_STOP=1 -c \"SELECT 1 FROM portal.command_executor_heartbeat WHERE singleton=TRUE AND status='ready' AND last_seen_at > now()-interval '15 seconds'\"" 2>/dev/null | grep -q '^1$'; then
-  echo "FAIL: privileged command executor heartbeat is not fresh" >&2
-  service personal_portal_task_executor status || true
-  tail -n 80 /var/log/personal-portal/task-executor.log >&2 || true
-  exit 1
-fi
 curl -fsS "$api/metrics" | grep -q 'personal_portal_events'
 expect_http "https://www.lycupaynotion.top/" 200
 expect_http "https://www.lycupaynotion.top/account" 200
@@ -69,4 +63,4 @@ if ps axww -o command | grep -E '[n]ode .*personal-portal(-legacy-node)?/backend
   echo "FAIL: retired Node.js API process is still running" >&2
   exit 1
 fi
-echo "PASS: Go API, PostgreSQL, C event core, privileged task executor, metrics, public portal, auth boundary, and internal-route isolation"
+echo "PASS: Go API, PostgreSQL, C event core, metrics, public portal, auth boundary, and internal-route isolation"

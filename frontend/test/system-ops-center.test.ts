@@ -14,7 +14,6 @@ const logItems = [
   { id: 1, source: 'server' as const, level: 'info', message: 'server started', time: '2026-10-30T00:00:00Z' },
   { id: 2, source: 'server' as const, level: 'warning', message: 'disk usage high', time: '2026-10-30T00:01:00Z' },
 ]
-const policy = { mode: 'stable', updatedAt: '2026-10-30T00:00:00Z', changedBy: 'admin', enforcement: 'executor_connected', executorStatus: 'online' }
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -52,9 +51,7 @@ function setup() {
     const payload = url.includes('/system-ops/warnings')
       ? { items: warningItems, failedFileCleanupEvents: 2, checkedAt: '2026-10-30T00:00:00Z' }
       : url.includes('/system-ops/logs') ? { items: logItems, cursor: 2 }
-        : url.endsWith('/system-ops/policy') ? policy
-          : url.endsWith('/system-ops/tasks') ? { items: [] }
-            : url.endsWith('/admin/users') || url.endsWith('/admin/roles') || url.endsWith('/admin/permissions') ? { items: [] }
+        : url.endsWith('/admin/users') || url.endsWith('/admin/roles') || url.endsWith('/admin/permissions') ? { items: [] }
               : {}
     return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } })
   }) as typeof fetch
@@ -126,18 +123,16 @@ test('logs view maintains cursor, streams new records, filters, pauses, resumes 
   }
 })
 
-test('policy tabs mount and dispose their native child views', async () => {
+test('permissions view mounts only RBAC management and never requests a command policy or task queue', async () => {
   const context = setup()
-  const controller = mountSystemOpsCenter(context.host, { view: 'policy' })
+  const controller = mountSystemOpsCenter(context.host, { view: 'permissions' })
   try {
     await controller.ready
-    assert.ok(context.host.querySelector('.execution-policy'))
-    context.host.querySelector<HTMLButtonElement>('[data-action="policy-permissions"]')!.click()
-    await controller.ready
     assert.ok(context.host.querySelector('.permission-center'))
-    context.host.querySelector<HTMLButtonElement>('[data-action="policy-execution"]')!.click()
-    await controller.ready
-    assert.ok(context.host.querySelector('.execution-policy'))
+    assert.equal(context.calls.some(call => call.url.includes('/system-ops/policy') || call.url.includes('/system-ops/tasks')), false)
+    assert.ok(context.calls.some(call => call.url.endsWith('/admin/users')))
+    assert.ok(context.calls.some(call => call.url.endsWith('/admin/roles')))
+    assert.ok(context.calls.some(call => call.url.endsWith('/admin/permissions')))
   } finally { controller.dispose(); context.restore() }
 })
 

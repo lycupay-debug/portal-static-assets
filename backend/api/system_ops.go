@@ -17,10 +17,8 @@ func (a *portalAPI) requireSystemOpsAdmin(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return false
 	}
-	permission := "portal.system_ops.manage"
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		permission = "portal.system_ops.read"
-	}
+	// System operations are read-only: warnings, logs, and the sanitized SSH audit projection.
+	permission := "portal.system_ops.read"
 	var isAdmin bool
 	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_user_roles ur JOIN portal.role_permissions rp ON rp.role_key=ur.role_key WHERE ur.user_id=$1::uuid AND rp.permission_key=$2)`, u.ID, permission).Scan(&isAdmin); err != nil {
 		a.dbError(w, err, "无法验证系统运维权限。")
@@ -38,22 +36,6 @@ func (a *portalAPI) systemOps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
-	case r.URL.Path == "/system-ops/policy":
-		a.systemExecutionPolicy(w, r)
-	case r.URL.Path == "/system-ops/tasks":
-		switch r.Method {
-		case http.MethodGet:
-			a.listCommandTasks(w, r)
-		case http.MethodPost:
-			a.createCommandTask(w, r)
-		default:
-			w.Header().Set("Allow", "GET, POST")
-			writeError(w, http.StatusMethodNotAllowed, "任务队列只支持 GET 和 POST。", nil)
-		}
-	case strings.HasPrefix(r.URL.Path, "/system-ops/tasks/") && strings.HasSuffix(r.URL.Path, "/approve") && r.Method == http.MethodPost:
-		a.approveCommandTask(w, r)
-	case strings.HasPrefix(r.URL.Path, "/system-ops/tasks/") && strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost:
-		a.cancelCommandTask(w, r)
 	case r.URL.Path == "/system-ops/logs" && r.Method == http.MethodGet:
 		source := r.URL.Query().Get("source")
 		path, ok := systemLogPath(source)

@@ -128,17 +128,12 @@ watch([activeAccountSection, systemOpsHost], ([section, host]) => {
   disposeSystemOpsCenter?.()
   disposeSystemOpsCenter = null
   if (!host) return
-  const view = section === 'system-warnings' ? 'warnings' : section === 'system-logs' ? 'logs' : section === 'system-execution-policy' ? 'policy' : null
+  const view = section === 'system-warnings' ? 'warnings' : section === 'system-logs' ? 'logs' : section === 'system-permissions' ? 'permissions' : null
   if (!view) return
   void (async () => {
     const module = await import('./components/systemOpsCenter')
     await import('./components/systemOpsCenter.css')
-    if (view === 'policy') {
-      await Promise.all([
-        import('./components/permissionManagement.css'),
-        import('./components/systemExecutionPolicyCenter.css'),
-      ])
-    }
+    if (view === 'permissions') await import('./components/permissionManagement.css')
     if (sequence !== systemOpsMountSequence || host !== systemOpsHost.value) return
     disposeSystemOpsCenter = module.mountSystemOpsCenter(host, { view }).dispose
   })().catch((error: unknown) => {
