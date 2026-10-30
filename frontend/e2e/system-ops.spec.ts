@@ -58,7 +58,7 @@ test('content management table renders native rows, details and trash navigation
   await page.locator('.table-cell-preview').first().click()
   await expect(page.getByRole('dialog', { name: '内容标题' })).toBeVisible()
   await expect(page.getByRole('dialog').locator('p')).toHaveText('Native DOM table content for E2E')
-  await page.getByRole('button', { name: '关闭' }).click()
+  await page.getByRole('dialog').getByLabel('关闭').click()
 
   await page.getByRole('button', { name: '回收站' }).click()
   await expect(page.getByRole('button', { name: '返回内容列表' })).toBeVisible()
