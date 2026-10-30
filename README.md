@@ -49,7 +49,7 @@ npm run build
 
 ## 当前状态
 
-当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-30 已将 Go `go test -race ./...` 和 C `make test` 加入 CI：FreeBSD 开发机实测 Go 单元测试、竞态检测、`go vet`、C 协议测试和生产目标编译均通过；GitHub Actions 对本次修改的远端执行结果尚待提交后核验。Go 当前测试为纯函数/HTTP 边界测试，不是 PostgreSQL 集成测试；C 当前测试验证协议解析与订阅 ACK/FIFO 状态，不覆盖真实 kqueue 并发、信号退出或服务重启。数据库迁移集成验证和真实 FreeBSD 端到端验证仍需单独记录。部署脚本仅作为受控部署工具；第二阶段开发工作不代表生产部署授权。
+当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-30 已将 Go `go test -race ./...`、C `make test` 和 PostgreSQL 空库迁移/运行角色权限检查加入 CI：FreeBSD 开发机实测 Go 单元测试、竞态检测、`go vet`、C 协议测试、生产目标编译，以及 001–030 全量迁移和运行角色权限检查均通过；GitHub Actions 对最新提交的远端执行结果仍待核验。Go 测试现覆盖纯函数/HTTP 边界、并发事件幂等写入、处理租约归属/过期/重试、分发租约过期重领；仍未覆盖进程崩溃恢复、Go/C 真实 IPC 重连和端到端服务重启。C 当前测试验证协议解析与订阅 ACK/FIFO 状态，不覆盖真实 kqueue 并发、信号退出或服务重启。真实 FreeBSD 端到端验证仍需单独记录。部署脚本仅作为受控部署工具；第二阶段开发工作不代表生产部署授权。
 
 ---
 
@@ -253,8 +253,8 @@ git status --short --branch
 | Go-only 生产业务后端 | 已实施 | Go API 处理业务；旧 Node API 不在正常生产流量路径，部署后已禁用旧认证服务 |
 | 原生 TypeScript + DOM（第一阶段） | 已完成 | 当前 `main` 提交 `c31036badc52f58f251dde7f04958bb3ee55caef`；Vue SFC 为 0，Vue runtime / 插件 / vue-tsc 依赖已移除；当前前端行为测试 106 项通过，类型检查与构建通过（2026-10-30 FreeBSD 开发工作区实测） |
 | OpenAPI 共享契约 | 已实施 | `api/openapi.yaml`；生成 TypeScript 类型；lint 和生成漂移检查纳入 CI |
-| PostgreSQL 版本化迁移 | 历史生产记录截至 028；当前源码已有 030 | 当前仓库 `backend/migrations/001`–`030`；本轮只核对文件和脚本，尚未运行独立数据库集成迁移测试 |
-| Go 事件接收、分发、租约、处理和恢复 | 实现存在；当前仓库自动化验证不完整 | 本轮新增纯函数/HTTP 边界单元测试；PostgreSQL 事务、租约并发、崩溃恢复和真实 C 核心重启仍无当前 CI 集成测试证据 |
+| PostgreSQL 版本化迁移 | 当前 001–030 全量空库回放通过 | 新增 `scripts/test-postgres-migrations.sh` 并纳入 CI；FreeBSD 临时隔离 PostgreSQL 17.11 集群实测 30 个迁移全部通过，验证 owner/runtime 分离、默认 user 角色触发器及禁止 runtime CREATE/TRUNCATE；不触碰现有 PostgreSQL 服务或业务库 |
+| Go 事件接收、分发、租约、处理和恢复 | 单元与部分 PostgreSQL 集成测试已纳入 CI | 覆盖并发幂等接收、处理租约唯一领取/归属校验/重试/最终尝试过期、分发租约过期重领；真实进程崩溃恢复、Go/C IPC 重连与服务重启仍未覆盖 |
 | C IPC v2 | 协议实现存在；局部单元测试已补充 | 当前 `make test` 覆盖请求/事件标识校验、PING/STATUS/EVENT、v1 拒绝、未知命令、订阅推送、错配/成功 ACK、FIFO 顺序和 32 项上限；真实 socket/kqueue、并发客户端、超时、信号退出与重启恢复未由该测试覆盖 |
 | C 核心资源边界 | 已实施 | C 只处理事件元数据通知，不处理业务 payload |
 | 部署与恢复策略 | 已实施 | 备份、迁移、健康检查、手动回滚；开发期默认不自动回滚；隔离沙箱回滚演练 |

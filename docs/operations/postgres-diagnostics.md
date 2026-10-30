@@ -24,3 +24,22 @@ Important PostgreSQL catalog distinctions:
 The historical system log is retained for auditability. Correcting a diagnostic
 query prevents recurrence; it does not rewrite the record of the earlier failed
 query.
+
+## Disposable migration verification
+
+The CI migration job runs `scripts/test-postgres-migrations.sh` against a fresh,
+disposable PostgreSQL 17 service. The script requires the explicit
+`PORTAL_MIGRATION_TEST=1` opt-in and refuses non-local hosts. It replays every
+numbered migration in order, applies the same final owner/privilege normalizer as
+the FreeBSD deployment runner, and verifies the migration ledger, object owners,
+runtime role flags, default user-role trigger, and denial of runtime schema
+`CREATE` / table `TRUNCATE` privileges.
+
+Do not point this script at a production or shared database. It creates the
+fixed test database `portal_migration_test` and the `personal_portal_app` role;
+run it only against an isolated local PostgreSQL cluster or the ephemeral CI
+service. The migration script itself does not test worker behavior. The same CI
+job additionally runs Go integration tests against the migrated database for
+concurrent event idempotency, processor lease ownership, retry/dead-letter
+transitions, and stale dispatcher lease reclamation. Process crash recovery,
+Go/C IPC reconnects, and live service connectivity remain outside this suite.
