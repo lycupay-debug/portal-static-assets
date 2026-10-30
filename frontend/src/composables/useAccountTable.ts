@@ -1,4 +1,5 @@
-import { computed, type Ref } from 'vue'
+import { computed } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 import type { Content, TeachingResource } from '../api/generated'
 import { tableDefinitions, contentStatusLabels, contentTypeLabels } from '../config/accountTables'
 import { buildSearchableTableRecords, filterAccountTableRecords } from '../utils/accountTableFiltering'
@@ -9,16 +10,16 @@ type TableRecord = Record<string, string | number>
 type ViewMode = 'active' | 'trash'
 
 interface UseAccountTableOptions {
-  activeAccountSection: Ref<string>
-  contentViewMode: Ref<ViewMode>
-  contentItems: Ref<Content[]>
-  contentTrashItems: Ref<Content[]>
-  resourceViewMode: Ref<ViewMode>
-  teachingResources: Ref<TeachingResource[]>
-  teachingResourceTrash: Ref<TeachingResource[]>
-  debouncedTableQuery: Ref<string>
-  tableScrollTop: Ref<number>
-  virtualTableViewportWidth: Ref<number>
+  activeAccountSection: MutableValue<string>
+  contentViewMode: MutableValue<ViewMode>
+  contentItems: MutableValue<Content[]>
+  contentTrashItems: MutableValue<Content[]>
+  resourceViewMode: MutableValue<ViewMode>
+  teachingResources: MutableValue<TeachingResource[]>
+  teachingResourceTrash: MutableValue<TeachingResource[]>
+  debouncedTableQuery: MutableValue<string>
+  tableScrollTop: MutableValue<number>
+  virtualTableViewportWidth: MutableValue<number>
 }
 
 const ROW_HEIGHT = 44

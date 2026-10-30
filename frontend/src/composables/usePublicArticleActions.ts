@@ -1,4 +1,4 @@
-import type { Ref } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 import { ApiRequestError, apiRequest } from '../api/client'
 import { portalNotify } from '../utils/notification'
 
@@ -17,11 +17,11 @@ type Notifier = {
 type Requester = typeof apiRequest
 
 interface PublicArticleActionOptions<T extends InteractiveArticle> {
-  article: Ref<T | null>
-  busy: Ref<boolean>
-  authNotice: Ref<string>
-  shareDialogOpen: Ref<boolean>
-  shareUrl: Ref<string>
+  article: MutableValue<T | null>
+  busy: MutableValue<boolean>
+  authNotice: MutableValue<string>
+  shareDialogOpen: MutableValue<boolean>
+  shareUrl: MutableValue<string>
   navigate: (target: string) => Promise<unknown> | unknown
   request?: Requester
   notify?: Notifier

@@ -5,18 +5,18 @@
  * older searches from overwriting a newer list. It does not perform mutations or navigation.
  * Side effects: issues same-origin read requests and updates list/loading/error refs.
  */
-import type { Ref } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 import { apiRequest } from '../api/client'
 import type { Content } from '../api/generated'
 
 type Requester = typeof apiRequest
 
 type ContentListOptions = {
-  viewMode: Ref<'active' | 'trash'>
-  activeItems: Ref<Content[]>
-  trashItems: Ref<Content[]>
-  loading: Ref<boolean>
-  error: Ref<string>
+  viewMode: MutableValue<'active' | 'trash'>
+  activeItems: MutableValue<Content[]>
+  trashItems: MutableValue<Content[]>
+  loading: MutableValue<boolean>
+  error: MutableValue<string>
   request?: Requester
 }
 

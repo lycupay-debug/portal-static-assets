@@ -5,7 +5,7 @@
  * only commits a result while both the request sequence and route still identify the same article.
  * Side effects: performs a read-only API request and updates the supplied article/loading/error refs.
  */
-import type { Ref } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 import { apiRequest } from '../api/client'
 import type { Content } from '../api/generated'
 
@@ -14,11 +14,11 @@ export type PublicContentArticle = PublicContentCard & Pick<Content, 'body' | 'c
 type Requester = typeof apiRequest
 
 type PublicArticleOptions = {
-  route: Ref<string>
-  article: Ref<PublicContentArticle | null>
-  html: Ref<string>
-  loading: Ref<boolean>
-  error: Ref<string>
+  route: MutableValue<string>
+  article: MutableValue<PublicContentArticle | null>
+  html: MutableValue<string>
+  loading: MutableValue<boolean>
+  error: MutableValue<string>
   request?: Requester
   renderMarkdown?: (markdown: string) => string | Promise<string>
 }

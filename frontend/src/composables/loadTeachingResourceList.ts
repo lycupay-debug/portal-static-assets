@@ -5,18 +5,18 @@
  * sequence prevents a slower request from replacing a newer result; the captured view is also checked.
  * Side effects: performs read-only API requests and updates the supplied refs; it does not mutate records.
  */
-import type { Ref } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 import { apiRequest } from '../api/client'
 import type { TeachingResource } from '../api/generated'
 
 type Requester = typeof apiRequest
 
 type TeachingResourceListOptions = {
-  viewMode: Ref<'active' | 'trash'>
-  activeItems: Ref<TeachingResource[]>
-  trashItems: Ref<TeachingResource[]>
-  loading: Ref<boolean>
-  error: Ref<string>
+  viewMode: MutableValue<'active' | 'trash'>
+  activeItems: MutableValue<TeachingResource[]>
+  trashItems: MutableValue<TeachingResource[]>
+  loading: MutableValue<boolean>
+  error: MutableValue<string>
   request?: Requester
   onError?: (message: string) => void
 }

@@ -1,19 +1,19 @@
-import type { Ref } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 
 type LegalDocument = { slug: string; title: string; bodyMarkdown: string; effectiveAt?: string | null }
 type Request = <T>(path: string, init?: RequestInit, fallbackMessage?: string) => Promise<T>
 type MarkdownRenderer = (markdown: string) => string | Promise<string>
 type State = {
-  document: Ref<LegalDocument | null>
-  html: Ref<string>
-  loading: Ref<boolean>
-  error: Ref<string>
+  document: MutableValue<LegalDocument | null>
+  html: MutableValue<string>
+  loading: MutableValue<boolean>
+  error: MutableValue<string>
 }
 
 /** Loads one public policy document and ignores stale route/request results. */
 export async function loadLegalDocument(
   slug: string,
-  route: Ref<string>,
+  route: MutableValue<string>,
   requestId: number,
   currentRequestId: () => number,
   state: State,

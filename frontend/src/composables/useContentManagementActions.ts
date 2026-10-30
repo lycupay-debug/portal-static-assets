@@ -1,4 +1,4 @@
-import type { Ref } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 import { apiRequest } from '../api/client'
 import { mergeLegacyTaxonomyIntoTags } from '../utils/knowledgeTags'
 import type { Content as APIContent, ContentPatch, ContentVersion as APIContentVersion, ContentWrite } from '../api/generated'
@@ -18,18 +18,18 @@ type ContentForm = {
 type Requester = typeof apiRequest
 
 interface ContentManagementActionOptions {
-  routeContentId: Ref<string | null>
-  contentItems: Ref<PortalContent[]>
-  contentTrashItems: Ref<PortalContent[]>
-  contentBusy: Ref<boolean>
-  contentError: Ref<string>
-  contentNotice: Ref<string>
-  contentEditorOpen: Ref<boolean>
-  editingContentId: Ref<string | null>
-  contentForm: Ref<ContentForm>
-  contentVersions: Ref<ContentVersion[]>
-  versionsContentId: Ref<string | null>
-  versionsContentTitle: Ref<string>
+  routeContentId: MutableValue<string | null>
+  contentItems: MutableValue<PortalContent[]>
+  contentTrashItems: MutableValue<PortalContent[]>
+  contentBusy: MutableValue<boolean>
+  contentError: MutableValue<string>
+  contentNotice: MutableValue<string>
+  contentEditorOpen: MutableValue<boolean>
+  editingContentId: MutableValue<string | null>
+  contentForm: MutableValue<ContentForm>
+  contentVersions: MutableValue<ContentVersion[]>
+  versionsContentId: MutableValue<string | null>
+  versionsContentTitle: MutableValue<string>
   emptyContentForm: () => ContentForm
   loadContentList: () => Promise<unknown> | unknown
   navigate: (target: string) => Promise<unknown> | unknown

@@ -8,7 +8,7 @@
  */
 import { apiRequest as defaultApiRequest } from '../api/client'
 import type { LoginRequest, RegisterRequest, User as APIUser } from '../api/generated'
-import type { ComputedRef, Ref } from 'vue'
+import type { MutableValue, ReadonlyValue } from '../state/valueContracts'
 
 export type PortalUser = APIUser & { isAdmin?: boolean }
 
@@ -16,13 +16,13 @@ type AuthRequest = <T>(path: string, init?: RequestInit, fallbackMessage?: strin
 type AuthNotifier = (message: string, title?: string) => void
 
 type PortalAuthenticationOptions = {
-  user: Ref<PortalUser | null>
-  authLoading: Ref<boolean>
-  authBusy: Ref<boolean>
-  authError: Ref<string>
-  authNotice: Ref<string>
-  authForm: Ref<{ displayName: string; email: string; password: string }>
-  isRegister: ComputedRef<boolean>
+  user: MutableValue<PortalUser | null>
+  authLoading: MutableValue<boolean>
+  authBusy: MutableValue<boolean>
+  authError: MutableValue<string>
+  authNotice: MutableValue<string>
+  authForm: MutableValue<{ displayName: string; email: string; password: string }>
+  isRegister: ReadonlyValue<boolean>
   navigate: (target: string) => Promise<unknown> | unknown
   notifySuccess: AuthNotifier
   notifyError: AuthNotifier

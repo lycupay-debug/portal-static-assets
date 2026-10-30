@@ -6,7 +6,7 @@
  * Side effects: performs HTTP GET requests and updates loading/error/list refs; it does not
  * navigate, mutate server data, or own component lifecycle.
  */
-import type { Ref } from 'vue'
+import type { MutableValue } from '../state/valueContracts'
 import { apiRequest } from '../api/client'
 import type { Content, TeachingResource } from '../api/generated'
 
@@ -15,13 +15,13 @@ type PublicTeachingResource = Pick<TeachingResource, 'id' | 'title' | 'descripti
 type Requester = typeof apiRequest
 
 interface PublicDirectoryDataOptions {
-  publicContents: Ref<PublicContentCard[]>
-  publicTeachingResources: Ref<PublicTeachingResource[]>
-  publicContentLoading: Ref<boolean>
-  publicContentError: Ref<string>
-  educationResourceLoading: Ref<boolean>
-  educationResourceError: Ref<string>
-  knowledgeVisibleCount: Ref<number>
+  publicContents: MutableValue<PublicContentCard[]>
+  publicTeachingResources: MutableValue<PublicTeachingResource[]>
+  publicContentLoading: MutableValue<boolean>
+  publicContentError: MutableValue<string>
+  educationResourceLoading: MutableValue<boolean>
+  educationResourceError: MutableValue<string>
+  knowledgeVisibleCount: MutableValue<number>
   knowledgePageSize: number
   isContentViewCurrent?: () => boolean
   request?: Requester
