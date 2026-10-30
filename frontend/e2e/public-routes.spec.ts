@@ -35,7 +35,8 @@ test('public root route renders the application shell', async ({ page }) => {
 
   await expect(page.locator('#app').locator('> *')).toHaveCount(1)
   await expect(page.getByRole('link', { name: /登录/ }).first()).toBeVisible()
-  await expect(page.getByRole('heading', { name: '把想法整理好，让行动有迹可循。' })).toBeVisible()
+  await expect(page.locator('.hero h1')).toContainText('把想法整理好，')
+  await expect(page.locator('.hero h1')).toContainText('让行动有迹可循。')
   await expect(page.locator('.section-card')).toHaveCount(4)
   const search = page.getByRole('searchbox', { name: '搜索门户分类' })
   await search.fill('工具')
