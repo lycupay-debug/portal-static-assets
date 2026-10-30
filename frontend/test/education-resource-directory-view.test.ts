@@ -62,7 +62,7 @@ test('resource detail dialog renders safe links, MP3 preview and closes with Esc
   assert.equal(dialog.querySelector('h2')?.textContent, '英语听力练习')
   assert.equal(dialog.querySelector('audio')?.src, 'https://portal.example.test/api/public/resources/resource-1/preview')
   assert.equal(dialog.querySelector('a.education-resource-detail-url')?.getAttribute('href'), 'https://resources.example.test/lesson')
-  assert.equal(dialog.querySelector('a.education-resource-detail-download')?.getAttribute('href'), 'https://portal.example.test/api/public/resources/resource-1/download')
+  assert.equal(dialog.querySelector('a.education-resource-detail-download')?.getAttribute('href'), '/api/public/resources/resource-1/download')
   dialog.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   assert.equal(host.querySelector('[role="dialog"]'), null)
   view.dispose()

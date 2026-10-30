@@ -217,7 +217,7 @@ export function mountEducationResourceDirectoryView<T extends PublicResource>(ho
       const icon = document.createElement('i'); icon.className = 'bi bi-box-arrow-up-right'; icon.setAttribute('aria-hidden', 'true'); link.append(icon, document.createTextNode(' 打开链接')); actions.append(link)
     }
     if (downloadUrl) {
-      const link = document.createElement('a'); link.className = 'education-resource-detail-action education-resource-detail-download'; link.href = downloadUrl
+      const link = document.createElement('a'); link.className = 'education-resource-detail-action education-resource-detail-download'; link.setAttribute('href', resource.downloadUrl || downloadUrl)
       const icon = document.createElement('i'); icon.className = 'bi bi-download'; icon.setAttribute('aria-hidden', 'true'); link.append(icon, document.createTextNode(' 下载文件')); actions.append(link)
     }
     if (actions.childElementCount) dialog.append(actions)
