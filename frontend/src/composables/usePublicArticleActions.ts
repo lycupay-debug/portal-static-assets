@@ -28,7 +28,7 @@ interface PublicArticleActionOptions<T extends InteractiveArticle> {
 }
 
 /** Keeps public article interaction and share-link behavior out of the route shell. */
-export function usePublicArticleActions<T extends InteractiveArticle>(options: PublicArticleActionOptions<T>) {
+export function createPublicArticleActions<T extends InteractiveArticle>(options: PublicArticleActionOptions<T>) {
   const request = options.request || apiRequest
   const notify = options.notify || portalNotify
 

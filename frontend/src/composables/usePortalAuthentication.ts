@@ -33,7 +33,7 @@ type PortalAuthenticationOptions = {
  * Create auth actions around caller-owned refs so the session state remains visible to App.vue and tests.
  * The request sequence prevents an older `/auth/me` response from overwriting a newer navigation's session.
  */
-export function usePortalAuthentication(options: PortalAuthenticationOptions) {
+export function createPortalAuthentication(options: PortalAuthenticationOptions) {
   const request = options.request ?? defaultApiRequest
   let sessionRequestSequence = 0
 

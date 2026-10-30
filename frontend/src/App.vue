@@ -18,12 +18,12 @@ import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
 import { useScrollRestoration } from './composables/useScrollRestoration'
-import { usePublicArticleActions } from './composables/usePublicArticleActions'
+import { createPublicArticleActions } from './composables/usePublicArticleActions'
 import { useLegalDocuments } from './composables/useLegalDocuments'
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
 import { useAccountTable } from './composables/useAccountTable'
-import { usePortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
+import { createPortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
 import { createProtectedRouteGuard } from './composables/useProtectedRouteGuard'
 import { formatResourceFileSize } from './utils/resourceFiles'
 import { resourceFileIcon } from './utils/resourceIcons'
@@ -400,9 +400,9 @@ function loadTeachingResources(searchTerm = tableQuery.value) {
     portalNotify.error(resourceError.value, '教学资源')
   })
 }
-type ContentManagementActions = ReturnType<typeof import('./composables/useContentManagementActions').useContentManagementActions>
+type ContentManagementActions = ReturnType<typeof import('./composables/useContentManagementActions').createContentManagementActions>
 const getContentManagementActions = createRetryableLazyLoader<ContentManagementActions>(() =>
-  import('./composables/useContentManagementActions').then(({ useContentManagementActions }) => useContentManagementActions({
+  import('./composables/useContentManagementActions').then(({ createContentManagementActions }) => createContentManagementActions({
     routeContentId: contentEditorRouteId,
     contentItems,
     contentTrashItems,
@@ -607,7 +607,7 @@ function loadPublicArticle(slug: string) {
     publicContentLoading.value = false
   })
 }
-const { toggleInteraction: togglePublicInteraction, shareArticle: sharePublicArticle, copyShareUrl } = usePublicArticleActions({
+const { toggleInteraction: togglePublicInteraction, shareArticle: sharePublicArticle, copyShareUrl } = createPublicArticleActions({
   article: publicArticle,
   busy: publicInteractionBusy,
   authNotice,
@@ -638,7 +638,7 @@ let portalNavigation: ReturnType<typeof createPortalNavigationController> | null
 function navigate(target: string): Promise<void> {
   return portalNavigation?.navigate(target) ?? Promise.resolve()
 }
-const { loadSession, submitAuth, logout } = usePortalAuthentication({
+const { loadSession, submitAuth, logout } = createPortalAuthentication({
   user,
   authLoading,
   authBusy,

@@ -37,7 +37,7 @@ interface ContentManagementActionOptions {
 }
 
 /** Owns content-editor, version-history, publish and recycle-bin actions. */
-export function useContentManagementActions(options: ContentManagementActionOptions) {
+export function createContentManagementActions(options: ContentManagementActionOptions) {
   const request = options.request || apiRequest
 
   async function initializeContentEditorRoute() {
