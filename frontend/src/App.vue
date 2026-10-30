@@ -31,6 +31,8 @@ import { accountGroups } from './navigation/accountNavigation'
 import { routeSections, sectionRoutes } from './navigation/portalRoutes'
 import { createPortalNavigationController } from './navigation/portalNavigationController'
 import { directoryPages, directoryTiles } from './config/publicDirectories'
+import { mountSiteHeaderView } from './views/siteHeaderView'
+import { mountSiteFooterView } from './views/siteFooterView'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
@@ -78,6 +80,10 @@ type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt
 
 const menuOpen = ref(false)
 const route = ref(window.location.pathname || '/')
+const siteHeaderHost = ref<HTMLElement | null>(null)
+const siteFooterHost = ref<HTMLElement | null>(null)
+let siteHeaderView: { update: (state: { menuOpen: boolean; loggedIn: boolean }) => void; dispose: () => void } | null = null
+let siteFooterView: { update: (documents: typeof publishedLegalDocuments.value) => void; dispose: () => void } | null = null
 const user = ref<PortalUser | null>(null)
 const authLoading = ref(false)
 const authBusy = ref(false)
@@ -990,11 +996,29 @@ portalNavigation = createPortalNavigationController({
   afterRender: async () => { await nextTick(); await homePageReady },
 })
 let disposeNotificationHost: (() => void) | null = null
+watch([siteHeaderHost, menuOpen, user], () => {
+  const host = siteHeaderHost.value
+  if (!host) { siteHeaderView?.dispose(); siteHeaderView = null; return }
+  const state = { menuOpen: menuOpen.value, loggedIn: Boolean(user.value) }
+  if (!siteHeaderView) siteHeaderView = mountSiteHeaderView(host, { getState: () => ({ menuOpen: menuOpen.value, loggedIn: Boolean(user.value) }), navigate, setMenuOpen: value => { menuOpen.value = value } })
+  else siteHeaderView.update(state)
+}, { deep: true, flush: 'post' })
+watch([siteFooterHost, publishedLegalDocuments], () => {
+  const host = siteFooterHost.value
+  if (!host) { siteFooterView?.dispose(); siteFooterView = null; return }
+  if (!siteFooterView) siteFooterView = mountSiteFooterView(host, { navigate })
+  siteFooterView.update(publishedLegalDocuments.value)
+}, { deep: true, flush: 'post' })
+
 onMounted(() => {
   disposeNotificationHost = mountNotificationHost(document.body)
   void portalNavigation?.start()
 })
 onBeforeUnmount(() => {
+  siteHeaderView?.dispose()
+  siteHeaderView = null
+  siteFooterView?.dispose()
+  siteFooterView = null
   authPageMountSequence += 1
   homePageMountSequence += 1
   homePageView?.dispose()
@@ -1058,25 +1082,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="site-shell">
-    <header v-if="!isAccountPage && !isContentEditorPage" class="site-header">
-      <a class="brand" href="/" aria-label="资源与服务平台首页" @click.prevent="navigate('/')">
-        <span class="brand-mark">R.</span>
-        <span class="brand-copy"><strong>资源平台</strong><small>资源 · 信息 · 行业服务</small></span>
-      </a>
-      <button class="menu-toggle" type="button" :aria-expanded="menuOpen" aria-label="切换导航菜单" @click="menuOpen = !menuOpen">
-       <span></span>
-      </button>
-      <nav class="main-nav" :class="{ 'is-open': menuOpen }" aria-label="主导航">
-        <a href="/knowledge" @click.prevent="navigate('/knowledge')">知识广场</a>
-        <a href="/education-resources" @click.prevent="navigate('/education-resources')">教育资源</a>
-        <a href="/homestays" @click.prevent="navigate('/homestays')">民宿房源</a>
-        <a href="/software-tools" @click.prevent="navigate('/software-tools')">软件工具</a>
-        <a href="/#explore" @click.prevent="navigate('/#explore')">资源目录</a>
-        <a href="/#about" @click.prevent="navigate('/#about')">关于</a>
-        <a v-if="user" class="btn btn-outline-secondary nav-auth" href="/account" @click.prevent="navigate('/account')">个人中心</a>
-        <a v-else class="btn btn-outline-secondary nav-auth" href="/login" @click.prevent="navigate('/login')">登录</a>
-      </nav>
-    </header>
+    <header v-if="!isAccountPage && !isContentEditorPage" ref="siteHeaderHost" class="site-header"></header>
 
     <main v-if="isContentEditorPage" class="content-workspace-page">
       <header class="content-workspace-topbar">
@@ -1179,7 +1185,7 @@ onBeforeUnmount(() => {
     <div ref="teachingResourceDrawerHost"></div>
 
 
-    <footer v-if="!isAccountPage && !isContentEditorPage" class="site-footer"><a class="footer-brand" href="/" @click.prevent="navigate('/')">资源平台 <span>©</span></a><span>连接资源、用户与行业服务</span><nav v-if="publishedLegalDocuments.length" class="site-footer-policies" aria-label="网站政策"> <a v-for="doc in publishedLegalDocuments" :key="doc.slug" :href="`/legal/${doc.slug}`" @click.prevent="navigate(`/legal/${doc.slug}`)">{{ doc.title }}</a></nav></footer>
+    <footer v-if="!isAccountPage && !isContentEditorPage" ref="siteFooterHost" class="site-footer"></footer>
     <button type="button" class="scroll-to-top" aria-label="返回页面顶部" title="返回顶部" @click="scrollToTop"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>
   </div>
 </template>
