@@ -41,6 +41,7 @@ test('native workspace synchronizes Markdown, supports programmatic load and rea
     assert.equal(ctx.updates.at(-1),'# Updated heading\n\nUpdated body')
     ctx.view.setMarkdown('# Loaded externally')
     assert.equal(ctx.view.editor.getMarkdown().trimEnd(),'# Loaded externally')
+    assert.match(ctx.host.querySelector('.content-outline-list')?.textContent||'',/Loaded externally/)
     assert.equal(ctx.updates.length,1)
     ctx.view.setEditable(false)
     assert.equal(ctx.view.editor.isEditable,false)

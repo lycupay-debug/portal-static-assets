@@ -21,7 +21,7 @@ export type NativeContentEditorViewOptions = {
 }
 
 const backgroundColors = [{ name: '浅灰', value: '#F1F1F1' }, { name: '中浅灰', value: '#E5E5E5' }, { name: '灰白', value: '#F8F8F8' }, { name: '中灰', value: '#D6D6D6' }, { name: '深浅灰', value: '#C9C9C9' }, { name: '无背景', value: '' }]
-const textColors = [{ name: '默认', value: '#292929' }, { name: '深黑', value: '#111111' }, { name: '深灰', value: '#444444' }, { name: '中灰', value: '#707070' }, { name: '浅灰', value: '#929292' }]
+const textColors = [{ name: '默认', value: '' }, { name: '深黑', value: '#111111' }, { name: '深灰', value: '#444444' }, { name: '中灰', value: '#707070' }, { name: '浅灰', value: '#929292' }]
 const calloutColors = ['#F0F0F0', '#E6E6E6', '#DCDCDC', '#F7F7F7', '#D2D2D2', '#EAEAEA', '#F1F1F1']
 const imageWidths = ['25%', '50%', '75%', '100%']
 
@@ -221,7 +221,7 @@ export function mountNativeContentEditorView(options: NativeContentEditorViewOpt
       contextMenu.append(callout)
     }
     addHeading('文本格式')
-    actions([['加粗','bold'],['斜体','italic'],['下划线','underline'],['删除线','strike'],['行内代码','code'],['添加链接','link'],['清除格式','clear']])
+    actions([['加粗','bold'],['斜体','italic'],['下划线','underline'],['删除线','strike'],['行内代码','code'],['引用','quote'],['添加链接','link'],['清除格式','clear']])
     addHeading('背景色')
     const backgrounds = element(doc, 'div', 'context-color-row')
     backgroundColors.forEach(color => { const b=actionButton(doc,'', 'background'); b.title=color.name;b.setAttribute('aria-label',color.name);if(color.value)b.style.backgroundColor=color.value;else b.classList.add('color-none');b.dataset.value=color.value;backgrounds.append(b) })
@@ -258,11 +258,13 @@ export function mountNativeContentEditorView(options: NativeContentEditorViewOpt
     else if(action==='underline')chain.toggleUnderline().run()
     else if(action==='strike')chain.toggleStrike().run()
     else if(action==='code')chain.toggleCode().run()
-    else if(action==='link')toolActions.addLink(editor)
-    else if(action==='clear')chain.clearNodes().unsetAllMarks().unsetTextAlign().run()
+    else if(action==='quote')chain.toggleBlockquote().run()
+    else if(action==='link'){const value=doc.defaultView?.prompt('输入链接地址','https://');const url=value?normalizeEditorLinkUrl(value):null;if(url)chain.extendMarkRange('link').setLink({href:url}).run()}
+    else if(action==='clear')chain.unsetAllMarks().run()
     else if(action==='background'&&value)chain.setHighlight({color:value}).run()
     else if(action==='background')chain.unsetHighlight().run()
     else if(action==='text-color'&&value)chain.setMark('textColor',{color:value}).run()
+    else if(action==='text-color')chain.unsetMark('textColor').run()
     contextOpen=false;renderMenus()
   }
   function openContextMenu(event: MouseEvent): void {
@@ -339,7 +341,7 @@ export function mountNativeContentEditorView(options: NativeContentEditorViewOpt
     else if(action==='table-delete-row'){editor.chain().focus().deleteRow().run();contextOpen=false;renderMenus()}
     else if(action==='table-delete'){editor.chain().focus().deleteTable().run();contextOpen=false;renderMenus()}
     else if(action==='tool'){const item=toolbarItems[Number(target.dataset.index)];if(item){item.run();editor.commands.focus();contextOpen=false;renderMenus()}}
-    else if(['bold','italic','underline','strike','code','link','clear','background','text-color'].includes(action||''))applyContextAction(action||'',target.dataset.value||'')
+    else if(['bold','italic','underline','strike','code','quote','link','clear','background','text-color'].includes(action||''))applyContextAction(action||'',target.dataset.value||'')
   }
   const onImageFileChange = async (): Promise<void> => {
     const file=imageFileInput.files?.[0]
