@@ -39,4 +39,14 @@ test('native editor mounts workspace, edits Markdown, filters slash tools and in
 
   await expect(page.getByText('创建内容')).toBeVisible()
   await expect(page.getByRole('button', { name: '保存草稿' })).toBeVisible()
+
+  await page.getByRole('button', { name: /点击选择标签/ }).click()
+  const tagDialog = page.getByRole('dialog', { name: '选择知识广场标签' })
+  await expect(tagDialog).toBeVisible()
+  await tagDialog.getByLabel('小学教育').check()
+  await expect(tagDialog.getByText('已选择 1 个具体标签')).toBeVisible()
+  await tagDialog.getByRole('button', { name: '完成' }).click()
+  await expect(page.getByRole('button', { name: '移除标签 小学教育' })).toBeVisible()
+  await page.getByRole('button', { name: '移除标签 小学教育' }).click()
+  await expect(page.getByText('尚未选择标签')).toBeVisible()
 })
