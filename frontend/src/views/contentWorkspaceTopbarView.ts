@@ -1,7 +1,7 @@
 /**
  * Responsibility: render the content-workspace identity/status bar using native DOM.
  * Dependencies: current title/busy snapshot and one route-exit callback.
- * Collaboration: App.vue owns route and save state; the editor and settings views own their independent DOM trees.
+ * Collaboration: portalApplication.ts owns route and save state; the editor and settings views own their independent DOM trees.
  * Boundaries: no persistence or API calls; title is inserted as text, and the return action is explicit.
  * Lifecycle: update changes only the status text and disabled state; dispose clears the host.
  */

@@ -1,7 +1,7 @@
 /**
  * Responsibility: render public education-resource filters, paged results and resource-detail dialog.
  * Dependencies: current API snapshots, filter option lists and small file presentation utilities.
- * Collaboration: App.vue owns API loading, debounced search, infinite paging and body-scroll lock state.
+ * Collaboration: portalApplication.ts owns API loading, debounced search, infinite paging and body-scroll lock state.
  * Boundaries: resource metadata is text-only; links are restricted to HTTP(S), download URLs remain server-issued,
  * and no file content is fetched or executed by this view. dispose releases host/document listeners and DOM.
  */

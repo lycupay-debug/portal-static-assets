@@ -1,7 +1,7 @@
 /**
  * Responsibility: centralize the client-side session gate for protected portal routes.
  * Dependencies: caller-provided route classification, session loader, navigation freshness check, and redirect action.
- * Collaboration: App.vue owns History API mutation and the navigation sequence; this guard decides whether route
+ * Collaboration: portalApplication.ts owns History API mutation and the navigation sequence; this guard decides whether route
  * data may proceed after session validation. The Go API remains authoritative for authorization.
  * Boundaries: no DOM/history access, no route mutation except through the injected denial callback, and stale
  * asynchronous checks must never redirect a newer navigation.

@@ -1,7 +1,7 @@
 /**
  * Responsibility: own client-side session loading and login/register/logout request orchestration.
  * Dependencies: injected reactive auth state, same-origin API transport, route navigation, and notification callback.
- * Collaboration: App.vue owns page rendering and navigation policy; this composable updates auth state and asks
+ * Collaboration: portalApplication.ts owns page rendering and navigation policy; this composable updates auth state and asks
  * the caller to navigate after a successful login or after logout cleanup. Server-side authorization remains in Go.
  * Boundaries: no DOM access or history mutation; stale session responses are ignored, and passwords are cleared
  * only after a successful login/register response. API failures are surfaced through the supplied authError ref.
@@ -30,7 +30,7 @@ type PortalAuthenticationOptions = {
 }
 
 /**
- * Create auth actions around caller-owned refs so the session state remains visible to App.vue and tests.
+ * Create auth actions around caller-owned refs so the session state remains visible to portalApplication.ts and tests.
  * The request sequence prevents an older `/auth/me` response from overwriting a newer navigation's session.
  */
 export function createPortalAuthentication(options: PortalAuthenticationOptions) {

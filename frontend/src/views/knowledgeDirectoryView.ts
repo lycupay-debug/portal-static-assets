@@ -1,7 +1,7 @@
 /**
  * Responsibility: render the public knowledge directory, category filters, autocomplete and paged article list.
  * Dependencies: immutable controller snapshots, knowledge category metadata and navigation/action callbacks.
- * Collaboration: App.vue retains API loading and controller ownership; this view is a DOM-only projection of state.
+ * Collaboration: portalApplication.ts retains API loading and controller ownership; this view is a DOM-only projection of state.
  * Boundaries: API metadata is rendered as text, article links are encoded local routes, and filtering/paging rules
  * remain in createKnowledgeDirectoryController. dispose removes listeners and releases the mounted DOM subtree.
  */

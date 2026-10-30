@@ -1,7 +1,7 @@
 /**
  * Responsibility: manage knowledge-directory filtering, autocomplete, URL synchronization and infinite-list paging.
  * Dependencies: framework-neutral value contracts, pure search/filter helpers, and injected browser/document adapters.
- * Collaboration: the Vue shell currently wraps derived getters with computed(); a native shell can render their values directly.
+ * Collaboration: the the application wraps derived getters with computed(); a native shell can render their values directly.
  * Boundaries: article navigation is delegated; URL changes only update filter query state; content fetching stays in list loaders.
  */
 import { knowledgeCategoryMenus } from '../config/knowledgeCategories'

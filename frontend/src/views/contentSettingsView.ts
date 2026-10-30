@@ -1,7 +1,7 @@
 /**
  * Responsibility: render the content workspace metadata/settings panel with native DOM controls.
  * Dependencies: current content draft, visibility options and explicit state-transition callbacks.
- * Collaboration: App.vue owns draft persistence and validation; knowledgeTagSelection owns tag draft/commit rules;
+ * Collaboration: portalApplication.ts owns draft persistence and validation; knowledgeTagSelection owns tag draft/commit rules;
  * the shared virtualized select owns its own option popover and keyboard/outside-click lifecycle.
  * Boundaries: all user-facing strings are assigned with textContent/value; this view never calls the API.
  * Lifecycle: update mutates existing nodes to preserve typing/focus; dispose releases the select and host references.

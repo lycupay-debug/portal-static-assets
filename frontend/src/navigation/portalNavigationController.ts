@@ -1,8 +1,8 @@
 /**
  * Responsibility: coordinate browser history, protected-route sequencing, route-data loading and scroll restoration.
  * Dependencies: injected route state, route maps, browser/document objects, and application workflow callbacks.
- * Collaboration: App.vue currently adapts its state/composables into this controller; the controller itself has no
- * Vue imports and can later be mounted by the native application shell without changing navigation semantics.
+ * Collaboration: portalApplication.ts currently adapts its state/composables into this controller; the controller itself has no
+ * framework imports and can later be mounted by the native application shell without changing navigation semantics.
  * Boundaries: browser history is client navigation only; ensureRouteAccess remains the authentication gate and
  * the Go API remains the authority. Stale navigation IDs may not trigger route data or scroll side effects.
  * Cleanup: dispose removes the owned popstate listener and invalidates any in-flight navigation sequence.

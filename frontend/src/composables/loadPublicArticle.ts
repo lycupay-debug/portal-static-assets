@@ -1,7 +1,7 @@
 /**
  * Responsibility: load a public article and render its Markdown body for the article view.
  * Dependencies: shared API client/generated article types; Markdown renderer is imported only on demand.
- * Collaboration: App.vue owns route and presentation refs; this loader owns request sequencing and
+ * Collaboration: portalApplication.ts owns route and presentation refs; this loader owns request sequencing and
  * only commits a result while both the request sequence and route still identify the same article.
  * Side effects: performs a read-only API request and updates the supplied article/loading/error refs.
  */

@@ -1,7 +1,7 @@
 /**
  * Responsibility: render account table pages, content-version history and long-cell details in native DOM.
  * Dependencies: immutable table snapshots, account table metadata and explicit action callbacks.
- * Collaboration: App.vue owns session/API actions, table filtering and virtual-window calculations; this view
+ * Collaboration: portalApplication.ts owns session/API actions, table filtering and virtual-window calculations; this view
  * renders those snapshots and forwards user intent without mutating domain records.
  * Boundaries: server data is rendered through textContent, all destructive actions are explicit buttons, and
  * row virtualization remains owned by accountTableModel. dispose releases the scroll host and DOM listeners.

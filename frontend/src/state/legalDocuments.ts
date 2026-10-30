@@ -1,7 +1,7 @@
 /**
  * Responsibility: own public legal-document state and request sequencing without a UI-framework dependency.
  * Dependencies: structural value factory, API request transport and Markdown renderer.
- * Collaboration: App.vue currently adapts Vue refs; a native app can supply observable value cells unchanged.
+ * Collaboration: portalApplication.ts currently adapts signal-backed state cells; a native app can supply observable value cells unchanged.
  * Boundaries: requests are read-only; stale route results are ignored; publication and access policy remain server-owned.
  */
 import { apiRequest } from '../api/client'

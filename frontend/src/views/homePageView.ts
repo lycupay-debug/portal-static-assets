@@ -1,7 +1,7 @@
 /**
  * Responsibility: render the public portal landing page, category search and static about section with native DOM.
  * Dependencies: configured home-section data and route navigation callback.
- * Collaboration: App.vue owns global navigation/header/footer; this view owns only the landing-page content and local search.
+ * Collaboration: portalApplication.ts owns global navigation/header/footer; this view owns only the landing-page content and local search.
  * Boundaries: configured copy is inserted as text, no user data is interpreted as HTML, and anchor navigation is delegated.
  */
 import type { HomeSection } from '../config/homeSections'

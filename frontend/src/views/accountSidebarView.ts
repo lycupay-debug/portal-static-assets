@@ -1,7 +1,7 @@
 /**
  * Responsibility: render account navigation groups and active-section state in native DOM.
  * Dependencies: filtered account navigation configuration and route/expansion callbacks.
- * Collaboration: App.vue owns permission filtering and section routing; this view only projects navigation state.
+ * Collaboration: portalApplication.ts owns permission filtering and section routing; this view only projects navigation state.
  * Boundaries: no authorization is decided here; restricted groups are removed by the caller based on server session.
  */
 import type { AccountNavigationGroup } from '../navigation/accountNavigation'

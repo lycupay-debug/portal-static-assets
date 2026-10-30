@@ -1,6 +1,6 @@
 /**
  * Responsibility: load the authenticated teaching-resource list or trash collection.
- * Dependencies: the shared API client and generated resource type; App.vue owns view and UI state.
+ * Dependencies: the shared API client and generated resource type; portalApplication.ts owns view and UI state.
  * Collaboration: callers select active/trash mode and search term. A monotonically increasing request
  * sequence prevents a slower request from replacing a newer result; the captured view is also checked.
  * Side effects: performs read-only API requests and updates the supplied refs; it does not mutate records.

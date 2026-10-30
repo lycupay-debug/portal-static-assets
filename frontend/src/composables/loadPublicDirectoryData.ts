@@ -1,7 +1,7 @@
 /**
  * Responsibility: fetch public knowledge/article and education-resource directory lists.
  * Dependencies: the shared same-origin API client and generated API response types.
- * Collaboration: App.vue owns route selection and presentation state; this module updates the
+ * Collaboration: portalApplication.ts owns route selection and presentation state; this module updates the
  * supplied refs and owns request sequencing so an older search cannot replace a newer result.
  * Side effects: performs HTTP GET requests and updates loading/error/list refs; it does not
  * navigate, mutate server data, or own component lifecycle.

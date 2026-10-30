@@ -1,7 +1,7 @@
 /**
  * Responsibility: resolve a browser location into the portal's canonical client route and valid knowledge filters.
  * Dependencies: canonical route aliases and the single configured knowledge-category taxonomy.
- * Collaboration: App.vue applies the returned route/filter state before its navigation/session guards load data.
+ * Collaboration: portalApplication.ts applies the returned route/filter state before its navigation/session guards load data.
  * Boundaries: pure URL interpretation only; this module performs no history mutation, network request, DOM access,
  * session validation, or state mutation. Invalid category/subcategory values fall back to the documented defaults.
  */

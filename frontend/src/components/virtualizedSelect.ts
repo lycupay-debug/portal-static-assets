@@ -3,7 +3,7 @@
  * Dependencies: the caller-provided option/value contract and the host element's Document.
  * Collaboration: the caller owns selected state and option data; this module emits selection intent
  * and owns only transient query, open, scroll, and rendered DOM state.
- * Boundaries: no Vue dependency, API calls, global state, or HTML-string parsing. Labels are written
+ * Boundaries: no framework dependency, API calls, global state, or HTML-string parsing. Labels are written
  * through textContent. Empty-string option values remain valid selections.
  * Cleanup: dispose removes document listeners and all rendered DOM; repeated disposal is harmless.
  */

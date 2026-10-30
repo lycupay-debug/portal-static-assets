@@ -1,7 +1,7 @@
 /**
  * Responsibility: render the hierarchical knowledge-tag picker as an accessible native DOM dialog.
  * Dependencies: taxonomy options, immutable picker snapshots and explicit selection callbacks.
- * Collaboration: App.vue owns the draft/commit state machine in knowledgeTagSelection; this view owns only DOM.
+ * Collaboration: portalApplication.ts owns the draft/commit state machine in knowledgeTagSelection; this view owns only DOM.
  * Boundaries: category/tag values are rendered with textContent, never interpolated into HTML; no API or persistence.
  * Lifecycle: update preserves the focused control across snapshots; dispose clears the host and releases references.
  */

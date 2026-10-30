@@ -1,9 +1,9 @@
 /**
  * Responsibility: render a teaching-resource detail drawer using native DOM APIs.
  * Dependencies: the generated TeachingResource contract and shared resource file-size formatter.
- * Collaboration: App.vue owns resource selection and action behavior; this module renders the selected resource
+ * Collaboration: portalApplication.ts owns resource selection and action behavior; this module renders the selected resource
  * and reports close/edit/download intent through callbacks.
- * Boundaries: no API calls, application state mutation, Vue dependency, or HTML-string parsing. User-controlled
+ * Boundaries: no API calls, application state mutation, framework dependency, or HTML-string parsing. User-controlled
  * values are assigned through textContent; only HTTP(S) resource URLs become links.
  * Cleanup: remove document listeners and detach the rendered drawer when the owner disposes this mount.
  */

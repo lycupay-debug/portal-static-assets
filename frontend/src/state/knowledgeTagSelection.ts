@@ -1,7 +1,7 @@
 /**
  * Responsibility: manage the knowledge-tag picker draft, hierarchy normalization and focus restoration.
  * Dependencies: structural state-value factory, render scheduler and pure taxonomy helpers.
- * Collaboration: App.vue currently supplies Vue refs as the state adapter; a native DOM host can supply observable cells.
+ * Collaboration: portalApplication.ts currently supplies signal-backed state cells as the state adapter; a native DOM host can supply observable cells.
  * Boundaries: does not render DOM, perform API requests or own component lifecycle; focus targets and scheduling are injected.
  */
 import { normalizeKnowledgeTags, taxonomyParentNames } from '../utils/knowledgeTags'

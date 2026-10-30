@@ -1,7 +1,7 @@
 /**
  * Responsibility: provide the full content-authoring workspace using Tiptap core and native DOM.
  * Dependencies: shared editor schema/tools, native drag handle, image upload helper, and heading projection.
- * Collaboration: App.vue owns the Markdown value and disabled state; this view emits Markdown changes and owns
+ * Collaboration: portalApplication.ts owns the Markdown value and disabled state; this view emits Markdown changes and owns
  * transient menu/outline/zoom state. The Go API remains the authority for image upload and document persistence.
  * Boundaries: no Vue adapter, refs, watchers, or component lifecycle. Server-provided Markdown is parsed by Tiptap;
  * user-visible dynamic labels are assigned with textContent, while links are restricted to supported URL schemes.

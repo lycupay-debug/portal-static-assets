@@ -1,9 +1,9 @@
 /**
  * Responsibility: render and operate the compliance center with standard DOM APIs.
  * Dependencies: the framework-independent compliance controller and its typed state/actions.
- * Collaboration: App.vue owns this mount's lifetime and supplies the authenticated admin flag; Go remains the
+ * Collaboration: portalApplication.ts owns this mount's lifetime and supplies the authenticated admin flag; Go remains the
  * authority for every permission check and mutation. The controller owns API calls and request sequencing.
- * Boundaries: no Vue/runtime dependency; all server-provided values are escaped before insertion into fixed
+ * Boundaries: no framework runtime dependency; all server-provided values are escaped before insertion into fixed
  * markup, URLs are protocol-checked, and writes occur only from explicit user actions.
  * Cleanup: dispose removes delegated listeners, invalidates controller requests, and clears the host.
  */

@@ -80,7 +80,7 @@
   .knowledge-list-item { min-height: 100px; }
 }
 
-/* Native Vue/CSS knowledge category buttons; no UI component library. */
+/* Native DOM/CSS knowledge category buttons; no UI component library. */
 .knowledge-filter-section { padding-top: 22px; padding-bottom: 22px; }
 .knowledge-toolbar { width: 100%; }
 .knowledge-toolbar-controls { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: 100%; min-width: 0; }

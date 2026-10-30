@@ -1,7 +1,7 @@
 /**
  * Responsibility: render system warnings, live logs, and the policy/permissions tab shell with native DOM.
  * Dependencies: same-origin apiRequest transport plus the two native policy/permission modules.
- * Collaboration: App.vue owns route selection and mounts this module only for protected system-ops sections;
+ * Collaboration: portalApplication.ts owns route selection and mounts this module only for protected system-ops sections;
  * this module owns EventSource, polling, filters, cursor state, tab child lifecycles, and local DOM listeners.
  * Boundaries: logs are display-only; this module never executes commands or changes server policy itself.
  * Side effects: warnings poll every 15s while mounted; logs open one credentialed EventSource while mounted;

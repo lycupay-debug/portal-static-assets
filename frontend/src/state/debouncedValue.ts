@@ -1,7 +1,7 @@
 /**
  * Responsibility: provide a framework-independent delayed mirror of a source value.
  * Dependencies: caller-supplied value factory and subscription adapter; no global timer or lifecycle assumptions.
- * Collaboration: Vue may supply watch/ref adapters during migration; native state can supply subscribe/cell adapters.
+ * Collaboration: the application supplies state subscription adapters during migration; native state can supply subscribe/cell adapters.
  * Boundaries: source values are never mutated; dispose cancels pending work and detaches the source listener.
  */
 import type { MutableValue, ReadonlyValue } from './valueContracts'

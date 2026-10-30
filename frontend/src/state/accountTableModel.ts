@@ -1,7 +1,7 @@
 /**
  * Responsibility: derive account-table rows, filtering, responsive columns and virtual-scroll window metrics.
  * Dependencies: structural value contracts and pure record/filter/presentation utilities.
- * Collaboration: App.vue wraps the derived getters in Vue computed refs during migration; native views can consume them directly.
+ * Collaboration: portalApplication.ts wraps the derived getters in derived state cells during migration; native views can consume them directly.
  * Boundaries: does not access DOM, perform requests or mutate source collections; viewport width is injected.
  */
 import type { Content, TeachingResource } from '../api/generated'

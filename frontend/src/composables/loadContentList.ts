@@ -1,6 +1,6 @@
 /**
  * Responsibility: fetch active or trashed content records for the authenticated content-management view.
- * Dependencies: the shared API client and generated content type; App.vue supplies reactive state.
+ * Dependencies: the shared API client and generated content type; portalApplication.ts supplies reactive state.
  * Collaboration: callers select the search term/view; this loader owns request sequencing and prevents
  * older searches from overwriting a newer list. It does not perform mutations or navigation.
  * Side effects: issues same-origin read requests and updates list/loading/error refs.

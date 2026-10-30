@@ -1,7 +1,7 @@
 /**
  * Responsibility: render account overview, profile and session-security summaries in native DOM.
  * Dependencies: the authenticated user snapshot and logout callback supplied by the application shell.
- * Collaboration: App.vue owns session retrieval, authentication state and logout requests.
+ * Collaboration: portalApplication.ts owns session retrieval, authentication state and logout requests.
  * Boundaries: user data is inserted as text only; this view does not infer permissions or persist account data.
  */
 export type AccountIdentityUser = { email: string; displayName?: string | null; createdAt: string }

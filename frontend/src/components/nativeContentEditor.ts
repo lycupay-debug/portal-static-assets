@@ -2,7 +2,7 @@
  * Responsibility: instantiate and own a framework-independent Tiptap 3 editor in a supplied DOM element.
  * Dependencies: @tiptap/core Editor and the portal's shared Markdown/schema extension configuration.
  * Collaboration: a native DOM host owns the editor element and forwards Markdown updates to its parent.
- * Boundaries: no Vue refs, watchers, lifecycle hooks, or EditorContent wrapper; callers must dispose the instance.
+ * Boundaries: no signal-backed state cells, watchers, lifecycle hooks, or EditorContent wrapper; callers must dispose the instance.
  * Side effects: mounts ProseMirror into the provided element and invokes onMarkdownChange for document updates.
  */
 import { Editor } from '@tiptap/core'

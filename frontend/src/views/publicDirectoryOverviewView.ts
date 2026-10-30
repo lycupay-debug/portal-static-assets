@@ -1,7 +1,7 @@
 /**
  * Responsibility: render static public directory landing pages and their published-content cards.
  * Dependencies: page/tile configuration, read-only published content snapshots and a route navigation callback.
- * Collaboration: App.vue owns route/data loading and passes snapshots; this view owns only directory presentation.
+ * Collaboration: portalApplication.ts owns route/data loading and passes snapshots; this view owns only directory presentation.
  * Boundaries: all API/config text is written with textContent, external navigation is not synthesized, and no
  * business actions or authorization decisions are performed here. dispose releases delegated click listeners.
  */

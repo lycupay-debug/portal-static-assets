@@ -1,7 +1,7 @@
 /**
  * Responsibility: render login/registration forms with native DOM APIs and forward authentication intent.
  * Dependencies: DOM host, caller-owned form/busy values, submit action and route navigation callback.
- * Collaboration: App.vue supplies the existing framework-neutral authentication workflow; Go remains the auth authority.
+ * Collaboration: portalApplication.ts supplies the existing framework-neutral authentication workflow; Go remains the auth authority.
  * Boundaries: no HTML from users is interpolated; values are assigned through DOM properties, and listeners are disposed.
  */
 import type { MutableValue, ReadonlyValue } from '../state/valueContracts'

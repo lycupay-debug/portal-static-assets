@@ -2,7 +2,7 @@
  * Responsibility: render the teaching-resource create/edit dialog, validate files, and upload resources.
  * Dependencies: generated ResourceWrite/TeachingResource contracts, the native virtualized select,
  * FileReader/XMLHttpRequest browser APIs, and the on-demand resource-validation utility.
- * Collaboration: App.vue owns whether the dialog is open, receives busy/saved/completed/close callbacks,
+ * Collaboration: portalApplication.ts owns whether the dialog is open, receives busy/saved/completed/close callbacks,
  * and reloads the resource list after successful creation or update.
  * Boundaries: preserves existing /api/resources POST/PATCH contracts and sequential batch semantics;
  * backend validation and authorization remain authoritative. Dynamic text is always written as text.

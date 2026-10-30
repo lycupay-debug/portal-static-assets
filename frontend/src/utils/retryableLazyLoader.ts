@@ -1,7 +1,7 @@
 /**
  * Responsibility: cache one asynchronous loader initialization while allowing retry after failure.
  * Dependencies: a caller-provided promise factory; this helper has no framework or browser dependency.
- * Collaboration: App.vue uses it for lazily imported list-loader modules, sharing concurrent initialization.
+ * Collaboration: portalApplication.ts uses it for lazily imported list-loader modules, sharing concurrent initialization.
  * Boundaries: successful values remain cached; rejected initialization is not cached, while operation errors
  * occurring after initialization belong to the loaded module and do not reset this cache.
  */

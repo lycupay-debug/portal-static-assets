@@ -1,7 +1,7 @@
 /**
  * Responsibility: render the shared notification queue with native DOM APIs.
  * Dependencies: notification-store subscription and the Bootstrap Icons CSS classes.
- * Collaboration: App.vue mounts this host and owns the disposer; portalNotify publishes changes.
+ * Collaboration: portalApplication.ts mounts this host and owns the disposer; portalNotify publishes changes.
  * Boundaries: no framework runtime, network access, or HTML-string parsing; all user text uses textContent.
  * Cleanup: unsubscribe, remove delegated click handling, and detach the host when the owner unmounts.
  */

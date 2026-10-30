@@ -1,12 +1,11 @@
-<!--
-Responsibility: compose portal routes, page-level reactive state, and the user-facing application template.
-Dependencies: focused composables for URL resolution, authentication, data loading, editing, and table behavior.
-Collaboration: App.vue coordinates route/session gates and view state; Go remains the authority for authentication and permissions.
-Boundaries: avoid embedding reusable business workflows here; browser lifecycle and route sequencing remain explicit,
-while extracted composables own independently testable state transitions and side effects.
--->
-<script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch, type Ref } from 'vue'
+/**
+ * Responsibility: compose portal route state, API workflows and native DOM views for one application root.
+ * Dependencies: framework-independent state/controllers and browser APIs; no framework runtime, SFC or template compiler.
+ * Collaboration: native page views own their DOM; Go API owns authorization and business rules; this module owns
+ * application-wide state coordination, route gates, lazy data loading and mount/dispose ordering.
+ * Boundaries: API contracts remain generated from OpenAPI; no production configuration or service lifecycle changes.
+ */
+import { computed, createWatchScope, nextTick, ref, watch } from './state/reactivity'
 import { apiRequest } from './api/client'
 import { createKnowledgeDirectoryController } from './state/knowledgeDirectory'
 import { createDebouncedValue } from './state/debouncedValue'
@@ -16,7 +15,7 @@ import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
 import { createKnowledgeTagSelection } from './state/knowledgeTagSelection'
-import type { MutableValue } from './state/valueContracts'
+import type { MutableValue, ReadonlyValue } from './state/valueContracts'
 import { createScrollRestoration } from './state/scrollRestoration'
 import { createPublicArticleActions } from './composables/usePublicArticleActions'
 import { createLegalDocumentsController } from './state/legalDocuments'
@@ -42,7 +41,10 @@ import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource } from './api/generated'
 
-const createVueValue = <T>(initial: T): MutableValue<T> => ref(initial) as MutableValue<T>
+export function mountPortalApplication(root: HTMLElement): () => void {
+  const watchScope = createWatchScope()
+  return watchScope.run(() => {
+const createStateValue = <T>(initial: T): MutableValue<T> => ref(initial)
 
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 
@@ -80,7 +82,6 @@ type ContentForm = {
 type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'tags' | 'parentCategory' | 'childCategory' | 'summary' | 'publishedAt'>
 type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt' | 'updatedAt'> & { authorName: string; authorJoinedAt: string; likeCount: number; favoriteCount: number; viewerLiked: boolean; viewerFavorited: boolean }
 
-const portalRootHost = ref<HTMLElement | null>(null)
 let portalRootView: ReturnType<typeof mountPortalRootView> | null = null
 const menuOpen = ref(false)
 const route = ref(window.location.pathname || '/')
@@ -218,7 +219,7 @@ watch([accountSidebarHost, filteredAccountGroups, activeSidebarButton, expandedA
 
 
 const tableQuery = ref('')
-const tableQueryDebounce = createDebouncedValue(tableQuery, 150, { createValue: createVueValue, subscribe: (source, listener) => watch(source as never, listener) })
+const tableQueryDebounce = createDebouncedValue(tableQuery, 150, { createValue: createStateValue, subscribe: (source, listener) => watch(source as never, listener) })
 const debouncedTableQuery = tableQueryDebounce.value
 watch(debouncedTableQuery as typeof tableQuery, (query) => {
   if (activeAccountSection.value === 'content-management') void loadContentList(query)
@@ -338,7 +339,7 @@ const {
   removeSelected: removeSelectedKnowledgeTag,
   clearSelected: clearSelectedKnowledgeTags,
 } = createKnowledgeTagSelection(contentForm, contentBusy, {
-  createValue: createVueValue,
+  createValue: createStateValue,
   afterRender: () => nextTick(),
 })
 const selectedKnowledgeTagCount = computed(() => selectedKnowledgeTagCountValue.value)
@@ -692,13 +693,13 @@ watch(tableColumnTemplate, value => { virtualTableScrollElement.value?.style.set
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
-const legalDocumentsController = createLegalDocumentsController(route, { createValue: createVueValue })
+const legalDocumentsController = createLegalDocumentsController(route, { createValue: createStateValue })
 const legalSlug = computed(() => legalDocumentsController.legalSlug.value)
-const publishedLegalDocuments = legalDocumentsController.publishedLegalDocuments as Ref<typeof legalDocumentsController.publishedLegalDocuments.value>
-const legalDocument = legalDocumentsController.legalDocument as Ref<typeof legalDocumentsController.legalDocument.value>
-const legalDocumentHtml = legalDocumentsController.legalDocumentHtml as Ref<string>
-const legalDocumentLoading = legalDocumentsController.legalDocumentLoading as Ref<boolean>
-const legalDocumentError = legalDocumentsController.legalDocumentError as Ref<string>
+const publishedLegalDocuments = legalDocumentsController.publishedLegalDocuments as ReadonlyValue<typeof legalDocumentsController.publishedLegalDocuments.value>
+const legalDocument = legalDocumentsController.legalDocument as ReadonlyValue<typeof legalDocumentsController.legalDocument.value>
+const legalDocumentHtml = legalDocumentsController.legalDocumentHtml as ReadonlyValue<string>
+const legalDocumentLoading = legalDocumentsController.legalDocumentLoading as ReadonlyValue<boolean>
+const legalDocumentError = legalDocumentsController.legalDocumentError as ReadonlyValue<string>
 const { loadPublishedLegalDocuments, loadLegalDocument } = legalDocumentsController
 const legalPageHost = ref<HTMLElement | null>(null)
 let legalPageMountSequence = 0
@@ -803,16 +804,16 @@ watch([directoryOverviewHost, route], ([host, path]) => {
 watch([directoryContentItems, publicContentLoading, publicContentError], updateDirectoryOverviewView)
 
 const knowledgeDirectory = createKnowledgeDirectoryController(route, directoryContentItems, filteredEducationResources, navigate, {
-  createValue: createVueValue,
+  createValue: createStateValue,
   browser: window,
   document,
 })
-const knowledgeVisibleCount = knowledgeDirectory.knowledgeVisibleCount as Ref<number>
+const knowledgeVisibleCount = knowledgeDirectory.knowledgeVisibleCount as MutableValue<number>
 watch(knowledgeVisibleCount, updateEducationResourceDirectoryView)
-const knowledgeCategory = knowledgeDirectory.knowledgeCategory as Ref<string>
-const knowledgeSubcategory = knowledgeDirectory.knowledgeSubcategory as Ref<string>
-const knowledgeSearchQuery = knowledgeDirectory.knowledgeSearchQuery as Ref<string>
-const highlightedKnowledgeSuggestion = knowledgeDirectory.highlightedKnowledgeSuggestion as Ref<number>
+const knowledgeCategory = knowledgeDirectory.knowledgeCategory as MutableValue<string>
+const knowledgeSubcategory = knowledgeDirectory.knowledgeSubcategory as MutableValue<string>
+const knowledgeSearchQuery = knowledgeDirectory.knowledgeSearchQuery as MutableValue<string>
+const highlightedKnowledgeSuggestion = knowledgeDirectory.highlightedKnowledgeSuggestion as MutableValue<number>
 const {
   knowledgePageSize, handleKnowledgeAutocompleteSelect, onKnowledgeSearchKeydown,
   chooseKnowledgeCategory, onKnowledgePageScroll, ensureKnowledgeListFilled,
@@ -864,7 +865,7 @@ watch([knowledgeDirectoryHost, route], ([host, path]) => {
   })
 }, { flush: 'post' })
 watch([knowledgeCategory, knowledgeSubcategory, knowledgeSearchQuery, highlightedKnowledgeSuggestion, knowledgeFilteredItems, visibleDirectoryContentItems, publicContentLoading, publicContentError], updateKnowledgeDirectoryView, { deep: true })
-onUpdated(ensureKnowledgeListFilled)
+watch([knowledgeDirectoryHost, visibleDirectoryContentItems], ensureKnowledgeListFilled, { flush: 'post' })
 
 function closeMenu() { menuOpen.value = false }
 const { saveScrollPosition, restoreScrollPosition } = createScrollRestoration(route, { browser: window, document, storage: sessionStorage, afterRender: () => nextTick() })
@@ -883,9 +884,9 @@ const getPublicDirectoryLoader = createRetryableLazyLoader<PublicDirectoryLoader
     isContentViewCurrent: () => route.value === '/' || route.value === '/knowledge' || (isPublicDirectoryPage.value && route.value !== '/education-resources'),
   })),
 )
-const knowledgeSearchDebounce = createDebouncedValue(knowledgeSearchQuery, 220, { createValue: createVueValue, subscribe: (source, listener) => watch(source as never, listener) })
+const knowledgeSearchDebounce = createDebouncedValue(knowledgeSearchQuery, 220, { createValue: createStateValue, subscribe: (source, listener) => watch(source as never, listener) })
 const debouncedKnowledgeSearchQuery = knowledgeSearchDebounce.value
-const educationResourceSearchDebounce = createDebouncedValue(educationResourceSearch, 220, { createValue: createVueValue, subscribe: (source, listener) => watch(source as never, listener) })
+const educationResourceSearchDebounce = createDebouncedValue(educationResourceSearch, 220, { createValue: createStateValue, subscribe: (source, listener) => watch(source as never, listener) })
 const debouncedEducationResourceSearchQuery = educationResourceSearchDebounce.value
 let navigationSequence = 0
 function loadPublicContents(searchTerm = '') {
@@ -1053,16 +1054,8 @@ function getPortalRootState() {
     accountTableMode: Boolean(activeTableDefinition.value),
   }
 }
-watch([portalRootHost, route, activeAccountSection, activeTableDefinition], () => {
-  const host = portalRootHost.value
-  if (!host) { portalRootView?.dispose(); portalRootView = null; return }
-  if (!portalRootView) portalRootView = mountPortalRootView(host, {
-    getState: getPortalRootState,
-    navigate,
-    scrollToTop,
-    setHost: setPortalRootHost,
-  })
-  portalRootView.update(getPortalRootState())
+watch([route, activeAccountSection, activeTableDefinition], () => {
+  portalRootView?.update(getPortalRootState())
 }, { flush: 'post' })
 watch([siteHeaderHost, menuOpen, user], () => {
   const host = siteHeaderHost.value
@@ -1103,85 +1096,83 @@ watch([knowledgeTagDialogHost, knowledgeTagDialogOpen, knowledgeTagDraft, expand
   knowledgeTagDialogView.update(state)
 }, { deep: true, flush: 'post' })
 
-onMounted(() => {
-  disposeNotificationHost = mountNotificationHost(document.body)
-  void portalNavigation?.start()
-})
-onBeforeUnmount(() => {
-  portalRootView?.dispose()
-  portalRootView = null
-  siteHeaderView?.dispose()
-  siteHeaderView = null
-  siteFooterView?.dispose()
-  siteFooterView = null
-  knowledgeTagDialogView?.dispose()
-  knowledgeTagDialogView = null
-  authPageMountSequence += 1
-  homePageMountSequence += 1
-  homePageView?.dispose()
-  homePageView = null
-  accountTableViewMountSequence += 1
-  accountTableView?.dispose()
-  accountTableView = null
-  accountSidebarMountSequence += 1
-  accountSidebarView?.dispose()
-  accountSidebarView = null
-  accountIdentityMountSequence += 1
-  accountIdentityView?.dispose()
-  accountIdentityView = null
-  educationResourceDirectoryMountSequence += 1
-  educationResourceDirectoryView?.dispose()
-  educationResourceDirectoryView = null
-  knowledgeDirectoryMountSequence += 1
-  knowledgeDirectoryView?.dispose()
-  knowledgeDirectoryView = null
-  directoryOverviewMountSequence += 1
-  directoryOverviewView?.dispose()
-  directoryOverviewView = null
-  publicArticleMountSequence += 1
-  publicArticleView?.dispose()
-  publicArticleView = null
-  legalPageMountSequence += 1
-  legalPageView?.dispose()
-  legalPageView = null
-  disposeAuthPage?.()
-  disposeAuthPage = null
-  contentEditorMountSequence += 1
-  nativeContentEditor?.dispose()
-  nativeContentEditor = null
-  teachingResourceEditorSequence += 1
-  disposeTeachingResourceEditor?.()
-  disposeTeachingResourceEditor = null
-  complianceMountSequence += 1
-  disposeComplianceCenter?.()
-  disposeComplianceCenter = null
-  systemOpsMountSequence += 1
-  disposeSystemOpsCenter?.()
-  disposeSystemOpsCenter = null
-  disposeNotificationHost?.()
-  disposeNotificationHost = null
-  contentSettingsView?.dispose()
-  contentSettingsView = null
-  contentWorkspaceTopbarView?.dispose()
-  contentWorkspaceTopbarView = null
-  disposeTeachingResourceDrawer?.()
-  disposeTeachingResourceDrawer = null
-  if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
-  educationResourcePreviousBodyOverflow = ''
-  saveScrollPosition()
-  portalNavigation?.dispose()
-  portalNavigation = null
-  tableResizeObserver?.disconnect()
-  tableQueryDebounce.dispose()
-  knowledgeSearchDebounce.dispose()
-  educationResourceSearchDebounce.dispose()
-})
-</script>
+const rootHost = document.createElement('div')
+rootHost.id = 'portal-root-host'
+root.replaceChildren(rootHost)
+disposeNotificationHost = mountNotificationHost(document.body)
+portalRootView = mountPortalRootView(rootHost, { getState: getPortalRootState, navigate, scrollToTop, setHost: setPortalRootHost })
+void portalNavigation?.start()
 
-<template>
-  <div ref="portalRootHost"></div>
-</template>
-
-<style src="./app.css"></style>
-
-<style src="./theme.css"></style>
+return () => {
+  watchScope.dispose()
+    portalRootView?.dispose()
+    portalRootView = null
+    siteHeaderView?.dispose()
+    siteHeaderView = null
+    siteFooterView?.dispose()
+    siteFooterView = null
+    knowledgeTagDialogView?.dispose()
+    knowledgeTagDialogView = null
+    authPageMountSequence += 1
+    homePageMountSequence += 1
+    homePageView?.dispose()
+    homePageView = null
+    accountTableViewMountSequence += 1
+    accountTableView?.dispose()
+    accountTableView = null
+    accountSidebarMountSequence += 1
+    accountSidebarView?.dispose()
+    accountSidebarView = null
+    accountIdentityMountSequence += 1
+    accountIdentityView?.dispose()
+    accountIdentityView = null
+    educationResourceDirectoryMountSequence += 1
+    educationResourceDirectoryView?.dispose()
+    educationResourceDirectoryView = null
+    knowledgeDirectoryMountSequence += 1
+    knowledgeDirectoryView?.dispose()
+    knowledgeDirectoryView = null
+    directoryOverviewMountSequence += 1
+    directoryOverviewView?.dispose()
+    directoryOverviewView = null
+    publicArticleMountSequence += 1
+    publicArticleView?.dispose()
+    publicArticleView = null
+    legalPageMountSequence += 1
+    legalPageView?.dispose()
+    legalPageView = null
+    disposeAuthPage?.()
+    disposeAuthPage = null
+    contentEditorMountSequence += 1
+    nativeContentEditor?.dispose()
+    nativeContentEditor = null
+    teachingResourceEditorSequence += 1
+    disposeTeachingResourceEditor?.()
+    disposeTeachingResourceEditor = null
+    complianceMountSequence += 1
+    disposeComplianceCenter?.()
+    disposeComplianceCenter = null
+    systemOpsMountSequence += 1
+    disposeSystemOpsCenter?.()
+    disposeSystemOpsCenter = null
+    disposeNotificationHost?.()
+    disposeNotificationHost = null
+    contentSettingsView?.dispose()
+    contentSettingsView = null
+    contentWorkspaceTopbarView?.dispose()
+    contentWorkspaceTopbarView = null
+    disposeTeachingResourceDrawer?.()
+    disposeTeachingResourceDrawer = null
+    if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
+    educationResourcePreviousBodyOverflow = ''
+    saveScrollPosition()
+    portalNavigation?.dispose()
+    portalNavigation = null
+    tableResizeObserver?.disconnect()
+    tableQueryDebounce.dispose()
+    knowledgeSearchDebounce.dispose()
+    educationResourceSearchDebounce.dispose()
+  root.replaceChildren()
+}
+  })
+}

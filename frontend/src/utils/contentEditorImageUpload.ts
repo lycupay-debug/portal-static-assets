@@ -2,7 +2,7 @@
  * Responsibility: validate, read, upload and insert one selected editor image.
  * Dependencies: the shared image validation/upload API and a framework-independent Tiptap Editor instance.
  * Collaboration: the native editor view supplies state callbacks; portal notification reports user-facing errors.
- * Boundaries: no Vue refs or lifecycle dependency; an upload never runs without a live editor and valid image.
+ * Boundaries: no signal-backed state cells or lifecycle dependency; an upload never runs without a live editor and valid image.
  */
 import type { Editor } from '@tiptap/core'
 import { portalNotify } from './notification'
