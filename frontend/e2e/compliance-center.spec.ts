@@ -83,6 +83,6 @@ test('native compliance view preserves asset review and policy mutation workflow
   await page.getByRole('button', { name: '内部政策文件' }).click()
   await page.getByRole('button', { name: '编辑/审核' }).click()
   await page.locator('[data-form="document"] input[name="changeNote"]').fill('Native view E2E')
-  await page.locator('[data-form="document"] button[type="submit"]').click()
+  await page.locator('[data-form="document"]').getByRole('button', { name: '保存/提交状态' }).click()
   await expect.poll(() => writes.some(write => write.path.endsWith('/documents/privacy') && write.method === 'PATCH' && (write.body as any)?.changeNote === 'Native view E2E')).toBe(true)
 })
