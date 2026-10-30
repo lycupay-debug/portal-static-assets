@@ -660,7 +660,8 @@ function updateAccountTableView() {
   }
   accountTableView.update(state)
 }
-watch([accountTableViewHost, activeAccountSection, activeAccountItem, activeTableDefinition, versionsContentId, versionsContentTitle, contentVersions, contentBusy, contentLoading, resourceBusy, filteredTableRecords, visibleTableRecords, tableColumnTemplate, virtualTableTopSpace, virtualTableBottomSpace, tableQuery, contentViewMode, resourceViewMode, selectedTableCell], updateAccountTableView, { deep: true, flush: 'post' })
+watch([accountTableViewHost, activeAccountSection, activeAccountItem, activeTableDefinition, versionsContentId, versionsContentTitle, contentVersions, contentBusy, contentLoading, resourceBusy, filteredTableRecords, visibleTableRecords, virtualTableTopSpace, virtualTableBottomSpace, tableQuery, contentViewMode, resourceViewMode, selectedTableCell], updateAccountTableView, { deep: true, flush: 'post' })
+watch(tableColumnTemplate, value => { virtualTableScrollElement.value?.style.setProperty('--table-columns', value) })
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
