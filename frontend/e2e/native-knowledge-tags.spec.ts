@@ -5,12 +5,12 @@ const adminSession = { user: { id: 'tags-e2e-admin', email: 'tags-e2e@example.te
 
 test('content settings open, commit and remove taxonomy tags through native DOM', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminSession) }))
-  await page.goto('/content-management/new')
-  await expect(page.locator('.workspace-save-draft')).toBeVisible()
+  await page.goto('/content-management/new', { waitUntil: 'domcontentloaded', timeout: 10000 })
+  await expect(page.locator('.workspace-save-draft')).toBeVisible({ timeout: 10000 })
 
   await page.getByRole('button', { name: /点击选择标签/ }).click({ timeout: 5000 })
   const dialog = page.getByRole('dialog', { name: '选择知识广场标签' })
-  await expect(dialog).toBeVisible()
+  await expect(dialog).toBeVisible({ timeout: 5000 })
   await dialog.locator('input[type="checkbox"]').first().click({ timeout: 5000 })
   await expect(dialog.locator('.knowledge-tag-dialog-footer strong')).toHaveText('1')
   await dialog.getByRole('button', { name: '完成' }).click({ timeout: 5000 })
