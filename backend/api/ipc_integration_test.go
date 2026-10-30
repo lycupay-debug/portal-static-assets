@@ -30,7 +30,18 @@ func TestIPCClientAgainstRealEventCore(t *testing.T) {
 		t.Fatalf("event-core binary is unavailable: %q (%v)", binary, err)
 	}
 
-	socketPath := filepath.Join(t.TempDir(), "event.sock")
+	// sockaddr_un has a short platform-specific path limit (104 bytes on macOS).
+	// t.TempDir() inherits the deep GitHub runner workspace path, so keep the
+	// socket under /tmp to make the native kqueue integration portable.
+	tempDir, err := os.MkdirTemp("/tmp", "ppipc-")
+	if err != nil {
+		t.Fatalf("create short IPC temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+	socketPath := filepath.Join(tempDir, "e.sock")
+	if len(socketPath) >= 100 {
+		t.Fatalf("temporary IPC socket path is too long for sockaddr_un: %s", socketPath)
+	}
 	client := IPCClient{SocketPath: socketPath, Timeout: 750 * time.Millisecond}
 
 	stopCore := func(core *eventCoreProcess) {
