@@ -65,7 +65,7 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		a.dbError(w, err, "图片登记失败。")
 		return
 	}
-	writeJSON(w, 201, map[string]any{"url": "/uploads/" + name, "mime": mime, "size": len(data), "public": false})
+	writeJSON(w, 201, map[string]any{"url": "/api/uploads/" + name, "mime": mime, "size": len(data), "public": false})
 }
 
 func (a *portalAPI) serveUploadedImage(w http.ResponseWriter, r *http.Request) {

@@ -36,7 +36,7 @@
 
 ## 当前开发版部署（公网测试环境）
 
-当前公网门户由独立开发栈提供服务。开发 API 监听 `127.0.0.1:8082`，数据库为 `personal_portal_dev`，事件 socket 为 `/var/run/portal-static-assets-dev/event.sock`，上传和资源文件分别位于 `/var/db/portal-static-assets-dev/uploads` 与 `/var/db/portal-static-assets-dev/resources`。运行用户为 `personalportal`，注册默认关闭。Caddy 的 `Caddyfile.dev-public` 将 `/api/*` 去前缀转发到开发 API，并将 `/uploads/*` 原路径转发到 Go API 的图片权限检查；不得使用静态 `file_server` 直接暴露上传目录。
+当前公网门户由独立开发栈提供服务。开发 API 监听 `127.0.0.1:8082`，数据库为 `personal_portal_dev`，事件 socket 为 `/var/run/portal-static-assets-dev/event.sock`，上传和资源文件分别位于 `/var/db/portal-static-assets-dev/uploads` 与 `/var/db/portal-static-assets-dev/resources`。运行用户为 `personalportal`，注册默认关闭。Caddy 的 `Caddyfile.dev-public` 将 `/api/*` 去前缀转发到开发 API；图片使用 `/api/uploads/*`，仅去除 `/api` 后交给 Go 的 `/uploads/*` 权限检查。旧内容中的 `/uploads/*` 地址通过 308 重定向到 `/api/uploads/*`，确保浏览器发送 `Path=/api` 会话 Cookie；不得使用静态 `file_server` 直接暴露上传目录。
 
 完成源码验证、GitHub 同步并提交后，开发部署命令为：
 

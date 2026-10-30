@@ -102,21 +102,22 @@ func TestPortalObjectOwnershipAndUploadAccess(t *testing.T) {
 	var uploadResult struct {
 		URL string `json:"url"`
 	}
-	if err := json.Unmarshal(upload.Body.Bytes(), &uploadResult); err != nil || !strings.HasPrefix(uploadResult.URL, "/uploads/") {
+	if err := json.Unmarshal(upload.Body.Bytes(), &uploadResult); err != nil || !strings.HasPrefix(uploadResult.URL, "/api/uploads/") {
 		t.Fatalf("invalid upload response: %s err=%v", upload.Body.String(), err)
 	}
-	imageName := strings.TrimPrefix(uploadResult.URL, "/uploads/")
+	imagePath := strings.TrimPrefix(uploadResult.URL, "/api")
+	imageName := strings.TrimPrefix(imagePath, "/uploads/")
 	t.Cleanup(func() {
 		_, _ = db.Exec(`DELETE FROM portal.uploaded_images WHERE filename=$1`, imageName)
 		_ = os.Remove(filepath.Join(uploadDir, imageName))
 	})
-	if got := securityTestRequest(api, http.MethodGet, uploadResult.URL, ownerToken, "").Code; got != http.StatusOK {
+	if got := securityTestRequest(api, http.MethodGet, imagePath, ownerToken, "").Code; got != http.StatusOK {
 		t.Fatalf("image owner read status = %d, want 200", got)
 	}
-	if got := securityTestRequest(api, http.MethodGet, uploadResult.URL, otherToken, "").Code; got != http.StatusNotFound {
+	if got := securityTestRequest(api, http.MethodGet, imagePath, otherToken, "").Code; got != http.StatusNotFound {
 		t.Fatalf("non-owner private image read status = %d, want 404", got)
 	}
-	if got := securityTestRequest(api, http.MethodGet, uploadResult.URL, "", "").Code; got != http.StatusNotFound {
+	if got := securityTestRequest(api, http.MethodGet, imagePath, "", "").Code; got != http.StatusNotFound {
 		t.Fatalf("anonymous private image read status = %d, want 404", got)
 	}
 
@@ -126,7 +127,7 @@ func TestPortalObjectOwnershipAndUploadAccess(t *testing.T) {
 		t.Fatalf("insert public image reference: %v", err)
 	}
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM portal.portal_content WHERE content_id=$1::uuid`, publicContentID) })
-	if got := securityTestRequest(api, http.MethodGet, uploadResult.URL, "", "").Code; got != http.StatusOK {
+	if got := securityTestRequest(api, http.MethodGet, imagePath, "", "").Code; got != http.StatusOK {
 		t.Fatalf("publicly referenced image status = %d, want 200", got)
 	}
 }

@@ -30,8 +30,14 @@ www.lycupaynotion.top {
 		redir https://{http.request.host}/content-management{path} 308
 	}
 
-	# Uploaded images must pass through the Go API ownership/public-reference gate.
+	# Legacy content URLs redirect under /api so the Path=/api session cookie is sent.
 	handle /uploads/* {
+		redir /api{uri} 308
+	}
+
+	# Strip only the public API prefix; Go receives /uploads/<filename> for authorization.
+	handle /api/uploads/* {
+		uri strip_prefix /api
 		reverse_proxy 127.0.0.1:8082 {
 			header_up X-Portal-Client-IP {client_ip}
 		}

@@ -31,6 +31,8 @@ expect_http "https://www.lycupaynotion.top/api/auth/me" 401
 grep -q '"error"' "$tmp"
 expect_http "https://www.lycupaynotion.top/api/resources" 401
 grep -q '"error"' "$tmp"
+expect_http "https://www.lycupaynotion.top/uploads/00000000-0000-4000-8000-000000000000.png" 308
+expect_http "https://www.lycupaynotion.top/api/uploads/00000000-0000-4000-8000-000000000000.png" 404
 expect_http "https://www.lycupaynotion.top/api/events" 404
 expect_http "https://www.lycupaynotion.top/api/dbz" 404
 expect_http "https://www.lycupaynotion.top/api/readyz" 404

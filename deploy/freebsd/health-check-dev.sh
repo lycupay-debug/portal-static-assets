@@ -4,7 +4,7 @@ set -eu
 
 api="http://127.0.0.1:8082"
 tmp="/tmp/portal-static-assets-dev-health-$$"
-trap 'rm -f "$tmp"' EXIT HUP INT TERM
+trap 'rm -f "$tmp" "$tmp.headers"' EXIT HUP INT TERM
 
 expect_http() {
   path="$1"
@@ -26,7 +26,14 @@ expect_http /account 200
 expect_http /api/public/content 200
 expect_http /api/auth/me 401
 expect_http /api/resources 401
-expect_http /uploads/00000000-0000-4000-8000-000000000000.png 404
+legacy_image_headers="$tmp.headers"
+legacy_image_code=$(curl --resolve www.lycupaynotion.top:443:127.0.0.1 --max-time 8 -sS -D "$legacy_image_headers" -o "$tmp" -w '%{http_code}' https://www.lycupaynotion.top/uploads/00000000-0000-4000-8000-000000000000.png)
+if [ "$legacy_image_code" != "308" ] || ! grep -iqF 'Location: /api/uploads/00000000-0000-4000-8000-000000000000.png' "$legacy_image_headers"; then
+  echo "FAIL: legacy image URL must redirect to the cookie-covered API path (HTTP 308)." >&2
+  cat "$legacy_image_headers" >&2
+  exit 1
+fi
+expect_http /api/uploads/00000000-0000-4000-8000-000000000000.png 404
 upload_unauth_code=$(curl --resolve www.lycupaynotion.top:443:127.0.0.1 --max-time 8 -sS -o "$tmp" -w '%{http_code}' \
   -X POST -H 'Content-Type: application/json' --data '{}' \
   https://www.lycupaynotion.top/api/uploads)

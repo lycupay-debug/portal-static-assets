@@ -20,7 +20,7 @@ flowchart TB
   Browser --> CF --> Caddy
   Caddy -->|/ and static assets| Static
   Caddy -->|/api/* strip /api| API
-  Caddy -->|/uploads/* keep path| API
+  Caddy -->|/api/uploads/* strip /api; legacy /uploads/* redirect| API
   API --> DB
   API --> FS
   API <-->|IPC v2 metadata + ACK| IPC
@@ -147,7 +147,7 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 ## 5. Trust boundaries and security invariants
 
 - Cloudflare proxy ranges and `CF-Connecting-IP` are configured at Caddy. Caddy supplies `X-Portal-Client-IP`; Go trusts that header only when the peer is loopback. Generic `X-Forwarded-For` is ignored.
-- Caddy strips `/api` for API routes and forwards `/uploads/*` without stripping so the Go image authorization gate handles file reads. Static fallback must never answer `/uploads/*`.
+- Caddy strips `/api` for API routes. Image reads use `/api/uploads/*`, with only `/api` stripped before Go's `/uploads/*` ownership gate; legacy `/uploads/*` URLs redirect to the API-prefixed path so the browser sends the `Path=/api` session cookie. Static fallback must never answer upload paths.
 - `/api/events`, `/api/dbz`, `/api/readyz`, and `/api/metrics` are blocked at the public gateway; these endpoints remain loopback-only operational surfaces.
 - The Go API and C event core run as `personalportal`, not root. The C Unix socket is mode `0600`; C does not listen on TCP.
 - Runtime database role is least-privilege `personal_portal_app`; schema ownership is separated into non-login `personal_portal_owner`.

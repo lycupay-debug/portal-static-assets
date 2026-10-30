@@ -7,9 +7,14 @@
 }
 
 www.lycupaynotion.top {
-	# Image requests must pass through the API rights gate; never serve this
-	# directory directly from Caddy because that bypasses per-asset review.
+	# Legacy content URLs redirect under /api so the Path=/api session cookie is sent.
 	handle /uploads/* {
+		redir /api{uri} 308
+	}
+
+	# Strip only the public API prefix; Go receives /uploads/<filename> for authorization.
+	handle /api/uploads/* {
+		uri strip_prefix /api
 		reverse_proxy 127.0.0.1:8081 {
 			header_up X-Portal-Client-IP {client_ip}
 		}
@@ -71,7 +76,6 @@ www.lycupaynotion.top {
 go.lycupaynotion.top {
 	reverse_proxy 127.0.0.1:8766
 }
-
 
 assets.lycupaynotion.top {
 	@staticAssets path /assets/*
