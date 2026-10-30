@@ -78,7 +78,6 @@ type ContentForm = {
 type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'tags' | 'parentCategory' | 'childCategory' | 'summary' | 'publishedAt'>
 type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt' | 'updatedAt'> & { authorName: string; authorJoinedAt: string; likeCount: number; favoriteCount: number; viewerLiked: boolean; viewerFavorited: boolean }
 
-const query = ref('')
 const menuOpen = ref(false)
 const route = ref(window.location.pathname || '/')
 const user = ref<PortalUser | null>(null)
@@ -502,11 +501,6 @@ function cancelContentEditor() {
 function editContent(id: string) {
   window.location.assign('/content-management/' + encodeURIComponent(id))
 }
-const filteredSections = computed(() => {
-  const keyword = query.value.trim().toLocaleLowerCase()
-  if (!keyword) return homeSections
-  return homeSections.filter((section) => [section.title, section.subtitle, section.description, ...section.tags].join(' ').toLocaleLowerCase().includes(keyword))
-})
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
@@ -569,6 +563,24 @@ watch([publicArticleHost, route], ([host, path]) => {
   })
 }, { flush: 'post' })
 watch([publicArticle, publicArticleHtml, publicContentLoading, publicContentError, publicInteractionBusy, user, shareDialogOpen, shareUrl], updatePublicArticleView, { deep: true })
+const homePageHost = ref<HTMLElement | null>(null)
+let homePageMountSequence = 0
+let homePageReady: Promise<void> = Promise.resolve()
+let homePageView: { dispose: () => void } | null = null
+watch([homePageHost, route], ([host, path]) => {
+  const sequence = ++homePageMountSequence
+  homePageView?.dispose()
+  homePageView = null
+  if (!host || path !== '/') return
+  homePageReady = import('./views/homePageView').then(module => {
+    if (sequence !== homePageMountSequence || host !== homePageHost.value) return
+    homePageView = module.mountHomePageView(host, homeSections, navigate)
+  }).catch((error: unknown) => {
+    if (sequence !== homePageMountSequence || host !== homePageHost.value) return
+    host.textContent = '首页内容加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '首页内容加载失败', '首页')
+  })
+}, { flush: 'post' })
 const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
 const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
 const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
@@ -747,7 +759,7 @@ portalNavigation = createPortalNavigationController({
   loadSession,
   observeVirtualTableWidth,
   onScrollCapture,
-  afterRender: () => nextTick(),
+  afterRender: async () => { await nextTick(); await homePageReady },
 })
 let disposeNotificationHost: (() => void) | null = null
 onMounted(() => {
@@ -756,6 +768,9 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   authPageMountSequence += 1
+  homePageMountSequence += 1
+  homePageView?.dispose()
+  homePageView = null
   publicArticleMountSequence += 1
   publicArticleView?.dispose()
   publicArticleView = null
@@ -863,36 +878,7 @@ onBeforeUnmount(() => {
       </Teleport>
     </main>
 
-    <main v-else-if="route === '/'" id="top">
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow"><span class="status-dot"></span> A PERSONAL KNOWLEDGE SPACE</p>
-          <h1>把想法整理好，<br /><span>让行动有迹可循。</span></h1>
-          <p class="hero-description">一个持续生长的个人门户，用来整理知识、构建工具、归档资源，并记录从想法到实践的过程。</p>
-          <div class="hero-actions"><a class="btn btn-dark button button-primary" href="/#explore" @click.prevent="navigate('/#explore')">开始探索</a><a class="text-link" href="/#about" @click.prevent="navigate('/#about')">了解这个空间</a></div>
-          <div class="hero-note"><span class="note-line"></span><span>持续整理 · 持续构建 · 持续迭代</span></div>
-        </div>
-        <div class="hero-art" aria-label="由层叠卡片构成的抽象知识结构插图" role="img">
-          <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
-          <div class="art-card card-back"><span class="art-card-label">FIELD NOTES</span><span class="art-lines"><i></i><i></i><i></i></span></div>
-          <div class="art-card card-front"><span class="art-card-label">THOUGHT  ACTION</span><div class="art-symbol">P<span>.</span></div><div class="art-card-footer"><span>COLLECT</span><span>CONNECT</span><span>CREATE</span></div></div>
-          <span class="art-index">FIG. 001 — AN OPEN SYSTEM</span><span class="art-spark spark-one bi bi-stars" aria-hidden="true"></span><span class="art-spark spark-two bi bi-plus-lg" aria-hidden="true"></span>
-        </div>
-        <div class="hero-bottom"><span>独立构建的个人空间</span><span>01 / 04 <i></i> PUBLIC SECTIONS</span></div>
-      </section>
-      <section id="explore" class="explore-section">
-        <div class="section-heading"><div><p class="eyebrow">EXPLORE THE PORTAL <span class="heading-rule"></span></p><h2>探索你需要的资源。</h2></div><p class="section-intro">从知识信息到实用工具，逐步拓展更多行业与服务。</p></div>
-        <label class="search-box"><span class="search-icon bi bi-search" aria-hidden="true"></span><input class="form-control" v-model="query" name="portalSearch" type="search" placeholder="搜索资源、信息、工具或行业服务…" aria-label="搜索门户分类" /><kbd>⌘ K</kbd></label>
-        <div v-if="filteredSections.length" class="section-grid row g-3">
-          <article v-for="section in filteredSections" :key="section.id" class="section-card col-12 md:col-6 xl:col-4">
-            <div class="card-topline"><span>{{ section.number }}</span><span class="card-arrow bi bi-arrow-up-right" aria-hidden="true"></span></div><p class="card-kicker">{{ section.subtitle }}</p><h3>{{ section.title }}</h3><p class="card-description">{{ section.description }}</p>
-            <div class="tag-list"><span v-for="tag in section.tags" :key="tag">{{ tag }}</span></div><div class="card-bottom"><span>内容逐步整理中</span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></div>
-          </article>
-        </div>
-        <div v-else class="empty-search"><strong>没有匹配的分类</strong><p>试试“知识”“工具”“资源”或“项目”。</p><button type="button" @click="query = ''">清除搜索</button></div>
-      </section>
-      <section id="about" class="about-section"><div class="about-mark">R.</div><div class="about-copy"><p class="eyebrow">ONE PLATFORM, MULTIPLE INDUSTRIES</p><h2>从信息发现，<br />到业务真正落地。</h2><p>这里汇集跨领域的资源信息、实用工具与专业服务，并逐步构建面向商家和不同行业的专属管理工作空间。用户获取信息，商家经营业务，各类服务在统一的平台体系中连接起来。</p></div><div class="about-meta"><span>DESIGNED FOR MANY</span><span>Resources meet business.</span></div></section>
-    </main>
+    <div v-else-if="route === '/'" ref="homePageHost"></div>
 
     <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge', 'education-resource-directory-page': route === '/education-resources' }">
       <section v-if="route !== '/knowledge' && route !== '/education-resources'" class="directory-hero">

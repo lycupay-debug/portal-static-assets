@@ -35,6 +35,19 @@ test('public root route renders the application shell', async ({ page }) => {
 
   await expect(page.locator('#app').locator('> *')).toHaveCount(1)
   await expect(page.getByRole('link', { name: /登录/ }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '把想法整理好，让行动有迹可循。' })).toBeVisible()
+  await expect(page.locator('.section-card')).toHaveCount(4)
+  const search = page.getByRole('searchbox', { name: '搜索门户分类' })
+  await search.fill('工具')
+  await expect(page.locator('.section-card')).toHaveCount(1)
+  await expect(page.locator('.section-card h3')).toHaveText('在线工具')
+  await search.fill('no matching section')
+  await expect(page.locator('.empty-search')).toBeVisible()
+  await page.getByRole('button', { name: '清除搜索' }).click()
+  await expect(page.locator('.section-card')).toHaveCount(4)
+  await page.getByRole('link', { name: '开始探索' }).click()
+  await expect(page).toHaveURL(/\/#explore$/)
+  await expect(page.locator('#explore')).toBeInViewport()
 })
 
 test('public article route renders native content, interactions and share dialog', async ({ page }) => {
