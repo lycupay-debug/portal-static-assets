@@ -22,6 +22,10 @@ tags:
     description: Published articles and user interactions.
   - name: Teaching resources
     description: Authenticated teaching resource metadata, files, and recycle bin.
+  - name: Administration
+    description: Super-administrator-only account, role, and permission management.
+  - name: Compliance
+    description: Permission-gated asset, license, legal document, audit, and reviewer management.
   - name: Platform
     description: Health, layout policy, and internal event intake.
   - name: System operations
@@ -705,6 +709,489 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/EventReceipt' }
         '409': { $ref: '#/components/responses/ErrorResponse' }
+  /public/legal:
+    get:
+      tags: [Public content]
+      security: []
+      summary: List published legal and policy documents
+      operationId: listPublishedLegalDocuments
+      responses:
+        '200':
+          description: Published legal documents
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '500': { $ref: '#/components/responses/ErrorResponse' }
+  /public/legal/{slug}:
+    get:
+      tags: [Public content]
+      security: []
+      summary: Read one published legal document
+      operationId: getPublishedLegalDocument
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
+      responses:
+        '200':
+          description: Published legal document
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '500': { $ref: '#/components/responses/ErrorResponse' }
+  /uploads/{filename}:
+    servers:
+      - url: /
+    get:
+      tags: [Public content]
+      security:
+        - {}
+        - sessionCookie: []
+      summary: Read an uploaded image when public-reference or owner access rules permit
+      description: The route is served at the site root rather than under /api. Public content may reference an image; otherwise the uploader or administrator session is required by the handler. Anonymous access is permitted only for publicly referenced images.
+      operationId: getUploadedImage
+      parameters:
+        - { in: path, name: filename, required: true, schema: { type: string, pattern: '^[0-9a-f-]{36}\.(png|jpe?g|gif|webp|avif)$' } }
+      responses:
+        '200':
+          description: Validated uploaded image
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/avif: { schema: { type: string, format: binary } }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /admin/users:
+    get:
+      tags: [Administration]
+      summary: List portal accounts and assigned roles
+      description: Requires the designated super-administrator identity and super_admin role.
+      operationId: listAdminUsers
+      responses:
+        '200':
+          description: Account and role assignments
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /admin/roles:
+    get:
+      tags: [Administration]
+      summary: List roles and their permission keys
+      description: Requires the designated super-administrator identity and super_admin role.
+      operationId: listAdminRoles
+      responses:
+        '200':
+          description: Role definitions and permissions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /admin/permissions:
+    get:
+      tags: [Administration]
+      summary: List permission definitions
+      description: Requires the designated super-administrator identity and super_admin role.
+      operationId: listAdminPermissions
+      responses:
+        '200':
+          description: Permission definitions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /admin/users/{userId}/roles:
+    patch:
+      tags: [Administration]
+      summary: Replace a user's assigned roles
+      description: Requires the designated super-administrator identity. The designated super_admin account cannot lose its super_admin role, and no other account can receive it.
+      operationId: replaceAdminUserRoles
+      parameters:
+        - { in: path, name: userId, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleAssignmentRequest' }
+      responses:
+        '200':
+          description: Updated role assignment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+  /admin/roles/{roleKey}/permissions:
+    patch:
+      tags: [Administration]
+      summary: Replace a role's permission keys
+      description: Requires the designated super-administrator identity. The super_admin role's base permissions cannot be removed.
+      operationId: replaceAdminRolePermissions
+      parameters:
+        - { in: path, name: roleKey, required: true, schema: { type: string, minLength: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RolePermissionsRequest' }
+      responses:
+        '200':
+          description: Updated role permissions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/overview:
+    get:
+      tags: [Compliance]
+      summary: Read copyright and compliance dashboard metrics
+      description: Requires portal.compliance.read permission; mutations require portal.compliance.manage.
+      operationId: getComplianceOverview
+      responses:
+        '200':
+          description: Compliance counts and grouped status summaries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/assets:
+    get:
+      tags: [Compliance]
+      summary: List compliance assets with filters and pagination
+      operationId: listComplianceAssets
+      parameters:
+        - { in: query, name: type, schema: { type: string, enum: [image, icon, font, audio, video, software_dependency, source_file, policy_document, other] } }
+        - { in: query, name: status, schema: { type: string, enum: [pending, in_review, approved, approved_with_conditions, replace_or_remove, blocked] } }
+        - { in: query, name: risk, schema: { type: string, enum: [low, medium, high, critical, unknown] } }
+        - { in: query, name: q, schema: { type: string, maxLength: 500 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { in: query, name: offset, schema: { type: integer, minimum: 0, maximum: 100000, default: 0 } }
+      responses:
+        '200':
+          description: Filtered asset records and total count
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/assets/{assetId}:
+    parameters:
+      - { in: path, name: assetId, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Compliance]
+      summary: Read a compliance asset with evidence and review history
+      operationId: getComplianceAsset
+      responses:
+        '200':
+          description: Asset detail, evidence and reviews
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+    patch:
+      tags: [Compliance]
+      summary: Update compliance asset classification and review fields
+      operationId: patchComplianceAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceAssetPatch' }
+      responses:
+        '200':
+          description: Updated asset
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+    put:
+      tags: [Compliance]
+      summary: Update compliance asset classification and review fields
+      operationId: putComplianceAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceAssetPatch' }
+      responses:
+        '200': { description: Updated asset, content: { application/json: { schema: { $ref: '#/components/schemas/GenericJSON' } } } }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/assets/{assetId}/evidence:
+    post:
+      tags: [Compliance]
+      summary: Add evidence to a compliance asset
+      operationId: addComplianceAssetEvidence
+      parameters:
+        - { in: path, name: assetId, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceEvidenceWrite' }
+      responses:
+        '201':
+          description: Evidence record created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/assets/{assetId}/evidence/{evidenceId}:
+    patch:
+      tags: [Compliance]
+      summary: Mark asset evidence verified or unverified
+      operationId: updateComplianceEvidenceVerification
+      parameters:
+        - { in: path, name: assetId, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: evidenceId, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceEvidenceVerification' }
+      responses:
+        '200':
+          description: Verification state recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/assets/{assetId}/reviews:
+    post:
+      tags: [Compliance]
+      summary: Add an asset compliance review
+      operationId: addComplianceAssetReview
+      parameters:
+        - { in: path, name: assetId, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceReviewWrite' }
+      responses:
+        '201':
+          description: Review record created and asset status updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/licenses:
+    get:
+      tags: [Compliance]
+      summary: List license catalog entries
+      operationId: listComplianceLicenses
+      responses:
+        '200':
+          description: License catalog
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/licenses/{licenseId}:
+    parameters:
+      - { in: path, name: licenseId, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Compliance]
+      summary: Read a license and linked assets
+      operationId: getComplianceLicense
+      responses:
+        '200':
+          description: License detail and linked assets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+    patch:
+      tags: [Compliance]
+      summary: Update license classification and review fields
+      operationId: patchComplianceLicense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceLicensePatch' }
+      responses:
+        '200': { $ref: '#/components/responses/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+    put:
+      tags: [Compliance]
+      summary: Update license classification and review fields
+      operationId: putComplianceLicense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceLicensePatch' }
+      responses:
+        '200': { $ref: '#/components/responses/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/documents:
+    get:
+      tags: [Compliance]
+      summary: List legal document drafts and publication status
+      operationId: listComplianceLegalDocuments
+      responses:
+        '200':
+          description: Legal document catalog including drafts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/documents/{slug}:
+    patch:
+      tags: [Compliance]
+      summary: Update legal document content and publication metadata
+      operationId: patchComplianceLegalDocument
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceLegalDocumentPatch' }
+      responses:
+        '200':
+          description: Updated legal document version and status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSON' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+    put:
+      tags: [Compliance]
+      summary: Update legal document content and publication metadata
+      operationId: putComplianceLegalDocument
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceLegalDocumentPatch' }
+      responses:
+        '200': { description: Updated legal document, content: { application/json: { schema: { $ref: '#/components/schemas/GenericJSON' } } } }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/audit:
+    get:
+      tags: [Compliance]
+      summary: List compliance audit records
+      operationId: listComplianceAuditRecords
+      responses:
+        '200':
+          description: Recent audit records
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/scans:
+    get:
+      tags: [Compliance]
+      summary: List compliance scan runs
+      operationId: listComplianceScans
+      responses:
+        '200':
+          description: Recent compliance scan runs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/export/assets.csv:
+    get:
+      tags: [Compliance]
+      summary: Export the compliance asset ledger as CSV
+      operationId: exportComplianceAssetsCSV
+      responses:
+        '200':
+          description: UTF-8 CSV attachment
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/reviewers:
+    get:
+      tags: [Compliance]
+      summary: List portal users and their reviewer status
+      description: Requires the designated super-administrator identity and super_admin role.
+      operationId: listComplianceReviewers
+      responses:
+        '200':
+          description: Portal user reviewer flags
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericJSONList' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+  /compliance/reviewers/{userId}:
+    patch:
+      tags: [Compliance]
+      summary: Grant or revoke the copyright reviewer role
+      description: Requires the designated super-administrator identity and super_admin role.
+      operationId: updateComplianceReviewer
+      parameters:
+        - { in: path, name: userId, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplianceReviewerPatch' }
+      responses:
+        '200': { $ref: '#/components/responses/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResponse' }
+        '401': { $ref: '#/components/responses/ErrorResponse' }
+        '403': { $ref: '#/components/responses/ErrorResponse' }
+        '404': { $ref: '#/components/responses/ErrorResponse' }
+        '409': { $ref: '#/components/responses/ErrorResponse' }
 components:
   securitySchemes:
     sessionCookie:
@@ -789,6 +1276,127 @@ components:
             properties:
               items: { type: array, items: { $ref: '#/components/schemas/TeachingResource' } }
   schemas:
+    GenericJSON:
+      type: object
+      description: Database-backed JSON object whose selected fields depend on the record type.
+      additionalProperties: true
+    GenericJSONList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/GenericJSON' }
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 500 }
+        offset: { type: integer, minimum: 0 }
+    RoleAssignmentRequest:
+      type: object
+      required: [roles]
+      additionalProperties: false
+      properties:
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+    RolePermissionsRequest:
+      type: object
+      required: [permissions]
+      additionalProperties: false
+      properties:
+        permissions:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+    ComplianceAssetPatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        reviewStatus: { type: string, enum: [pending, in_review, approved, approved_with_conditions, replace_or_remove, blocked] }
+        riskLevel: { type: string, enum: [low, medium, high, critical, unknown] }
+        ownershipBasis: { type: string, enum: [original, commissioned, licensed, open_license, public_domain, user_submitted, third_party_permission, unknown] }
+        permissionStatus: { type: string, enum: [confirmed, conditional, unknown, not_permitted, not_applicable] }
+        useScope: { type: string, enum: [commercial_web, internal_only, redistribution, modification, multiple, unknown] }
+        distributionStatus: { type: string, enum: [served_publicly, bundled_in_frontend, server_side_only, internal_only, not_distributed, unknown] }
+        sourceUrl: { type: string, maxLength: 2048 }
+        rightsholder: { type: string, maxLength: 500 }
+        licenseId: { anyOf: [{ type: string, format: uuid }, { type: string, enum: [''] }, { type: 'null' }] }
+        notes: { type: string, maxLength: 10000 }
+        active: { type: boolean }
+    ComplianceEvidenceWrite:
+      type: object
+      required: [type]
+      additionalProperties: false
+      properties:
+        type: { type: string, enum: [license_text, source_page, purchase_receipt, permission_email, contract, author_declaration, screenshot, hash_record, repository_metadata, legal_review, other] }
+        uri: { type: string, maxLength: 2048 }
+        text: { type: string, maxLength: 50000 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        notes: { type: string, maxLength: 5000 }
+    ComplianceEvidenceVerification:
+      type: object
+      required: [verified]
+      additionalProperties: false
+      properties:
+        verified: { type: boolean }
+    ComplianceReviewWrite:
+      type: object
+      description: Review types match the current database constraint; legacy copyright reviews are stored as license reviews.
+      required: [type, decision, riskLevel]
+      additionalProperties: false
+      properties:
+        type: { type: string, enum: [license, privacy, content, distribution, legal_basis, recheck] }
+        decision: { type: string, enum: [approved, approved_with_conditions, pending_evidence, replace, remove, blocked, escalate] }
+        riskLevel: { type: string, enum: [low, medium, high, critical, unknown] }
+        findings: { type: string, maxLength: 10000 }
+        requiredActions:
+          type: array
+          maxItems: 30
+          items: { type: string, maxLength: 2000 }
+        followUpAt: { type: [string, 'null'], format: date-time }
+    ComplianceLicensePatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        reviewStatus: { type: string, enum: [unreviewed, reviewed, restricted, needs_counsel] }
+        notes: { type: string, maxLength: 10000 }
+        family: { type: string, enum: [permissive, copyleft, weak_copyleft, proprietary, public_domain, custom, other] }
+        commercialUseAllowed: { type: boolean }
+        modificationAllowed: { type: boolean }
+        redistributionAllowed: { type: boolean }
+        attributionRequired: { type: boolean }
+        sourceCodeOfferRequired: { type: boolean }
+    ComplianceLegalDocumentPatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        bodyMarkdown: { type: string, maxLength: 250000 }
+        status: { type: string, enum: [draft, in_review, published, archived] }
+        missingInformation:
+          type: array
+          items: { type: string, maxLength: 1000 }
+        factualAssumptions:
+          type: array
+          items: { type: string, maxLength: 1000 }
+        approvedBy: { type: string, maxLength: 200 }
+        legalReviewAt: { type: [string, 'null'], format: date-time }
+        effectiveAt: { type: [string, 'null'], format: date-time }
+        legalBasis:
+          type: array
+          items:
+            type: object
+            additionalProperties: { type: string }
+        changeNote: { type: string, maxLength: 5000 }
+    ComplianceReviewerPatch:
+      type: object
+      required: [isCopyrightReviewer]
+      additionalProperties: false
+      properties:
+        isCopyrightReviewer: { type: boolean }
     Error:
       type: object
       required: [error]

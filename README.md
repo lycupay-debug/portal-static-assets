@@ -2,7 +2,7 @@
 
 ## 当前架构决策（2026-10-30）：移除 Vue，保留后端职责边界
 
-第一阶段 Vue 移除已完成并通过当前仓库验证：`frontend/src/` 不再包含 Vue SFC，Vue runtime、Vue Vite 插件及 Vue 类型检查依赖已移除。前端现为 **原生 TypeScript 模块 + 标准 DOM API + HTML/CSS**，以 `@preact/signals-core` 提供轻量响应式状态；Tiptap Core / ProseMirror 保留，Vue adapter 已移除。当前基线为 2026-10-30 的 `main` 提交 `c31036badc52f58f251dde7f04958bb3ee55caef`。后续第二阶段审查全栈模块边界、业务契约、安全、数据库、C IPC 与验证体系；CSS 以证据驱动渐进整理，不做无关视觉重写。
+第一阶段 Vue 移除已完成并通过当前仓库验证：`frontend/src/` 不再包含 Vue SFC，Vue runtime、Vue Vite 插件及 Vue 类型检查依赖已移除。前端现为 **原生 TypeScript 模块 + 标准 DOM API + HTML/CSS**，以 `@preact/signals-core` 提供轻量响应式状态；Tiptap Core / ProseMirror 保留，Vue adapter 已移除。第一阶段 Vue 移除完成时的基线提交为 `c31036badc52f58f251dde7f04958bb3ee55caef`。第二阶段在此基础上继续审查全栈模块边界、业务契约、安全、数据库、C IPC 与验证体系；CSS 以证据驱动渐进整理，不做无关视觉重写。
 
 **职责边界固定，具体实现允许重构。** Go 继续负责唯一业务 API 与后端业务规则；PostgreSQL 继续作为业务/事件持久化事实源；C 继续负责 FreeBSD 原生事件驱动核心及受限元数据通知，不接管业务 payload、业务规则或持久化；Caddy 继续负责 TLS、静态资源、路由、反向代理、可信代理与安全响应头。上述层的代码、模块、配置和内部实现均可在遵守职责边界、协议/数据兼容性、安全要求和验证流程的前提下重构。不得把“职责不可变”误解为“代码/配置冻结”；也不得因重构而把某层的职责转移给另一层。
 
@@ -124,6 +124,7 @@ PostgreSQL（portal schema）
 - 规范变更流程：修改 OpenAPI → `npm run api:lint` → `npm run api:generate` → 检查生成 diff → 实现/调整 Go API → 更新契约与集成测试 → 全套 CI。
 - CI 使用 `npm run api:check` 验证生成代码与契约同步。生成文件不是手工编辑的源头；要改字段必须修改 schema 后重新生成。
 - Go 必须对请求体大小、JSON 格式、必填字段、未知字段策略、枚举、字符串长度、URL/路径、权限和资源归属进行服务端验证。前端校验只能改善体验，不能替代服务端验证。
+- RBAC 角色/权限变更与 compliance reviewer 变更统一使用有界严格 JSON decoder；拒绝未知字段、尾随 JSON 值和超限请求体。合规 review_type 必须与迁移 022 的数据库 CHECK 一致：历史 copyright 类型归并为 license，不再接受旧枚举。
 - 认证、权限、参数校验、错误响应、事务和字段语义只能在 Go 中形成一套生产规则。数据库约束作为最后一道完整性保护，Go 负责把数据库错误映射为稳定、可预测的 API 错误。
 - 错误响应结构必须统一并在 OpenAPI 中定义；不得新增仅某个路由使用的临时错误格式。HTTP 状态码、业务错误码和敏感信息披露边界需要通过测试固定。
 - 任何字段重命名、必填性变化、枚举收窄、错误格式变化都视为契约变更；必须同时评估已有数据、前端兼容性和迁移顺序。
@@ -251,8 +252,8 @@ git status --short --branch
 | 项目 | 当前状态 | 证据/范围 |
 |---|---|---|
 | Go-only 生产业务后端 | 已实施 | Go API 处理业务；旧 Node API 不在正常生产流量路径，部署后已禁用旧认证服务 |
-| 原生 TypeScript + DOM（第一阶段） | 已完成 | 当前 `main` 提交 `c31036badc52f58f251dde7f04958bb3ee55caef`；Vue SFC 为 0，Vue runtime / 插件 / vue-tsc 依赖已移除；当前前端行为测试 106 项通过，类型检查与构建通过（2026-10-30 FreeBSD 开发工作区实测） |
-| OpenAPI 共享契约 | 已实施 | `api/openapi.yaml`；生成 TypeScript 类型；lint 和生成漂移检查纳入 CI |
+| 原生 TypeScript + DOM（第一阶段） | 已完成 | 第一阶段完成提交 `c31036badc52f58f251dde7f04958bb3ee55caef`；Vue SFC 为 0，Vue runtime / 插件 / vue-tsc 依赖已移除；当前前端行为测试 106 项通过，类型检查与构建通过（2026-10-30 FreeBSD 开发工作区实测） |
+| OpenAPI 共享契约 | 已扩展 | `api/openapi.yaml` 覆盖现有客户端路由、admin/RBAC、compliance、public legal 和根路径上传图片读取；角色/权限及合规写入请求使用明确 schema；生成 TypeScript 类型并纳入 lint/CI 同步检查 |
 | PostgreSQL 版本化迁移 | 当前 001–030 全量空库回放通过 | 新增 `scripts/test-postgres-migrations.sh` 并纳入 CI；FreeBSD 临时隔离 PostgreSQL 17.11 集群实测 30 个迁移全部通过，验证 owner/runtime 分离、默认 user 角色触发器及禁止 runtime CREATE/TRUNCATE；不触碰现有 PostgreSQL 服务或业务库 |
 | Go 事件接收、分发、租约、处理和恢复 | 单元与部分 PostgreSQL 集成测试已纳入 CI | 覆盖并发幂等接收、处理租约唯一领取/归属校验/重试/最终尝试过期、分发租约过期重领；真实进程崩溃恢复、Go/C IPC 重连与服务重启仍未覆盖 |
 | C IPC v2 | 协议实现存在；局部单元测试已补充 | 当前 `make test` 覆盖请求/事件标识校验、PING/STATUS/EVENT、v1 拒绝、未知命令、订阅推送、错配/成功 ACK、FIFO 顺序和 32 项上限；真实 socket/kqueue、并发客户端、超时、信号退出与重启恢复未由该测试覆盖 |

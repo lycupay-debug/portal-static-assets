@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -82,7 +81,7 @@ func (a *portalAPI) complianceReviewerUsers(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		IsCopyrightReviewer *bool `json:"isCopyrightReviewer"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil || body.IsCopyrightReviewer == nil {
+	if err := decodeJSON(w, r, 4*1024, &body); err != nil || body.IsCopyrightReviewer == nil {
 		writeError(w, http.StatusBadRequest, "请提供 isCopyrightReviewer 布尔值。", nil)
 		return
 	}

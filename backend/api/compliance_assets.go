@@ -307,7 +307,8 @@ func (a *portalAPI) addComplianceReview(w http.ResponseWriter, r *http.Request, 
 		writeError(w, 400, "请求格式不正确。", nil)
 		return
 	}
-	if !oneOf(b.Type, "copyright", "license", "privacy", "content", "distribution", "legal_basis", "recheck") || !oneOf(b.Decision, "approved", "approved_with_conditions", "pending_evidence", "replace", "remove", "blocked", "escalate") || !oneOf(b.RiskLevel, "low", "medium", "high", "critical", "unknown") || runeLen(b.Findings) > 10000 || len(b.RequiredActions) > 30 {
+	// Keep this allowlist aligned with migration 022: historical copyright reviews were converted to license reviews.
+	if !oneOf(b.Type, "license", "privacy", "content", "distribution", "legal_basis", "recheck") || !oneOf(b.Decision, "approved", "approved_with_conditions", "pending_evidence", "replace", "remove", "blocked", "escalate") || !oneOf(b.RiskLevel, "low", "medium", "high", "critical", "unknown") || runeLen(b.Findings) > 10000 || len(b.RequiredActions) > 30 {
 		writeError(w, 400, "审核字段不正确。", nil)
 		return
 	}

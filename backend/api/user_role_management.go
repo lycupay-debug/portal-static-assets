@@ -17,11 +17,8 @@ func (a *portalAPI) updateUserRoles(w http.ResponseWriter, r *http.Request, acto
 		writeError(w, http.StatusBadRequest, "账户标识无效。", nil)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
 	var body roleAssignmentRequest
-	if err := decoder.Decode(&body); err != nil || body.Roles == nil {
+	if err := decodeJSON(w, r, 16*1024, &body); err != nil || body.Roles == nil {
 		writeError(w, http.StatusBadRequest, "请提供 roles 字符串数组。", nil)
 		return
 	}

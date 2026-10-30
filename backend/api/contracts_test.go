@@ -146,6 +146,87 @@ func TestDecodeJSONRejectsUnknownTrailingAndOversizedInput(t *testing.T) {
 	}
 }
 
+func TestComplianceReviewerEndpointRejectsStrictJSONViolations(t *testing.T) {
+	const reviewerID = "550e8400-e29b-41d4-a716-446655440000"
+	validPrefix := `{"isCopyrightReviewer":true}`
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"unknown field", `{"isCopyrightReviewer":true,"isAdmin":true}`},
+		{"trailing JSON value", validPrefix + ` {}`},
+		{"oversized trailing data", validPrefix + strings.Repeat(" ", 4*1024)},
+		{"missing field", `{"other":true}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := &portalAPI{}
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPatch, "/compliance/reviewers/"+reviewerID, strings.NewReader(test.body))
+			api.complianceReviewerUsers(recorder, request, &portalUser{ID: "admin", Email: "admin@example.invalid"}, "/"+reviewerID)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestRBACMutationEndpointsRejectStrictJSONViolations(t *testing.T) {
+	const userID = "550e8400-e29b-41d4-a716-446655440000"
+	tests := []struct {
+		name     string
+		userBody string
+		roleBody string
+	}{
+		{
+			name:     "unknown fields",
+			userBody: `{"roles":["user"],"isAdmin":true}`,
+			roleBody: `{"permissions":[],"isAdmin":true}`,
+		},
+		{
+			name:     "trailing JSON values",
+			userBody: `{"roles":["user"]} {}`,
+			roleBody: `{"permissions":[]} {}`,
+		},
+		{
+			name:     "oversized trailing data",
+			userBody: `{"roles":["user"]}` + strings.Repeat(" ", 16*1024),
+			roleBody: `{"permissions":[]}` + strings.Repeat(" ", 16*1024),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := &portalAPI{}
+			actor := &portalUser{ID: userID, Email: "admin@example.invalid"}
+
+			userRecorder := httptest.NewRecorder()
+			userRequest := httptest.NewRequest(http.MethodPatch, "/admin/users/"+userID+"/roles", strings.NewReader(test.userBody))
+			api.updateUserRoles(userRecorder, userRequest, actor, userID)
+			if userRecorder.Code != http.StatusBadRequest {
+				t.Fatalf("user role update status = %d, want %d; body=%s", userRecorder.Code, http.StatusBadRequest, userRecorder.Body.String())
+			}
+
+			roleRecorder := httptest.NewRecorder()
+			roleRequest := httptest.NewRequest(http.MethodPatch, "/admin/roles/user/permissions", strings.NewReader(test.roleBody))
+			api.updateRolePermissions(roleRecorder, roleRequest, actor, "user")
+			if roleRecorder.Code != http.StatusBadRequest {
+				t.Fatalf("role permission update status = %d, want %d; body=%s", roleRecorder.Code, http.StatusBadRequest, roleRecorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestAddComplianceReviewRejectsRemovedCopyrightReviewType(t *testing.T) {
+	const assetID = "550e8400-e29b-41d4-a716-446655440000"
+	api := &portalAPI{}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/compliance/assets/"+assetID+"/reviews", strings.NewReader(`{"type":"copyright","decision":"approved","riskLevel":"low"}`))
+	api.addComplianceReview(recorder, request, &portalUser{ID: "admin", Email: "admin@example.invalid"}, assetID)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+}
+
 func TestDecideSystemTaskPolicy(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -20,11 +20,8 @@ func (a *portalAPI) updateRolePermissions(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusConflict, "超级管理员角色的基础权限不可移除。", nil)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
 	var body rolePermissionsRequest
-	if err := decoder.Decode(&body); err != nil || body.Permissions == nil {
+	if err := decodeJSON(w, r, 16*1024, &body); err != nil || body.Permissions == nil {
 		writeError(w, http.StatusBadRequest, "请提供 permissions 字符串数组。", nil)
 		return
 	}
