@@ -6,7 +6,7 @@ Boundaries: avoid embedding reusable business workflows here; browser lifecycle 
 while extracted composables own independently testable state transitions and side effects.
 -->
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { apiRequest } from './api/client'
 import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
 import { useDebouncedValue } from './composables/useDebouncedValue'
@@ -38,7 +38,6 @@ import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource } from './api/generated'
 
-const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 const visibilityOptions: VirtualizedSelectOption[] = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 
@@ -227,6 +226,30 @@ const emptyContentForm = (): ContentForm => ({
   title: '', slug: '', contentType: 'article', tags: [], summary: '', body: '', visibility: 'private',
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
+const contentEditorHost = ref<HTMLElement | null>(null)
+let nativeContentEditor: { setMarkdown: (markdown: string) => void; setEditable: (editable: boolean) => void; dispose: () => void } | null = null
+let contentEditorMountSequence = 0
+watch(contentEditorHost, host => {
+  const sequence = ++contentEditorMountSequence
+  nativeContentEditor?.dispose()
+  nativeContentEditor = null
+  if (!host) return
+  void import('./components/nativeContentEditorView').then(module => {
+    if (sequence !== contentEditorMountSequence || host !== contentEditorHost.value) return
+    nativeContentEditor = module.mountNativeContentEditorView({
+      host,
+      markdown: contentForm.value.body,
+      editable: !contentBusy.value,
+      onMarkdownChange: markdown => { contentForm.value.body = markdown },
+    })
+  }).catch((error: unknown) => {
+    if (sequence !== contentEditorMountSequence || host !== contentEditorHost.value) return
+    host.textContent = '内容编辑器加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '内容编辑器加载失败', '内容编辑器')
+  })
+}, { flush: 'post' })
+watch(() => contentForm.value.body, markdown => nativeContentEditor?.setMarkdown(markdown))
+watch(contentBusy, busy => nativeContentEditor?.setEditable(!busy))
 const contentVisibilitySelectHost = ref<HTMLElement | null>(null)
 let disposeContentVisibilitySelect: (() => void) | null = null
 let contentVisibilitySelect: ReturnType<typeof mountVirtualizedSelect> | null = null
@@ -714,6 +737,9 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  contentEditorMountSequence += 1
+  nativeContentEditor?.dispose()
+  nativeContentEditor = null
   teachingResourceEditorSequence += 1
   disposeTeachingResourceEditor?.()
   disposeTeachingResourceEditor = null
@@ -768,8 +794,10 @@ onBeforeUnmount(() => {
         <div class="workspace-document-name"><span class="workspace-status-dot"></span><span>{{ contentForm.title.trim() || '未命名内容' }}</span><em>草稿</em></div>
         <button type="button" class="btn content-secondary-button workspace-return" :disabled="contentBusy" @click="cancelContentEditor"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回列表</button>
       </header>
-      <ContentDocumentEditor v-model="contentForm.body" workspace :disabled="contentBusy">
-        <template #workspace-actions>
+      <div class="content-workspace-grid">
+        <div ref="contentEditorHost" class="content-editor-native-main"></div>
+        <aside class="content-tools-sidebar">
+          <div class="workspace-sidebar-settings">
           <details class="workspace-fold workspace-settings-fold" open>
             <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron bi bi-chevron-down" aria-hidden="true"></span></summary>
             <section class="workspace-properties">
@@ -786,8 +814,10 @@ onBeforeUnmount(() => {
             <button type="button" class="btn content-secondary-button" :disabled="contentBusy" @click="cancelContentEditor">取消</button>
             <button type="button" class="btn btn-dark workspace-save-draft" :disabled="contentBusy" @click="saveContent()">{{ contentBusy ? '正在保存…' : '保存草稿' }}</button>
           </div>
-        </template>
-      </ContentDocumentEditor>
+            <p class="context-menu-hint">在正文中单击右键，打开统一编辑菜单。</p>
+          </div>
+        </aside>
+      </div>
       <Teleport to="body">
         <div v-if="knowledgeTagDialogOpen" class="knowledge-tag-dialog-backdrop" @click.self="closeKnowledgeTagDialog(false)" @keydown.esc.stop.prevent="closeKnowledgeTagDialog(false)">
           <section ref="knowledgeTagDialog" class="knowledge-tag-dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="knowledge-tag-dialog-title" @click.stop>

@@ -241,3 +241,9 @@
   box-shadow: none;
 }
 
+
+/* The native editor inserts the outline and paper stage as direct grid items. */
+.content-editor-native-main,.content-workspace-native-root{display:contents}
+
+/* Native editor menus use the hidden attribute while retaining the shared workspace styles. */
+.content-editor-image-zoom[hidden],.content-editor-image-menu[hidden],.content-editor-context-menu[hidden],.content-editor-slash-menu[hidden]{display:none!important}

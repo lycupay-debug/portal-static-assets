@@ -59,7 +59,7 @@ function aggregateChunks(patterns, label) {
   }, { raw: 0, gzip: 0 })
 }
 
-const editor = aggregateChunks([/^ContentDocumentEditor-.+\.js$/, /^editor-vendor-.+\.js$/], 'lazy editor JavaScript')
+const editor = aggregateChunks([/^(?:ContentDocumentEditor|nativeContentEditorView)-.+\.js$/, /^editor-vendor-.+\.js$/], 'lazy editor JavaScript')
 assertBudget('Lazy editor JavaScript including vendor chunks (gzip)', editor.gzip, 230 * 1024, 'gzip bytes')
 assertBudget('Lazy editor JavaScript including vendor chunks (raw)', editor.raw, 720 * 1024, 'raw bytes')
 
@@ -67,7 +67,7 @@ const markdown = aggregateChunks([/^markdown-.+\.js$/, /^markdown-vendor-.+\.js$
 assertBudget('Lazy Markdown renderer including vendor chunks (gzip)', markdown.gzip, 30 * 1024, 'gzip bytes')
 
 const initialMarkup = html.match(/<link[^>]+rel="modulepreload"[^>]+href="([^"]+)"/g) || []
-if (initialMarkup.some((tag) => /ContentDocumentEditor|markdown-|tiptap-|prosemirror-|editor-vendor-/i.test(tag))) {
+if (initialMarkup.some((tag) => /ContentDocumentEditor|nativeContentEditorView|markdown-|tiptap-|prosemirror-|editor-vendor-/i.test(tag))) {
   throw new Error('Initial HTML preloads editor or article-rendering dependencies; keep these route-lazy')
 }
 console.log('✓ Editor and Markdown renderer remain outside the initial HTML preload list')
