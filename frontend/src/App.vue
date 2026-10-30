@@ -518,6 +518,28 @@ const legalDocumentHtml = legalDocumentsController.legalDocumentHtml as Ref<stri
 const legalDocumentLoading = legalDocumentsController.legalDocumentLoading as Ref<boolean>
 const legalDocumentError = legalDocumentsController.legalDocumentError as Ref<string>
 const { loadPublishedLegalDocuments, loadLegalDocument } = legalDocumentsController
+const legalPageHost = ref<HTMLElement | null>(null)
+let legalPageMountSequence = 0
+let legalPageView: { update: (state: { document: typeof legalDocument.value; html: string; loading: boolean; error: string }) => void; dispose: () => void } | null = null
+function updateLegalPageView() {
+  legalPageView?.update({ document: legalDocument.value, html: legalDocumentHtml.value, loading: legalDocumentLoading.value, error: legalDocumentError.value })
+}
+watch([legalPageHost, legalSlug], ([host, slug]) => {
+  const sequence = ++legalPageMountSequence
+  legalPageView?.dispose()
+  legalPageView = null
+  if (!host || !slug) return
+  void import('./views/legalDocumentView').then(module => {
+    if (sequence !== legalPageMountSequence || host !== legalPageHost.value) return
+    legalPageView = module.mountLegalDocumentView(host, navigate)
+    updateLegalPageView()
+  }).catch((error: unknown) => {
+    if (sequence !== legalPageMountSequence || host !== legalPageHost.value) return
+    host.textContent = '政策文件界面加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '政策文件界面加载失败', '政策文件')
+  })
+}, { flush: 'post' })
+watch([legalDocument, legalDocumentHtml, legalDocumentLoading, legalDocumentError], updateLegalPageView, { deep: true })
 const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
 const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
 const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
@@ -705,6 +727,9 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   authPageMountSequence += 1
+  legalPageMountSequence += 1
+  legalPageView?.dispose()
+  legalPageView = null
   disposeAuthPage?.()
   disposeAuthPage = null
   contentEditorMountSequence += 1
@@ -1017,17 +1042,7 @@ onBeforeUnmount(() => {
     </main>
 
     <main v-else-if="legalSlug" class="legal-document-page">
-      <section class="legal-document-shell">
-        <a class="legal-back-link" href="/" @click.prevent="navigate('/')">← 返回首页</a>
-        <div v-if="legalDocumentLoading" class="legal-document-state">正在读取政策文件…</div>
-        <section v-else-if="legalDocument" class="legal-document-content">
-          <p class="eyebrow">POLICIES & NOTICES</p>
-          <h1>{{ legalDocument.title }}</h1>
-          <p v-if="legalDocument.effectiveAt" class="legal-document-effective">生效日期：{{ new Date(legalDocument.effectiveAt).toLocaleDateString('zh-CN') }}</p>
-          <div class="markdown-rendered legal-markdown" v-html="legalDocumentHtml"></div>
-        </section>
-        <section v-else class="legal-document-state"><h1>政策文件暂不可用</h1><p>{{ legalDocumentError || '该政策尚未发布。' }}</p></section>
-      </section>
+      <div ref="legalPageHost"></div>
     </main>
 
     <main v-else-if="isAccountPage" class="account-layout">
