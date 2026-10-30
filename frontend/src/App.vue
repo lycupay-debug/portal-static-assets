@@ -34,6 +34,7 @@ import { mountSiteHeaderView } from './views/siteHeaderView'
 import { mountSiteFooterView } from './views/siteFooterView'
 import { mountKnowledgeTagDialogView } from './views/knowledgeTagDialogView'
 import { mountContentSettingsView } from './views/contentSettingsView'
+import { mountContentWorkspaceTopbarView } from './views/contentWorkspaceTopbarView'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
@@ -283,6 +284,8 @@ const emptyContentForm = (): ContentForm => ({
 })
 const contentForm = ref<ContentForm>(emptyContentForm())
 const contentEditorHost = ref<HTMLElement | null>(null)
+const contentWorkspaceTopbarHost = ref<HTMLElement | null>(null)
+let contentWorkspaceTopbarView: ReturnType<typeof mountContentWorkspaceTopbarView> | null = null
 let nativeContentEditor: { setMarkdown: (markdown: string) => void; setEditable: (editable: boolean) => void; dispose: () => void } | null = null
 let contentEditorMountSequence = 0
 watch(contentEditorHost, host => {
@@ -306,6 +309,13 @@ watch(contentEditorHost, host => {
 }, { flush: 'post' })
 watch(() => contentForm.value.body, markdown => nativeContentEditor?.setMarkdown(markdown))
 watch(contentBusy, busy => nativeContentEditor?.setEditable(!busy))
+watch([contentWorkspaceTopbarHost, contentForm, contentBusy], () => {
+  const host = contentWorkspaceTopbarHost.value
+  if (!host) { contentWorkspaceTopbarView?.dispose(); contentWorkspaceTopbarView = null; return }
+  const getState = () => ({ title: contentForm.value.title, busy: contentBusy.value })
+  if (!contentWorkspaceTopbarView) contentWorkspaceTopbarView = mountContentWorkspaceTopbarView(host, { getState, returnToList: returnToContentList, cancel: cancelContentEditor })
+  contentWorkspaceTopbarView.update(getState())
+}, { deep: true, flush: 'post' })
 const contentSettingsHost = ref<HTMLElement | null>(null)
 let contentSettingsView: ReturnType<typeof mountContentSettingsView> | null = null
 const {
@@ -1100,6 +1110,8 @@ onBeforeUnmount(() => {
   disposeNotificationHost = null
   contentSettingsView?.dispose()
   contentSettingsView = null
+  contentWorkspaceTopbarView?.dispose()
+  contentWorkspaceTopbarView = null
   disposeTeachingResourceDrawer?.()
   disposeTeachingResourceDrawer = null
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
@@ -1120,11 +1132,7 @@ onBeforeUnmount(() => {
     <header v-if="!isAccountPage && !isContentEditorPage" ref="siteHeaderHost" class="site-header"></header>
 
     <main v-if="isContentEditorPage" class="content-workspace-page">
-      <header class="content-workspace-topbar">
-        <a class="workspace-brand" href="/content-management" @click.prevent="returnToContentList"><span class="workspace-brand-mark">R.</span><span><strong>内容工作台</strong><small></small></span></a>
-        <div class="workspace-document-name"><span class="workspace-status-dot"></span><span>{{ contentForm.title.trim() || '未命名内容' }}</span><em>草稿</em></div>
-        <button type="button" class="btn content-secondary-button workspace-return" :disabled="contentBusy" @click="cancelContentEditor"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回列表</button>
-      </header>
+      <header ref="contentWorkspaceTopbarHost" class="content-workspace-topbar"></header>
       <div class="content-workspace-grid">
         <div ref="contentEditorHost" class="content-editor-native-main"></div>
         <aside class="content-tools-sidebar">
