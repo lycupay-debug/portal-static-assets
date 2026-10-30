@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,8 @@ import (
 
 type eventCoreProcess struct {
 	command *exec.Cmd
-	done    chan error
+	done    chan struct{}
+	waitErr error
 	stopped bool
 }
 
@@ -49,17 +51,13 @@ func TestIPCClientAgainstRealEventCore(t *testing.T) {
 		if core == nil || core.command == nil || core.command.Process == nil || core.stopped {
 			return
 		}
-		if core.command.ProcessState != nil {
-			core.stopped = true
-			return
-		}
-		if err := core.command.Process.Signal(syscall.SIGTERM); err != nil && err != os.ErrProcessDone {
+		if err := core.command.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			t.Errorf("signal event core: %v", err)
 		}
 		select {
-		case err := <-core.done:
-			if err != nil {
-				t.Errorf("event core exited with error: %v", err)
+		case <-core.done:
+			if core.waitErr != nil {
+				t.Errorf("event core exited with error: %v", core.waitErr)
 			}
 		case <-time.After(3 * time.Second):
 			_ = core.command.Process.Kill()
@@ -77,15 +75,18 @@ func TestIPCClientAgainstRealEventCore(t *testing.T) {
 		if err := command.Start(); err != nil {
 			t.Fatalf("start event core: %v", err)
 		}
-		core := &eventCoreProcess{command: command, done: make(chan error, 1)}
-		go func() { core.done <- command.Wait() }()
+		core := &eventCoreProcess{command: command, done: make(chan struct{})}
+		go func() {
+			core.waitErr = command.Wait()
+			close(core.done)
+		}()
 		t.Cleanup(func() { stopCore(core) })
 
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			select {
-			case err := <-core.done:
-				t.Fatalf("event core exited before readiness: %v", err)
+			case <-core.done:
+				t.Fatalf("event core exited before readiness: %v", core.waitErr)
 			default:
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
