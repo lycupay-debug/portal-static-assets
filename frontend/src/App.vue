@@ -35,6 +35,7 @@ import { mountSiteFooterView } from './views/siteFooterView'
 import { mountKnowledgeTagDialogView } from './views/knowledgeTagDialogView'
 import { mountContentSettingsView } from './views/contentSettingsView'
 import { mountContentWorkspaceTopbarView } from './views/contentWorkspaceTopbarView'
+import { mountPortalRootView, type PortalRootHostName } from './views/portalRootView'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
@@ -79,6 +80,8 @@ type ContentForm = {
 type PublicContentCard = Pick<PortalContent, 'id' | 'title' | 'slug' | 'contentType' | 'tags' | 'parentCategory' | 'childCategory' | 'summary' | 'publishedAt'>
 type PublicContent = PublicContentCard & Pick<PortalContent, 'body' | 'createdAt' | 'updatedAt'> & { authorName: string; authorJoinedAt: string; likeCount: number; favoriteCount: number; viewerLiked: boolean; viewerFavorited: boolean }
 
+const portalRootHost = ref<HTMLElement | null>(null)
+let portalRootView: ReturnType<typeof mountPortalRootView> | null = null
 const menuOpen = ref(false)
 const route = ref(window.location.pathname || '/')
 const siteHeaderHost = ref<HTMLElement | null>(null)
@@ -1014,6 +1017,53 @@ portalNavigation = createPortalNavigationController({
   afterRender: async () => { await nextTick(); await homePageReady },
 })
 let disposeNotificationHost: (() => void) | null = null
+function setPortalRootHost(name: PortalRootHostName, element: HTMLElement | null) {
+  switch (name) {
+    case 'knowledgeTagDialogHost': knowledgeTagDialogHost.value = element; break
+    case 'siteHeaderHost': siteHeaderHost.value = element; break
+    case 'siteFooterHost': siteFooterHost.value = element; break
+    case 'contentWorkspaceTopbarHost': contentWorkspaceTopbarHost.value = element; break
+    case 'contentEditorHost': contentEditorHost.value = element; break
+    case 'contentSettingsHost': contentSettingsHost.value = element; break
+    case 'homePageHost': homePageHost.value = element; break
+    case 'knowledgeDirectoryHost': knowledgeDirectoryHost.value = element; break
+    case 'directoryOverviewHost': directoryOverviewHost.value = element; break
+    case 'educationResourceDirectoryHost': educationResourceDirectoryHost.value = element; break
+    case 'authPageHost': authPageHost.value = element; break
+    case 'publicArticleHost': publicArticleHost.value = element; break
+    case 'legalPageHost': legalPageHost.value = element; break
+    case 'accountSidebarHost': accountSidebarHost.value = element; break
+    case 'accountIdentityHost': accountIdentityHost.value = element; break
+    case 'complianceCenterHost': complianceCenterHost.value = element; break
+    case 'systemOpsHost': systemOpsHost.value = element; break
+    case 'accountTableViewHost': accountTableViewHost.value = element; break
+    case 'teachingResourceEditorHost': teachingResourceEditorHost.value = element; break
+    case 'teachingResourceDrawerHost': teachingResourceDrawerHost.value = element; break
+  }
+}
+function getPortalRootState() {
+  return {
+    route: route.value,
+    contentEditorPage: isContentEditorPage.value,
+    accountPage: isAccountPage.value,
+    authPage: isAuthPage.value,
+    publicContentPage: isPublicContentPage.value,
+    legalPage: Boolean(legalSlug.value),
+    accountSection: activeAccountSection.value,
+    accountTableMode: Boolean(activeTableDefinition.value),
+  }
+}
+watch([portalRootHost, route, activeAccountSection, activeTableDefinition], () => {
+  const host = portalRootHost.value
+  if (!host) { portalRootView?.dispose(); portalRootView = null; return }
+  if (!portalRootView) portalRootView = mountPortalRootView(host, {
+    getState: getPortalRootState,
+    navigate,
+    scrollToTop,
+    setHost: setPortalRootHost,
+  })
+  portalRootView.update(getPortalRootState())
+}, { flush: 'post' })
 watch([siteHeaderHost, menuOpen, user], () => {
   const host = siteHeaderHost.value
   if (!host) { siteHeaderView?.dispose(); siteHeaderView = null; return }
@@ -1058,6 +1108,8 @@ onMounted(() => {
   void portalNavigation?.start()
 })
 onBeforeUnmount(() => {
+  portalRootView?.dispose()
+  portalRootView = null
   siteHeaderView?.dispose()
   siteHeaderView = null
   siteFooterView?.dispose()
@@ -1127,82 +1179,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="site-shell">
-    <div ref="knowledgeTagDialogHost"></div>
-    <header v-if="!isAccountPage && !isContentEditorPage" ref="siteHeaderHost" class="site-header"></header>
-
-    <main v-if="isContentEditorPage" class="content-workspace-page">
-      <header ref="contentWorkspaceTopbarHost" class="content-workspace-topbar"></header>
-      <div class="content-workspace-grid">
-        <div ref="contentEditorHost" class="content-editor-native-main"></div>
-        <aside class="content-tools-sidebar">
-          <div class="workspace-sidebar-settings">
-            <div ref="contentSettingsHost"></div>
-            <p class="context-menu-hint">在正文中单击右键，打开统一编辑菜单。</p>
-          </div>
-        </aside>
-      </div>
-
-    </main>
-
-    <div v-else-if="route === '/'" ref="homePageHost"></div>
-
-    <div v-else-if="route === '/knowledge'" ref="knowledgeDirectoryHost"></div>
-
-    <div v-else-if="route === '/homestays' || route === '/software-tools'" ref="directoryOverviewHost"></div>
-
-    <div v-else-if="route === '/education-resources'" ref="educationResourceDirectoryHost"></div>
-
-    <main v-else-if="isAuthPage" class="route-main">
-      <div ref="authPageHost"></div>
-    </main>
-
-    <main v-else-if="isPublicContentPage" class="public-content-page">
-      <div ref="publicArticleHost"></div>
-    </main>
-
-    <main v-else-if="legalSlug" class="legal-document-page">
-      <div ref="legalPageHost"></div>
-    </main>
-
-    <main v-else-if="isAccountPage" class="account-layout">
-
-      <aside ref="accountSidebarHost" class="account-sidebar"></aside>
-
-      <section class="account-content" :class="{ 'account-content-table-mode': !!activeTableDefinition }">
-        <template v-if="activeAccountSection === 'overview' || activeAccountSection === 'profile' || activeAccountSection === 'security'">
-          <div ref="accountIdentityHost"></div>
-        </template>
-
-        <template v-else-if="activeAccountSection === 'copyright-compliance'">
-          <div ref="complianceCenterHost"></div>
-        </template>
-        <template v-else-if="activeAccountSection === 'system-warnings'">
-          <div ref="systemOpsHost"></div>
-        </template>
-        <template v-else-if="activeAccountSection === 'system-logs'">
-          <div ref="systemOpsHost"></div>
-        </template>
-        <template v-else-if="activeAccountSection === 'system-execution-policy'">
-          <div ref="systemOpsHost"></div>
-        </template>
-
-        <template v-else>
-          <div ref="accountTableViewHost"></div>
-        </template>
-      </section>
-    </main>
-
-    <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="btn btn-dark button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
-
-    <div v-if="resourceDialogOpen" ref="teachingResourceEditorHost"></div>
-
-    <div ref="teachingResourceDrawerHost"></div>
-
-
-    <footer v-if="!isAccountPage && !isContentEditorPage" ref="siteFooterHost" class="site-footer"></footer>
-    <button type="button" class="scroll-to-top" aria-label="返回页面顶部" title="返回顶部" @click="scrollToTop"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>
-  </div>
+  <div ref="portalRootHost"></div>
 </template>
 
 <style src="./app.css"></style>
