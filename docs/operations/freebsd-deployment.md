@@ -2,6 +2,8 @@
 
 目标系统：FreeBSD 15.1-RELEASE-p6 / amd64。生产业务 API 只使用 Go。Node.js 后端源码已从 Git 项目移除；当前部署和回滚流程不再依赖或启用旧 Node.js API，正常生产流量不会经过 Node.js。
 
+**环境区分：** 本文中的 `deploy.sh`、`Caddyfile`、`health-check.sh` 和 `rollback.sh` 是正式生产发布模板（API 8081、数据库 `personal_portal`）。当前公网个人门户实际运行的是开发版（API 8082、数据库 `personal_portal_dev`），必须使用 `deploy-dev.sh` 和 `Caddyfile.dev-public`；开发部署不会调用生产脚本。两套数据库、二进制目录、存储目录和 Caddy 配置不得混用。
+
 ## 生产拓扑
 
 - Caddy 负责 HTTPS、静态前端、上传文件与反向代理；公共静态站点配置 `nosniff`、禁止 iframe 嵌入、严格跨源 Referrer Policy 与限制摄像头/麦克风/定位的 Permissions Policy。
@@ -19,17 +21,36 @@
 
 部署脚本要求仓库干净且所有变更已经提交。脚本会执行许可证/资产预检、OpenAPI lint 与类型生成一致性检查、前端类型检查/测试/生产构建；随后创建独立临时 PostgreSQL 数据库，按顺序应用迁移 001–031 并运行 PostgreSQL 迁移/运行角色测试与 Go race tests，结束后自动删除测试数据库。之后运行 Go vet/build、C 事件核心编译与 IPC 测试，创建完整生产 PostgreSQL 备份并执行尚未应用的迁移，再安装 Go/C 二进制、切换门户静态 release 与 Caddy 配置，最后执行线上健康检查。若检测到旧 `personal_portal_task_executor` 服务、启用项或残留 root worker，必须显式设置 `PERSONAL_PORTAL_RETIRE_COMMAND_EXECUTOR=1` 才会调用退役脚本；脚本停止并禁用旧服务、确认无残留进程后删除专属运行目录，保留历史日志与数据库备份。
 
-    cd /opt/personal-portal
+    cd /opt/portal-static-assets
     git status --short
     ./deploy/freebsd/deploy.sh
 
-部署过程会在 `/var/backups/personal-portal/` 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用已退役的 `personal_portal_auth_api` 服务；Caddy 不再将任何业务 API 转发到 8082。命令任务执行器在显式授权后退役，不再随部署安装或启动。完整回滚只恢复上一版 Go/C 二进制、Caddyfile 与前端 release，不会重新启用 Node.js API 或 root 命令执行器，也不会自动恢复数据库。
+生产部署过程会在 `/var/backups/personal-portal/` 保存数据库 dump、旧前端 release 目标、旧 Go/C 二进制和旧 Caddyfile。部署成功后会停止并禁用已退役的 `personal_portal_auth_api` 服务；生产 Caddy 模板只将业务 API 转发到 8081，不转发到开发端口 8082。命令任务执行器在显式授权后退役，不再随部署安装或启动。完整回滚只恢复上一版 Go/C 二进制、Caddyfile 与前端 release，不会重新启用 Node.js API 或 root 命令执行器，也不会自动恢复数据库。
 
 **数据库迁移安全：** 发布前先生成并保留完整 PostgreSQL dump。迁移按版本顺序执行；包含显式 `BEGIN/COMMIT` 的迁移由自身控制事务，历史上没有显式事务的迁移由 `psql --single-transaction` 包裹，避免单个迁移中途失败留下半套 DDL。迁移采用向前兼容优先的策略，不在部署失败时自动执行反向 SQL，也不会自动恢复整库 dump。迁移 031 是经负责人明确授权的破坏性退役迁移：删除命令队列/心跳/运行模式表和旧管理权限，并清除尚未分发的旧命令唤醒事件；必须先完成完整 dump 并确保旧 root worker 已停止。恢复数据库属于单独的人工恢复决策，必须先评估发布后新增数据是否会丢失。
 
 **部署期保护规则：自动回退入口已全局禁用。** 无论 `PERSONAL_PORTAL_RELEASE_MODE`、`PERSONAL_PORTAL_AUTO_ROLLBACK` 如何设置，部署失败后都不会自动调用 `rollback.sh`；脚本只输出诊断目录与人工恢复提示，并保留 `/var/tmp/personal-portal-deploy-STAMP` 诊断材料。自动回退策略函数始终返回禁用，Shell 测试覆盖 development/stable/production 与多种环境变量组合。手动回退脚本保留，只有操作者明确执行时才会恢复旧 Go/C 二进制、Caddyfile 与前端 release。数据库备份与迁移前置检查仍然执行；手动回退不等于数据库反向迁移。
 
 **旧编辑器 URL 兼容：** Caddy 将旧 `/editor/` 地址重定向到门户内置编辑器路由，不再提供独立编辑器静态文件，也不存在独立编辑器发布回退脚本。
+
+
+## 当前开发版部署（公网测试环境）
+
+当前公网门户由独立开发栈提供服务。开发 API 监听 `127.0.0.1:8082`，数据库为 `personal_portal_dev`，事件 socket 为 `/var/run/portal-static-assets-dev/event.sock`，上传和资源文件分别位于 `/var/db/portal-static-assets-dev/uploads` 与 `/var/db/portal-static-assets-dev/resources`。运行用户为 `personalportal`，注册默认关闭。Caddy 的 `Caddyfile.dev-public` 将 `/api/*` 去前缀转发到开发 API，并将 `/uploads/*` 原路径转发到 Go API 的图片权限检查；不得使用静态 `file_server` 直接暴露上传目录。
+
+完成源码验证、GitHub 同步并提交后，开发部署命令为：
+
+    cd /opt/portal-static-assets
+    PORTAL_STATIC_ASSETS_DEV=1 ./deploy/freebsd/deploy-dev.sh
+
+该脚本只允许 `main` 与 `origin/main` 完全一致、工作区干净时运行；先执行前端/Go/C 测试，再备份 `personal_portal_dev`、当前二进制、静态文件、uploads/resources 文件目录和 Caddy 配置，随后只迁移开发数据库、更新开发二进制/静态文件、启动开发 API/C 核心、reload Caddy 并运行 `health-check-dev.sh`。失败时保留备份和诊断材料，不自动回滚；不会操作生产数据库、生产二进制目录或正式生产 Caddy 模板。`dev-runtime.sh` 仅管理开发 API/C 核心，不自动启停 PostgreSQL 或 GSM。
+
+开发版检查：
+
+    ./deploy/freebsd/dev-runtime.sh status
+    ./deploy/freebsd/health-check-dev.sh
+
+开发部署不是正式发布。项目完成后，生产发布仍需单独进行架构/安全验收、备份和恢复演练及发布决策。
 
 ## 数据库迁移规则
 
@@ -63,7 +84,7 @@
 
     ./deploy/freebsd/rollback.sh DEPLOYMENT-STAMP
 
-回滚会恢复旧 Go/C 二进制、Caddyfile 和前端 release，并重新启动 Go API、C 事件核心与任务执行器。Node.js API 保持禁用。回滚不会自动恢复数据库，因为这会丢失备份时间点之后的新数据；如确实需要数据库恢复，应先评估影响并单独执行。生产部署和回滚会改变在线服务，必须在取得单独授权后设置 `PERSONAL_PORTAL_ALLOW_SERVICE_RESTART=1` 执行。
+回滚会恢复旧 Go/C 二进制、Caddyfile 和前端 release，并重新启动 Go API 与 C 事件核心。Node.js API 和已退役的命令任务执行器均保持禁用。回滚不会自动恢复数据库，因为这会丢失备份时间点之后的新数据；如确实需要数据库恢复，应先评估影响并单独执行。生产部署和回滚会改变正式在线服务，必须在取得单独授权后设置 `PERSONAL_PORTAL_ALLOW_SERVICE_RESTART=1` 执行。
 
 ## 生产验证覆盖
 

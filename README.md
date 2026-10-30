@@ -31,8 +31,8 @@ FreeBSD 原生部署的个人知识与工具门户。项目由 GitHub 管理，�
 - `frontend/`：原生 TypeScript 模块、DOM 操作、HTML/CSS 与前端构建/测试工具。
 - `backend/api/`：Go HTTP API 与持久化事件接收入口。
 - `event-core/`：C 语言 `kqueue` 事件核心；IPC v2 提供 PING/STATUS/PUBLISH/SUBSCRIBE/ACK 元数据通知。PUBLISHED 与 ACKNOWLEDGED 都不是业务处理完成确认。
-- `deploy/freebsd/`：FreeBSD 部署与 `rc.d` 脚本。
-- `docs/`：产品、架构、安全和运维文档。
+- `deploy/freebsd/`：FreeBSD 正式发布模板、隔离开发版部署/运行/健康检查脚本与 `rc.d` 脚本。
+- `docs/`：产品、架构、安全和运维文档；当前系统边界见 [`docs/architecture/system-map.md`](docs/architecture/system-map.md)。
 
 ## 本地构建前端
 
@@ -49,7 +49,7 @@ npm run build
 
 ## 当前状态
 
-当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-30 已将 Go `go test -race ./...`、C `make test` 和 PostgreSQL 空库迁移/运行角色权限检查加入 CI。2026-10-31 新增迁移 031，完整移除特权命令任务执行器及其数据库对象；FreeBSD 隔离 PostgreSQL 集群已实测 001–031 共 31 个迁移全部通过，并验证旧任务表、旧执行策略、旧管理权限及待处理命令唤醒事件均已清除；本地 Go race tests、`go vet`、前端测试/类型检查/构建和 OpenAPI 检查通过。FreeBSD 本机不支持 Playwright；Chromium E2E 以 GitHub Actions 结果为准。Go 测试现覆盖纯函数/HTTP 边界、并发事件幂等写入、处理租约归属/过期/重试、分发租约过期重领；仍未覆盖进程崩溃恢复、Go/C 真实 IPC 重连和端到端服务重启。C 当前测试验证协议解析与订阅 ACK/FIFO 状态，不覆盖真实 kqueue 并发、信号退出或服务重启。真实 FreeBSD 端到端验证仍需单独记录。部署脚本仅作为受控部署工具；第二阶段开发工作不代表生产部署授权。
+当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-31 已新增迁移 031，完整移除特权命令任务执行器及其数据库对象；FreeBSD 隔离 PostgreSQL 集群已实测 001–031 共 31 个迁移全部通过。当前 Go 测试覆盖 RBAC 读写权限矩阵、内容/资源所有权、图片私有与公开引用、托管文件路径隔离、资源并发替换与持久化清理、事件租约/重试及真实 Go/C IPC 重连；C 测试覆盖真实 kqueue socket、64 客户端上限、畸形/超长帧、空闲/ACK 超时、SUBSCRIBE/PUBLISH/ACK、SIGTERM 清理和同路径重启。前端当前 103/103 测试、类型检查、OpenAPI 检查和 bundle 预算通过。FreeBSD 本机不支持 Playwright；Chromium E2E 以 GitHub Actions 结果为准。当前公网门户是开发版，使用 `personal_portal_dev`，开发部署由 `deploy/freebsd/deploy-dev.sh` 执行；正式生产数据库、二进制和 Caddy 模板与开发版隔离。开发部署不代表第二阶段完成或生产发布。
 
 ---
 
@@ -206,7 +206,7 @@ CI 的模拟回滚不等于真实生产恢复；部署后的健康检查也不�
 
 ### 7.2 发布标准流程
 
-在 `/opt/personal-portal` 运行：
+在 `/opt/portal-static-assets` 运行：
 
 ```sh
 git status --short --branch
@@ -215,6 +215,15 @@ git status --short --branch
 ```
 
 部署脚本负责运行前端生成/测试/构建、Go race tests/vet/build、C 编译与 IPC 测试、数据库备份、迁移、安装二进制、启动服务、等待 readiness、验证 Caddy 配置、切换前端 release、重载 Caddy 和线上健康检查。发布前后的版本路径、旧二进制、Caddyfile 和数据库 dump 应保留为恢复依据。
+
+当前公网个人门户是开发版，不得使用上述生产脚本。开发版部署命令为：
+
+```sh
+cd /opt/portal-static-assets
+PORTAL_STATIC_ASSETS_DEV=1 ./deploy/freebsd/deploy-dev.sh
+```
+
+开发脚本只接受已同步 GitHub 的干净 `main` 分支；先验证代码，再停止开发 API/C 事件核心以取得一致数据库与文件备份，迁移仅指向 `personal_portal_dev`，更新开发二进制/静态文件，启动时强制关闭公开注册，并 reload 开发 Caddy 路由。`dev-runtime.sh` 仅管理开发 API/C 核心；不会重启 PostgreSQL 或 GSM。`health-check-dev.sh` 验证公开 API、上传路由、注册关闭、文件权限和内部端点隔离。生产数据库 `personal_portal` 与生产发布脚本不参与此流程。
 
 ### 7.3 开发期失败策略
 

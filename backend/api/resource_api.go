@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -263,13 +264,20 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		writeError(w, 400, "资源 URL 必须是有效的 HTTP/HTTPS 链接，且不超过 2048 个字符。", nil)
 		return
 	}
+
+	// Serialize updates before creating a replacement file. Without FOR UPDATE,
+	// concurrent requests can all copy the same old filename, write independent
+	// replacements, and leave every losing replacement orphaned on disk.
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		a.dbError(w, err, "开始资源更新事务失败。")
+		return
+	}
+	defer tx.Rollback()
+
 	var old sql.NullString
-	var currentTitle, currentDescription, currentType string
-	var currentFilename, currentMime sql.NullString
-	var currentGrade, currentURL sql.NullString
-	var currentPublic bool
-	var currentSize int64
-	err := a.db.QueryRowContext(r.Context(), "SELECT stored_filename,title,description,resource_type,grade,resource_url,is_public,original_filename,mime_type,coalesce(file_size,0) FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL", id, u.ID).Scan(&old, &currentTitle, &currentDescription, &currentType, &currentGrade, &currentURL, &currentPublic, &currentFilename, &currentMime, &currentSize)
+	var currentFilename sql.NullString
+	err = tx.QueryRowContext(r.Context(), `SELECT stored_filename,original_filename FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE`, id, u.ID).Scan(&old, &currentFilename)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, 404, "资源不存在、已删除或无权编辑。", nil)
@@ -278,6 +286,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		}
 		return
 	}
+
 	var data []byte
 	var name, mt string
 	if b.Data != "" || strings.TrimSpace(b.URL) != "" {
@@ -291,22 +300,31 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		writeError(w, 413, "单个文件大小不能超过 25 MB。", nil)
 		return
 	}
-	if len(data) > 0 {
-		if old.Valid && old.String != "" && name == currentFilename.String {
-			currentData, readErr := readManagedFile(a.resourceDir, old.String)
-			if readErr != nil {
-				a.dbError(w, readErr, "读取现有资源文件失败，未保存任何修改。")
-				return
-			}
+	if len(data) > 0 && old.Valid && old.String != "" && name == currentFilename.String {
+		currentData, readErr := readManagedFile(a.resourceDir, old.String)
+		if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+			a.dbError(w, readErr, "读取现有资源文件失败，未保存任何修改。")
+			return
+		}
+		if readErr == nil {
 			oldHash, newHash := sha256.Sum256(currentData), sha256.Sum256(data)
 			if oldHash == newHash {
 				data = nil
 				name, mt = "", ""
 			}
 		}
+		// A missing old file is repairable by uploading a replacement with the
+		// same original filename; the cleanup event below is idempotent.
 	}
+
 	stored := old.String
 	var newStored string
+	keepNewStored := false
+	defer func() {
+		if newStored != "" && !keepNewStored {
+			_ = removeManagedFile(a.resourceDir, newStored)
+		}
+	}()
 	if len(data) > 0 {
 		newStored, err = a.storeResourceFile(data, name)
 		if err != nil {
@@ -329,11 +347,8 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		mimeValue = mt
 		sizeValue = len(data)
 	}
-	res, err := a.db.ExecContext(r.Context(), `UPDATE portal.teaching_resources SET title=$3,description=$4,resource_type=$5,grade=$6,is_public=COALESCE($7,is_public),resource_url=$8,original_filename=COALESCE($9,original_filename),stored_filename=$10,mime_type=COALESCE($11,mime_type),file_size=COALESCE($12,file_size),updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL`, id, u.ID, b.Title, b.Description, b.Type, nullableString(b.Grade), b.IsPublic, urlValue, fileNameValue, nullableString(stored), mimeValue, sizeValue)
+	res, err := tx.ExecContext(r.Context(), `UPDATE portal.teaching_resources SET title=$3,description=$4,resource_type=$5,grade=$6,is_public=COALESCE($7,is_public),resource_url=$8,original_filename=COALESCE($9,original_filename),stored_filename=$10,mime_type=COALESCE($11,mime_type),file_size=COALESCE($12,file_size),updated_at=now() WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL`, id, u.ID, b.Title, b.Description, b.Type, nullableString(b.Grade), b.IsPublic, urlValue, fileNameValue, nullableString(stored), mimeValue, sizeValue)
 	if err != nil {
-		if newStored != "" {
-			_ = removeManagedFile(a.resourceDir, newStored)
-		}
 		a.dbError(w, err, "资源更新失败。")
 		return
 	}
@@ -346,9 +361,27 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		writeError(w, 404, "资源不存在或无权编辑。", nil)
 		return
 	}
-	if newStored != "" && old.Valid {
-		_ = removeManagedFile(a.resourceDir, old.String)
+
+	cleanupEventID := ""
+	if newStored != "" && old.Valid && old.String != "" {
+		cleanupEventID, err = enqueueFileCleanup(r.Context(), tx, "teaching_resource", old.String)
+		if err != nil {
+			a.dbError(w, err, "登记旧资源文件清理任务失败，更新事务已取消。")
+			return
+		}
 	}
+	if err := tx.Commit(); err != nil {
+		// A commit error can have an ambiguous outcome. Preserve the new file so
+		// a possibly committed row never points to a file removed by this process.
+		keepNewStored = true
+		a.dbError(w, err, "资源更新事务提交失败；请检查数据库状态和清理队列。")
+		return
+	}
+	keepNewStored = true
+	if cleanupEventID != "" {
+		go a.notifyEvent(r.Context(), cleanupEventID, fileCleanupEventType)
+	}
+
 	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
 	if err != nil {
 		a.dbError(w, err, "资源已更新，但读取结果失败。")
@@ -356,6 +389,7 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 	}
 	writeJSON(w, 200, map[string]any{"item": item})
 }
+
 func nullableString(s string) any {
 	if s == "" {
 		return nil

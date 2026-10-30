@@ -22,7 +22,12 @@ make clean all
 make test
 ```
 
-当前 C 协议单元测试（`make test`）覆盖：请求 ID 与事件 ID/type 校验、PING、STATUS、EVENT、未知命令、v1 拒绝、SUBSCRIBE/PUBLISH、错配 ACK、成功 ACK、单个未确认推送后的 FIFO 顺序，以及 32 项 FIFO 上限。测试通过 `PP_IPC_TESTING` 替换 kqueue 注册，不启动真实 socket/event loop。当前尚未覆盖嵌入 NUL、超长网络帧、多个真实并发客户端、慢写入、超时、SIGTERM 清理或真实核心重启/Go 重连；Go 当前也没有这些场景的集成测试。
+`make test` 同时执行两层验证：
+
+- **协议单元测试**：请求 ID 与事件 ID/type 校验、PING、STATUS、EVENT、未知命令、v1 拒绝、SUBSCRIBE/PUBLISH、错配 ACK、成功 ACK、FIFO 顺序和 32 项 FIFO 上限。该层通过 `PP_IPC_TESTING` 替换 kqueue 注册，专注于协议状态转换。
+- **真实 kqueue 集成测试**：启动独立 C event-core 进程并通过真实 Unix Socket 验证 STATUS、嵌入 NUL、超长帧拒绝、64 个客户端上限、空闲请求超时、未 ACK 推送超时、SUBSCRIBE/PUBLISH/ACK、SIGTERM 清理及同路径重启。
+
+GitHub Actions 的 macOS event-core job 另外执行 Go/C 集成测试：通过 `PORTAL_EVENT_CORE_BINARY` 启动真实 C 进程，由 Go `IPCClient` 完成推送/ACK，并验证 C 核心停止后订阅端重连、核心重启后继续收到事件。普通 Go 测试未提供该环境变量时会明确 skip 这项原生集成测试。该测试验证协议与进程生命周期，不代表已经完成生产负载或长时间稳定性测试。
 
 ## 本地协议 v2
 

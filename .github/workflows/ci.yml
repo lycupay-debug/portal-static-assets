@@ -164,9 +164,19 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and test event core protocol
+      - name: Compile and test event core protocol and live kqueue lifecycle
         working-directory: event-core
         run: make clean test all
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Verify real Go/C IPC and event-core restart recovery
+        working-directory: backend
+        env:
+          PORTAL_EVENT_CORE_BINARY: ${{ github.workspace }}/event-core/event-core
+        run: go test -race -count=1 -run '^TestIPCClientAgainstRealEventCore$' ./api
 
   compliance-and-deploy-policy:
     name: Compliance and deployment policy checks
@@ -181,5 +191,14 @@ jobs:
       - name: Shell syntax checks
         run: |
           find deploy/freebsd scripts/ops -type f \( -name '*.sh' -o -name 'deploy.sh' -o -name 'rollback.sh' \) -print0 | xargs -0 -n1 sh -n
+      - name: Verify production and development upload routing boundaries
+        run: |
+          grep -Fq 'handle /uploads/* {' deploy/freebsd/Caddyfile
+          grep -Fq 'reverse_proxy 127.0.0.1:8081 {' deploy/freebsd/Caddyfile
+          grep -Fq 'handle /uploads/* {' deploy/freebsd/Caddyfile.dev-public
+          grep -Fq 'reverse_proxy 127.0.0.1:8082 {' deploy/freebsd/Caddyfile.dev-public
+          grep -Fq 'PERSONAL_PORTAL_REGISTRATION_ENABLED=0' deploy/freebsd/dev-runtime.sh
+          grep -Fq 'PERSONAL_PORTAL_UPLOAD_DIR=' deploy/freebsd/dev-runtime.sh
+          grep -Fq 'PERSONAL_PORTAL_RESOURCE_DIR=' deploy/freebsd/dev-runtime.sh
       - name: Patch whitespace check
         run: git diff --check

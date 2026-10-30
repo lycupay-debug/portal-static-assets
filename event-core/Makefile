@@ -19,8 +19,9 @@ $(TARGET): $(SOURCES) include/event_protocol.h
 $(TEST_TARGET): $(TEST_SOURCES) $(SOURCES) include/event_protocol.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DPP_IPC_TESTING $(TEST_SOURCES) -o $(TEST_TARGET) $(LDFLAGS)
 
-test: $(TEST_TARGET)
+test: $(TARGET) $(TEST_TARGET)
 	./$(TEST_TARGET)
+	python3 tests/integration_test.py ./$(TARGET)
 
 clean:
 	rm -f $(TARGET) $(TEST_TARGET)

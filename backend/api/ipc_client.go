@@ -13,9 +13,40 @@ import (
 )
 
 const (
-	defaultSocket   = "/var/run/personal-portal/event.sock"
-	protocolVersion = "v2"
+	defaultSocket    = "/var/run/personal-portal/event.sock"
+	protocolVersion  = "v2"
+	maxIPCFrameBytes = 255
 )
+
+var errIPCFrameTooLarge = errors.New("IPC frame exceeds protocol limit")
+
+// readIPCLine reads one bounded protocol frame. ReadSlice stops at the reader
+// capacity instead of allowing a local peer to grow an unbounded string.
+func readIPCLine(reader *bufio.Reader) (string, error) {
+	line, err := reader.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) || len(line) > maxIPCFrameBytes {
+		return "", errIPCFrameTooLarge
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(line), nil
+}
+
+func nextIPCBackoff(current time.Duration) time.Duration {
+	const maximum = 10 * time.Second
+	if current <= 0 {
+		return time.Second
+	}
+	if current >= maximum {
+		return maximum
+	}
+	next := current * 2
+	if next > maximum {
+		return maximum
+	}
+	return next
+}
 
 var requestSequence atomic.Uint64
 
@@ -50,12 +81,9 @@ func (c IPCClient) Status(ctx context.Context) error {
 		return fmt.Errorf("write IPC request: %w", err)
 	}
 
-	line, err := bufio.NewReader(conn).ReadString('\n')
+	line, err := readIPCLine(bufio.NewReaderSize(conn, maxIPCFrameBytes+1))
 	if err != nil {
 		return fmt.Errorf("read IPC response: %w", err)
-	}
-	if len(line) > 255 {
-		return errors.New("IPC response exceeds limit")
 	}
 	fields := strings.Fields(strings.TrimSuffix(line, "\n"))
 	if len(fields) != 4 || fields[0] != protocolVersion ||
@@ -86,9 +114,7 @@ func (c IPCClient) Subscribe(ctx context.Context, wake chan<- struct{}) {
 			return
 		case <-timer.C:
 		}
-		if backoff < 10*time.Second {
-			backoff *= 2
-		}
+		backoff = nextIPCBackoff(backoff)
 	}
 }
 
@@ -104,13 +130,15 @@ func (c IPCClient) subscribeOnce(ctx context.Context, wake chan<- struct{}) erro
 	defer conn.Close()
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stopClose()
-	_ = conn.SetDeadline(time.Now().Add(timeout))
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return fmt.Errorf("set IPC subscription deadline: %w", err)
+	}
 	id := fmt.Sprintf("sub%d", requestSequence.Add(1))
 	if _, err := fmt.Fprintf(conn, "%s %s SUBSCRIBE\n", protocolVersion, id); err != nil {
 		return fmt.Errorf("send subscription request: %w", err)
 	}
-	reader := bufio.NewReader(conn)
-	line, err := reader.ReadString('\n')
+	reader := bufio.NewReaderSize(conn, maxIPCFrameBytes+1)
+	line, err := readIPCLine(reader)
 	if err != nil {
 		return fmt.Errorf("read subscription acknowledgement: %w", err)
 	}
@@ -120,14 +148,13 @@ func (c IPCClient) subscribeOnce(ctx context.Context, wake chan<- struct{}) erro
 	}
 	fmt.Printf("event_core_subscriber_connected request_id=%s\n", id)
 	// A persistent subscription cannot use the short request deadline.
-	_ = conn.SetDeadline(time.Time{})
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("clear IPC subscription deadline: %w", err)
+	}
 	for {
-		line, err = reader.ReadString('\n')
+		line, err = readIPCLine(reader)
 		if err != nil {
 			return fmt.Errorf("read event push: %w", err)
-		}
-		if len(line) > 255 {
-			return errors.New("event push exceeds protocol limit")
 		}
 		fields = strings.Fields(strings.TrimSuffix(line, "\n"))
 		if len(fields) != 5 || fields[0] != protocolVersion || !validIPCRequestID(fields[1]) ||
@@ -146,7 +173,7 @@ func (c IPCClient) subscribeOnce(ctx context.Context, wake chan<- struct{}) erro
 		if _, err := fmt.Fprintf(conn, "%s %s ACK %s %s\n", protocolVersion, ackID, eventID, eventType); err != nil {
 			return fmt.Errorf("send event push acknowledgement: %w", err)
 		}
-		ackLine, err := reader.ReadString('\n')
+		ackLine, err := readIPCLine(reader)
 		if err != nil {
 			return fmt.Errorf("read event push acknowledgement: %w", err)
 		}
@@ -205,12 +232,9 @@ func (c IPCClient) sendEventCommand(ctx context.Context, command, eventID, event
 		protocolVersion, id, command, eventID, eventType); err != nil {
 		return fmt.Errorf("write IPC event notification: %w", err)
 	}
-	line, err := bufio.NewReader(conn).ReadString('\n')
+	line, err := readIPCLine(bufio.NewReaderSize(conn, maxIPCFrameBytes+1))
 	if err != nil {
 		return fmt.Errorf("read IPC event response: %w", err)
-	}
-	if len(line) > 255 {
-		return errors.New("IPC response exceeds limit")
 	}
 	fields := strings.Fields(strings.TrimSuffix(line, "\n"))
 	if len(fields) != 4 || fields[0] != protocolVersion ||

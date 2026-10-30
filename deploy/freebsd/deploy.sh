@@ -71,6 +71,8 @@ for directive in \
   'trusted_proxies static' \
   'trusted_proxies_strict' \
   'client_ip_headers CF-Connecting-IP' \
+  'handle /uploads/* {' \
+  'reverse_proxy 127.0.0.1:8081 {' \
   'header_up X-Portal-Client-IP {client_ip}' \
   'handle /editor {' \
   'redir https://{http.request.host}/content-management 308' \

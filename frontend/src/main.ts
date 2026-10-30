@@ -8,9 +8,24 @@ import './notification.css'
 import { initializeResponsiveLayout } from './utils/responsiveLayout'
 import { mountPortalApplication } from './portalApplication'
 
-initializeResponsiveLayout()
 const root = document.querySelector<HTMLElement>('#app')
 if (!root) throw new Error('Portal application root #app was not found')
-const dispose = mountPortalApplication(root)
+
+const disposeResponsiveLayout = initializeResponsiveLayout()
+let disposePortalApplication: (() => void) | undefined
+try {
+  disposePortalApplication = mountPortalApplication(root)
+} catch (error) {
+  disposeResponsiveLayout()
+  throw error
+}
+
+const dispose = () => {
+  try {
+    disposePortalApplication?.()
+  } finally {
+    disposeResponsiveLayout()
+  }
+}
 
 if (import.meta.hot) import.meta.hot.dispose(dispose)
