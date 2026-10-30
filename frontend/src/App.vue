@@ -38,7 +38,6 @@ import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource } from './api/generated'
 
-const ComplianceCenter = defineAsyncComponent(() => import('./components/ComplianceCenter.vue'))
 const ContentDocumentEditor = defineAsyncComponent(() => import('./components/ContentDocumentEditor.vue'))
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 const visibilityOptions: VirtualizedSelectOption[] = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
@@ -88,6 +87,27 @@ const authNotice = ref('')
 const authForm = ref({ displayName: '', email: '', password: '' })
 const expandedAccountGroups = ref<string[]>(['personal', 'publishing', 'housing', 'education', 'software', 'workflows', 'compliance', 'system-ops'])
 const activeAccountSection = ref('overview')
+const complianceCenterHost = ref<HTMLElement | null>(null)
+let disposeComplianceCenter: (() => void) | null = null
+let complianceMountSequence = 0
+watch([activeAccountSection, complianceCenterHost, () => user.value?.isAdmin === true], ([section, host, isAdmin]) => {
+  const sequence = ++complianceMountSequence
+  disposeComplianceCenter?.()
+  disposeComplianceCenter = null
+  if (section !== 'copyright-compliance' || !host) return
+  void (async () => {
+    const [module] = await Promise.all([
+      import('./components/complianceCenterView'),
+      import('./components/complianceCenter.css'),
+    ])
+    if (sequence !== complianceMountSequence || host !== complianceCenterHost.value) return
+    disposeComplianceCenter = module.mountComplianceCenter(host, isAdmin === true).dispose
+  })().catch((error: unknown) => {
+    if (sequence !== complianceMountSequence || host !== complianceCenterHost.value) return
+    host.textContent = '合规中心加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '合规中心加载失败', '合规中心')
+  })
+}, { flush: 'post' })
 const systemOpsHost = ref<HTMLElement | null>(null)
 let disposeSystemOpsCenter: (() => void) | null = null
 let systemOpsMountSequence = 0
@@ -697,6 +717,9 @@ onBeforeUnmount(() => {
   teachingResourceEditorSequence += 1
   disposeTeachingResourceEditor?.()
   disposeTeachingResourceEditor = null
+  complianceMountSequence += 1
+  disposeComplianceCenter?.()
+  disposeComplianceCenter = null
   systemOpsMountSequence += 1
   disposeSystemOpsCenter?.()
   disposeSystemOpsCenter = null
@@ -1094,7 +1117,7 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else-if="activeAccountSection === 'copyright-compliance'">
-          <ComplianceCenter :is-admin="user?.isAdmin === true" />
+          <div ref="complianceCenterHost"></div>
         </template>
         <template v-else-if="activeAccountSection === 'system-warnings'">
           <div ref="systemOpsHost"></div>
