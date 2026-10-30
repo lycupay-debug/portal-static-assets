@@ -10,7 +10,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch, 
 import { apiRequest } from './api/client'
 import { createKnowledgeDirectoryController } from './state/knowledgeDirectory'
 import { createDebouncedValue } from './state/debouncedValue'
-import { mountVirtualizedSelect, type VirtualizedSelectOption } from './components/virtualizedSelect'
 import { mountNotificationHost } from './components/notificationHost'
 import { mountTeachingResourceDrawer } from './components/teachingResourceDrawer'
 import { portalNotify } from './utils/notification'
@@ -34,6 +33,7 @@ import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { mountSiteHeaderView } from './views/siteHeaderView'
 import { mountSiteFooterView } from './views/siteFooterView'
 import { mountKnowledgeTagDialogView } from './views/knowledgeTagDialogView'
+import { mountContentSettingsView } from './views/contentSettingsView'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
@@ -43,7 +43,6 @@ import type { Content as APIContent, ContentVersion as APIContentVersion, Teachi
 const createVueValue = <T>(initial: T): MutableValue<T> => ref(initial) as MutableValue<T>
 
 const taxonomyParentNames = knowledgeTaxonomyParentNames
-const visibilityOptions: VirtualizedSelectOption[] = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
 
 type PortalContent = APIContent
 type ContentVersion = APIContentVersion
@@ -307,25 +306,8 @@ watch(contentEditorHost, host => {
 }, { flush: 'post' })
 watch(() => contentForm.value.body, markdown => nativeContentEditor?.setMarkdown(markdown))
 watch(contentBusy, busy => nativeContentEditor?.setEditable(!busy))
-const contentVisibilitySelectHost = ref<HTMLElement | null>(null)
-let disposeContentVisibilitySelect: (() => void) | null = null
-let contentVisibilitySelect: ReturnType<typeof mountVirtualizedSelect> | null = null
-watch(contentVisibilitySelectHost, (host) => {
-  disposeContentVisibilitySelect?.()
-  disposeContentVisibilitySelect = null
-  contentVisibilitySelect = null
-  if (!host) return
-  contentVisibilitySelect = mountVirtualizedSelect(host, {
-    label: '可见范围',
-    options: visibilityOptions,
-    value: contentForm.value.visibility,
-    disabled: contentBusy.value,
-    onChange: (value) => { contentForm.value.visibility = value as ContentForm['visibility'] },
-  })
-  disposeContentVisibilitySelect = contentVisibilitySelect.dispose
-}, { flush: 'post' })
-watch(() => contentForm.value.visibility, value => contentVisibilitySelect?.update({ value }))
-watch(contentBusy, disabled => contentVisibilitySelect?.update({ disabled }))
+const contentSettingsHost = ref<HTMLElement | null>(null)
+let contentSettingsView: ReturnType<typeof mountContentSettingsView> | null = null
 const {
   dialogOpen: knowledgeTagDialogOpen,
   trigger: knowledgeTagTrigger,
@@ -346,9 +328,31 @@ const {
   createValue: createVueValue,
   afterRender: () => nextTick(),
 })
-const knowledgeTagDialogOpenRef = knowledgeTagDialogOpen as Ref<boolean>
 const selectedKnowledgeTagCount = computed(() => selectedKnowledgeTagCountValue.value)
 const knowledgeTagDraftCount = computed(() => knowledgeTagDraftCountValue.value)
+watch([contentSettingsHost, contentForm, contentBusy, knowledgeTagDialogOpen], () => {
+  const host = contentSettingsHost.value
+  if (!host) { contentSettingsView?.dispose(); contentSettingsView = null; return }
+  const getState = () => ({
+    title: contentForm.value.title, slug: contentForm.value.slug, summary: contentForm.value.summary,
+    visibility: contentForm.value.visibility, tags: contentForm.value.tags, busy: contentBusy.value,
+    tagDialogOpen: knowledgeTagDialogOpen.value,
+  })
+  if (!contentSettingsView) contentSettingsView = mountContentSettingsView(host, {
+    getState,
+    visibilityOptions: [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }],
+    taxonomyParentNames,
+    setField: (field, value) => { contentForm.value[field] = value },
+    setVisibility: value => { contentForm.value.visibility = value as ContentForm['visibility'] },
+    openTagPicker: openKnowledgeTagDialog,
+    setTagTrigger: element => { knowledgeTagTrigger.value = element },
+    removeTag: removeSelectedKnowledgeTag,
+    clearTags: clearSelectedKnowledgeTags,
+    cancel: cancelContentEditor,
+    save: () => { void saveContent() },
+  })
+  contentSettingsView.update(getState())
+}, { deep: true, flush: 'post' })
 const publicContents = ref<PublicContentCard[]>([])
 const publicTeachingResources = ref<PublicTeachingResource[]>([])
 const educationResourceLoading = ref(false)
@@ -1094,9 +1098,8 @@ onBeforeUnmount(() => {
   disposeSystemOpsCenter = null
   disposeNotificationHost?.()
   disposeNotificationHost = null
-  disposeContentVisibilitySelect?.()
-  disposeContentVisibilitySelect = null
-  contentVisibilitySelect = null
+  contentSettingsView?.dispose()
+  contentSettingsView = null
   disposeTeachingResourceDrawer?.()
   disposeTeachingResourceDrawer = null
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
@@ -1126,22 +1129,7 @@ onBeforeUnmount(() => {
         <div ref="contentEditorHost" class="content-editor-native-main"></div>
         <aside class="content-tools-sidebar">
           <div class="workspace-sidebar-settings">
-          <details class="workspace-fold workspace-settings-fold" open>
-            <summary><span><strong>创建内容</strong></span><span class="workspace-fold-chevron bi bi-chevron-down" aria-hidden="true"></span></summary>
-            <section class="workspace-properties">
-              <label><span>内容标题</span><input class="form-control" v-model="contentForm.title" name="contentTitle" required maxlength="200" placeholder="输入内容标题" /></label>
-              <fieldset class="workspace-tag-field"><legend>知识广场标签 <small>可多选</small></legend><button type="button" ref="knowledgeTagTrigger" class="workspace-tag-picker-trigger" :disabled="contentBusy" :aria-expanded="knowledgeTagDialogOpenRef" aria-haspopup="dialog" @click.stop="openKnowledgeTagDialog"><span class="bi bi-diagram-3" aria-hidden="true"></span><span>{{ selectedKnowledgeTagCount ? `已选择 ${selectedKnowledgeTagCount} 个标签` : '点击选择标签' }}</span><span class="bi bi-chevron-down" aria-hidden="true"></span></button><div v-if="selectedKnowledgeTagCount" class="workspace-tag-selected-preview"><span v-for="tag in contentForm.tags.filter(item => !taxonomyParentNames.has(item))" :key="tag" class="workspace-tag-selected-chip">{{ tag }}<button type="button" :disabled="contentBusy" :aria-label="`移除标签 ${tag}`" @click="removeSelectedKnowledgeTag(tag)">×</button></span><button type="button" class="workspace-tag-clear" :disabled="contentBusy" @click="clearSelectedKnowledgeTags">清空</button></div><p v-else class="workspace-tag-empty-hint">尚未选择标签</p></fieldset>
-              <label><span>可见范围</span><div ref="contentVisibilitySelectHost"></div></label>
-              <label><span>URL 别名</span><input class="form-control" v-model="contentForm.slug" name="contentSlug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="例如：go-language-notes" /></label>
-              <label><span>摘要</span><textarea class="form-control" v-model="contentForm.summary" name="contentSummary" maxlength="500" rows="3" placeholder="简要介绍这篇内容…"></textarea></label>
-
-              <p class="workspace-privacy-note"><span>◈</span> 内容默认保存为草稿；保存后可在内容列表单独发布。</p>
-            </section>
-          </details>
-          <div class="workspace-create-actions">
-            <button type="button" class="btn content-secondary-button" :disabled="contentBusy" @click="cancelContentEditor">取消</button>
-            <button type="button" class="btn btn-dark workspace-save-draft" :disabled="contentBusy" @click="saveContent()">{{ contentBusy ? '正在保存…' : '保存草稿' }}</button>
-          </div>
+            <div ref="contentSettingsHost"></div>
             <p class="context-menu-hint">在正文中单击右键，打开统一编辑菜单。</p>
           </div>
         </aside>

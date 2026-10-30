@@ -38,6 +38,9 @@ test('native editor mounts workspace, edits Markdown, filters slash tools and in
   await expect(editor.locator('img[src="https://assets.example.test/demo.png"]')).toBeVisible()
 
   await expect(page.getByText('创建内容')).toBeVisible()
+  await page.locator('input[name="contentTitle"]').fill('Native settings E2E title')
+  await expect(page.locator('.workspace-document-name')).toContainText('Native settings E2E title')
+  await page.locator('textarea[name="contentSummary"]').fill('Native settings E2E summary')
   await expect(page.getByRole('button', { name: '保存草稿' })).toBeVisible()
 
   await page.getByRole('button', { name: /点击选择标签/ }).click()
