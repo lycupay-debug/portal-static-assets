@@ -50,7 +50,7 @@ test('content management table renders native rows, details and trash navigation
       }] }),
     })
   })
-  await page.goto('/account/content-management')
+  await page.goto('/content-management')
   await expect(page.getByRole('heading', { name: '内容列表' })).toBeVisible()
   await expect(page.locator('.virtual-table-row')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '下架' })).toBeVisible()
