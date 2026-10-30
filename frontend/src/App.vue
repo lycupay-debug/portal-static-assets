@@ -30,7 +30,7 @@ import { resourceFileIcon } from './utils/resourceIcons'
 import { createRetryableLazyLoader } from './utils/retryableLazyLoader'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeSections, sectionRoutes } from './navigation/portalRoutes'
-import { resolvePortalLocation } from './navigation/resolvePortalLocation'
+import { createPortalNavigationController } from './navigation/portalNavigationController'
 import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { contentStatusLabels, contentTypeLabels } from './config/accountTables'
 import { homeSections } from './config/homeSections'
@@ -552,20 +552,6 @@ const {
 } = useKnowledgeDirectory(route, directoryContentItems, filteredEducationResources, navigate)
 
 function closeMenu() { menuOpen.value = false }
-function setRouteFromLocation() {
-  const resolved = resolvePortalLocation(window.location.pathname, window.location.search)
-  route.value = resolved.route
-  if (route.value === '/knowledge') {
-    knowledgeCategory.value = resolved.knowledgeCategory
-    knowledgeSubcategory.value = resolved.knowledgeSubcategory
-    knowledgeVisibleCount.value = knowledgePageSize
-  }
-  if (isAccountPage.value) {
-    const section = routeSections[route.value] || 'overview'
-    activeAccountSection.value = section
-    activeSidebarButton.value = section
-  }
-}
 const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route)
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicDirectoryData').createPublicDirectoryLoader>
@@ -648,41 +634,9 @@ const { ensureRouteAccess } = createProtectedRouteGuard({
   },
 })
 
-async function navigate(target: string) {
-  const navigationId = ++navigationSequence
-  saveScrollPosition()
-  closeMenu()
-  history.pushState({}, '', target)
-  setRouteFromLocation()
-  void loadPublishedLegalDocuments()
-  authError.value = ''
-  authNotice.value = ''
-  if (!await ensureRouteAccess(navigationId)) return
-  if (route.value === '/content-management') {
-    await loadContentList()
-    if (navigationId !== navigationSequence) return
-  }
-  if (route.value === '/education/teaching-resources') {
-    await loadTeachingResources()
-    if (navigationId !== navigationSequence) return
-  }
-  if (navigationId !== navigationSequence) return
-  loadRouteData()
-  if (route.value === '/' && window.location.hash) {
-    await nextTick()
-    if (navigationId !== navigationSequence) return
-    document.querySelector(window.location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  } else {
-    window.scrollTo({ top: 0, behavior: 'auto' })
-    if (isAccountPage.value) {
-      await nextTick()
-      if (navigationId !== navigationSequence) return
-      const content = document.querySelector('.account-content') as HTMLElement | null
-      const table = document.querySelector('.virtual-table-scroll') as HTMLElement | null
-      if (content) content.scrollTop = 0
-      if (table) table.scrollTop = 0
-    }
-  }
+let portalNavigation: ReturnType<typeof createPortalNavigationController> | null = null
+function navigate(target: string): Promise<void> {
+  return portalNavigation?.navigate(target) ?? Promise.resolve()
 }
 const { loadSession, submitAuth, logout } = usePortalAuthentication({
   user,
@@ -696,45 +650,42 @@ const { loadSession, submitAuth, logout } = usePortalAuthentication({
   notifySuccess: (message, title) => portalNotify.success(message, title),
   notifyError: (message, title) => portalNotify.error(message, title),
 })
-function onPopState() {
-  const navigationId = ++navigationSequence
-  setRouteFromLocation()
-  closeMenu()
-  authError.value = ''
-  const continueNavigation = async () => {
-    if (!await ensureRouteAccess(navigationId)) return
-    if (navigationId !== navigationSequence) return
-    if (route.value === '/content-management') void loadContentList()
-    if (route.value === '/education/teaching-resources') void loadTeachingResources()
-    loadRouteData()
-    void restoreScrollPosition()
-  }
-  void continueNavigation()
-}
+portalNavigation = createPortalNavigationController({
+  browser: window,
+  document,
+  routeSections,
+  nextNavigationId: () => ++navigationSequence,
+  isNavigationCurrent: navigationId => navigationId === navigationSequence,
+  getRoute: () => route.value,
+  setRoute: value => { route.value = value },
+  isProtectedPage: () => isProtectedPage.value,
+  isAccountPage: () => isAccountPage.value,
+  setKnowledgeLocation: resolved => {
+    knowledgeCategory.value = resolved.knowledgeCategory
+    knowledgeSubcategory.value = resolved.knowledgeSubcategory
+    knowledgeVisibleCount.value = knowledgePageSize
+  },
+  setAccountSection: section => { activeAccountSection.value = section },
+  setActiveSidebarButton: section => { activeSidebarButton.value = section },
+  ensureRouteAccess,
+  saveScrollPosition,
+  restoreScrollPosition,
+  closeMenu,
+  clearAuthError: () => { authError.value = '' },
+  clearAuthNotice: () => { authNotice.value = '' },
+  loadPublishedLegalDocuments,
+  loadContentList: () => loadContentList(),
+  loadTeachingResources: () => loadTeachingResources(),
+  loadRouteData,
+  loadSession,
+  observeVirtualTableWidth,
+  onScrollCapture,
+  afterRender: () => nextTick(),
+})
 let disposeNotificationHost: (() => void) | null = null
 onMounted(() => {
   disposeNotificationHost = mountNotificationHost(document.body)
-  const navigationId = ++navigationSequence
-  setRouteFromLocation()
-  void nextTick().then(observeVirtualTableWidth)
-  window.addEventListener('popstate', onPopState)
-  document.addEventListener('scroll', onScrollCapture, true)
-  window.addEventListener('beforeunload', saveScrollPosition)
-  void loadPublishedLegalDocuments()
-  if (isProtectedPage.value) {
-    void ensureRouteAccess(navigationId).then((allowed) => {
-      if (!allowed || navigationId !== navigationSequence) return
-      if (route.value === '/content-management') void loadContentList()
-      if (route.value === '/education/teaching-resources') void loadTeachingResources()
-      loadRouteData()
-      void restoreScrollPosition()
-    })
-  } else {
-    loadRouteData()
-    // Public pages still load the session so the header reflects an existing login.
-    void loadSession()
-    void restoreScrollPosition()
-  }
+  void portalNavigation?.start()
 })
 onBeforeUnmount(() => {
   contentEditorMountSequence += 1
@@ -759,10 +710,9 @@ onBeforeUnmount(() => {
   if (selectedEducationResource.value) document.body.style.overflow = educationResourcePreviousBodyOverflow
   educationResourcePreviousBodyOverflow = ''
   saveScrollPosition()
+  portalNavigation?.dispose()
+  portalNavigation = null
   tableResizeObserver?.disconnect()
-  window.removeEventListener('popstate', onPopState)
-  document.removeEventListener('scroll', onScrollCapture, true)
-  window.removeEventListener('beforeunload', saveScrollPosition)
 })
 </script>
 
