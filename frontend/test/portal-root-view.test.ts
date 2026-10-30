@@ -46,8 +46,24 @@ test('account route selects the correct native host and table layout modifier', 
     assert.ok(ctx.assigned.get('accountSidebarHost')?.isConnected)
     assert.ok(ctx.assigned.get('accountTableViewHost')?.isConnected)
     assert.ok(ctx.host.querySelector('.account-content-table-mode'))
+    const originalSidebar = ctx.assigned.get('accountSidebarHost')
+    const originalTable = ctx.assigned.get('accountTableViewHost')
+    ctx.update(base('/account/resources', { accountPage: true, accountSection: 'resources', accountTableMode: false }))
+    assert.equal(ctx.assigned.get('accountSidebarHost'), originalSidebar)
+    assert.equal(ctx.assigned.get('accountTableViewHost'), originalTable)
+    assert.equal(ctx.host.querySelector('.account-content-table-mode'), null)
     assert.equal(ctx.assigned.get('siteHeaderHost'), null)
     assert.equal(ctx.assigned.get('siteFooterHost'), null)
+  } finally { ctx.view.dispose(); ctx.dom.window.close() }
+})
+
+test('account identity sections retain the same native host while switching overview and profile', () => {
+  const ctx = mount(base('/account', { accountPage: true, accountSection: 'overview' }))
+  try {
+    const identity = ctx.assigned.get('accountIdentityHost')
+    ctx.update(base('/account/profile', { accountPage: true, accountSection: 'profile' }))
+    assert.equal(ctx.assigned.get('accountIdentityHost'), identity)
+    assert.equal(identity?.isConnected, true)
   } finally { ctx.view.dispose(); ctx.dom.window.close() }
 })
 
@@ -70,6 +86,9 @@ test('route updates release old hosts before mounting new page and dispose clear
     assert.equal(oldHome?.isConnected, false)
     assert.ok(ctx.assigned.get('authPageHost')?.isConnected)
     assert.ok(ctx.host.querySelector('.route-main'))
+    const loginHost = ctx.assigned.get('authPageHost')
+    ctx.update(base('/register', { authPage: true }))
+    assert.equal(ctx.assigned.get('authPageHost'), loginHost)
     ctx.view.dispose()
     assert.equal(ctx.host.childElementCount, 0)
     for (const value of ctx.assigned.values()) assert.equal(value, null)

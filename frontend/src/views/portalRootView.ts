@@ -42,6 +42,25 @@ export function mountPortalRootView(
 ) {
   const document = host.ownerDocument
   let disposed = false
+  let currentLayoutKey = ''
+
+  function layoutKey(state: PortalRootState): string {
+    if (state.contentEditorPage) return 'content-editor'
+    if (state.accountPage) {
+      const section = ['overview', 'profile', 'security'].includes(state.accountSection) ? 'identity'
+        : state.accountSection === 'copyright-compliance' ? 'compliance'
+          : ['system-warnings', 'system-logs', 'system-execution-policy'].includes(state.accountSection) ? 'system-ops' : 'table'
+      return `account:${section}`
+    }
+    if (state.authPage) return 'auth'
+    if (state.publicContentPage) return 'public-article'
+    if (state.legalPage) return 'legal-document'
+    if (state.route === '/') return 'home'
+    if (state.route === '/knowledge') return 'knowledge-directory'
+    if (state.route === '/homestays' || state.route === '/software-tools') return 'directory-overview'
+    if (state.route === '/education-resources') return 'education-directory'
+    return `not-found:${state.route}`
+  }
 
   function createHost(name: PortalRootHostName, tag = 'div', className = '') {
     const element = document.createElement(tag)
@@ -58,6 +77,7 @@ export function mountPortalRootView(
 
   function render(state: PortalRootState) {
     if (disposed) return
+    currentLayoutKey = layoutKey(state)
     for (const name of HOST_NAMES) options.setHost(name, null)
     const shell = document.createElement('div'); shell.className = 'site-shell'
     shell.append(createHost('knowledgeTagDialogHost'))
@@ -118,7 +138,13 @@ export function mountPortalRootView(
 
   render(options.getState())
   return {
-    update(state: PortalRootState) { render(state) },
+    update(state: PortalRootState) {
+      if (disposed) return
+      const nextLayoutKey = layoutKey(state)
+      if (nextLayoutKey !== currentLayoutKey) { render(state); return }
+      const accountContent = host.querySelector<HTMLElement>('.account-content')
+      accountContent?.classList.toggle('account-content-table-mode', state.accountPage && state.accountTableMode)
+    },
     dispose() { if (disposed) return; disposed = true; for (const name of HOST_NAMES) options.setHost(name, null); host.replaceChildren() },
   }
 }

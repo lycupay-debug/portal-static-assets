@@ -11,7 +11,7 @@ test('content settings open, commit and remove taxonomy tags through native DOM'
   await page.getByRole('button', { name: /点击选择标签/ }).click({ timeout: 5000 })
   const dialog = page.getByRole('dialog', { name: '选择知识广场标签' })
   await expect(dialog).toBeVisible({ timeout: 5000 })
-  await dialog.locator('label.knowledge-tag-tree-option').first().click({ timeout: 5000 })
+  await dialog.locator('label.knowledge-tag-tree-option').filter({ hasText: '小学教育' }).click({ timeout: 5000 })
   await expect(dialog.locator('.knowledge-tag-dialog-footer strong')).toHaveText('1')
   await dialog.getByRole('button', { name: '完成' }).click({ timeout: 5000 })
   await expect(page.getByRole('button', { name: '移除标签 小学教育' })).toBeVisible()
