@@ -162,6 +162,17 @@ func TestPortalRBACPermissionMatrix(t *testing.T) {
 	if got := securityTestRequest(api, http.MethodPost, "/compliance/assets", regularToken, `{}`).Code; got != http.StatusForbidden {
 		t.Fatalf("read-only role write status = %d, want 403", got)
 	}
+	// The compatibility is_admin column must not bypass the RBAC permission
+	// matrix when an account has only portal.compliance.read.
+	if _, err := db.Exec(`UPDATE portal.portal_users SET is_admin=TRUE WHERE user_id=$1::uuid`, regularID); err != nil {
+		t.Fatalf("set legacy admin compatibility flag: %v", err)
+	}
+	if got := securityTestRequest(api, http.MethodPost, "/compliance/assets", regularToken, `{}`).Code; got != http.StatusForbidden {
+		t.Fatalf("legacy is_admin flag bypassed compliance RBAC: status=%d, want 403", got)
+	}
+	if _, err := db.Exec(`UPDATE portal.portal_users SET is_admin=FALSE WHERE user_id=$1::uuid`, regularID); err != nil {
+		t.Fatalf("clear legacy admin compatibility flag: %v", err)
+	}
 
 	var existingAdmin int
 	if err := db.QueryRow(`SELECT count(*) FROM portal.portal_users WHERE is_admin=TRUE`).Scan(&existingAdmin); err != nil {

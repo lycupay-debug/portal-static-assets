@@ -151,7 +151,7 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 - `/api/events`, `/api/dbz`, `/api/readyz`, and `/api/metrics` are blocked at the public gateway; these endpoints remain loopback-only operational surfaces.
 - The Go API and C event core run as `personalportal`, not root. The C Unix socket is mode `0600`; C does not listen on TCP.
 - Runtime database role is least-privilege `personal_portal_app`; schema ownership is separated into non-login `personal_portal_owner`.
-- User-facing content/resource access is owner-scoped in SQL. Super-admin controls are server-enforced; frontend role visibility is not a security control.
+- User-facing content/resource access is owner-scoped in SQL. Super-admin controls are server-enforced; frontend role visibility is not a security control. Compliance read/write access is granted only by `portal_user_roles` + `role_permissions`; the legacy `portal_users.is_admin` compatibility flag alone must never bypass the permission matrix.
 - Managed image references are serialized by PostgreSQL transaction advisory locks across content creation/update/version restore and permanent deletion. Cleanup must account for current bodies and restorable historical snapshots before removing image registration or files.
 - Uploaded image and resource paths are confined by `os.Root`. Caddy must proxy uploads to Go, never `file_server` the managed upload directory.
 - The privileged command-task executor and its database tables/permission have been retired by migration 031. No root worker or command-execution API is part of the current architecture.

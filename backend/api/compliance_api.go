@@ -52,7 +52,7 @@ func (a *portalAPI) requireComplianceAdmin(w http.ResponseWriter, r *http.Reques
 		permission = "portal.compliance.read"
 	}
 	var admin bool
-	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_user_roles ur JOIN portal.role_permissions rp ON rp.role_key=ur.role_key WHERE ur.user_id=$1::uuid AND rp.permission_key=$2) OR EXISTS (SELECT 1 FROM portal.portal_users WHERE user_id=$1::uuid AND is_admin=TRUE)`, u.ID, permission).Scan(&admin); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_user_roles ur JOIN portal.role_permissions rp ON rp.role_key=ur.role_key WHERE ur.user_id=$1::uuid AND rp.permission_key=$2)`, u.ID, permission).Scan(&admin); err != nil {
 		a.dbError(w, err, "无法验证版权合规管理权限。")
 		return nil, false
 	}
@@ -179,7 +179,11 @@ func (a *portalAPI) compliance(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/compliance")
 	if path == "/reviewers" || strings.HasPrefix(path, "/reviewers/") {
 		var superAdmin bool
-		if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_users u JOIN portal.portal_user_roles ur ON ur.user_id=u.user_id WHERE u.user_id=$1::uuid AND u.is_admin=TRUE AND lower(u.email)='lycupay@gmail.com' AND ur.role_key='super_admin')`, u.ID).Scan(&superAdmin); err != nil || !superAdmin {
+		if err := a.db.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM portal.portal_users u JOIN portal.portal_user_roles ur ON ur.user_id=u.user_id WHERE u.user_id=$1::uuid AND u.is_admin=TRUE AND lower(u.email)='lycupay@gmail.com' AND ur.role_key='super_admin')`, u.ID).Scan(&superAdmin); err != nil {
+			a.dbError(w, err, "无法验证超级管理员权限。")
+			return
+		}
+		if !superAdmin {
 			writeError(w, http.StatusForbidden, "只有超管可以分配内部审核专员权限。", nil)
 			return
 		}
