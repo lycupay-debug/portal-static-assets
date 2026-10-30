@@ -582,13 +582,10 @@ watch([homePageHost, route], ([host, path]) => {
   })
 }, { flush: 'post' })
 const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
-const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
-const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
 const directoryContentItems = computed(() => {
   const contentType = route.value === '/knowledge' ? 'article' : route.value === '/education-resources' ? 'resource' : route.value === '/software-tools' ? 'tool' : null
   return contentType ? publicContents.value.filter((item) => item.contentType === contentType) : []
 })
-const directoryContentHeading = computed(() => route.value === '/knowledge' ? '最新文章' : route.value === '/education-resources' ? '已发布的学习资料' : '已发布的工具')
 const directoryOverviewHost = ref<HTMLElement | null>(null)
 let directoryOverviewMountSequence = 0
 let directoryOverviewView: { update: (state: { items: typeof directoryContentItems.value; loading: boolean; error: string }) => void; dispose: () => void } | null = null
@@ -628,14 +625,56 @@ const knowledgeSubcategory = knowledgeDirectory.knowledgeSubcategory as Ref<stri
 const knowledgeSearchQuery = knowledgeDirectory.knowledgeSearchQuery as Ref<string>
 const highlightedKnowledgeSuggestion = knowledgeDirectory.highlightedKnowledgeSuggestion as Ref<number>
 const {
-  knowledgePageSize, chooseKnowledgeSuggestion, queryKnowledgeSearch, handleKnowledgeAutocompleteSelect,
-  onKnowledgeSearchKeydown, submitKnowledgeSearch, selectKnowledgeCategory, chooseKnowledgeCategory,
-  scrollKnowledgeCategories, loadMoreKnowledge, onKnowledgePageScroll, ensureKnowledgeListFilled,
+  knowledgePageSize, handleKnowledgeAutocompleteSelect, onKnowledgeSearchKeydown,
+  chooseKnowledgeCategory, onKnowledgePageScroll, ensureKnowledgeListFilled,
 } = knowledgeDirectory
 const knowledgeFilteredItems = computed(() => knowledgeDirectory.knowledgeFilteredItems.value)
 const knowledgeSearchSuggestions = computed(() => knowledgeDirectory.knowledgeSearchSuggestions.value)
 const visibleDirectoryContentItems = computed(() => knowledgeDirectory.visibleDirectoryContentItems.value)
-const selectedKnowledgeCategoryLabel = computed(() => knowledgeDirectory.selectedKnowledgeCategoryLabel.value)
+const knowledgeDirectoryHost = ref<HTMLElement | null>(null)
+let knowledgeDirectoryMountSequence = 0
+let knowledgeDirectoryView: { update: (state: { category: string; subcategory: string; query: string; highlightedSuggestion: number; suggestions: typeof knowledgeSearchSuggestions.value; filteredItems: typeof knowledgeFilteredItems.value; visibleItems: typeof visibleDirectoryContentItems.value; loading: boolean; error: string }) => void; dispose: () => void } | null = null
+function getKnowledgeDirectoryViewState() {
+  return {
+    category: knowledgeCategory.value,
+    subcategory: knowledgeSubcategory.value,
+    query: knowledgeSearchQuery.value,
+    highlightedSuggestion: highlightedKnowledgeSuggestion.value,
+    suggestions: knowledgeSearchSuggestions.value,
+    filteredItems: knowledgeFilteredItems.value,
+    visibleItems: visibleDirectoryContentItems.value,
+    loading: publicContentLoading.value,
+    error: publicContentError.value,
+  }
+}
+function updateKnowledgeDirectoryView() { knowledgeDirectoryView?.update(getKnowledgeDirectoryViewState()) }
+watch([knowledgeDirectoryHost, route], ([host, path]) => {
+  const sequence = ++knowledgeDirectoryMountSequence
+  knowledgeDirectoryView?.dispose()
+  knowledgeDirectoryView = null
+  if (!host || path !== '/knowledge') return
+  void import('./views/knowledgeDirectoryView').then(module => {
+    if (sequence !== knowledgeDirectoryMountSequence || host !== knowledgeDirectoryHost.value) return
+    knowledgeDirectoryView = module.mountKnowledgeDirectoryView(host, {
+      categories: knowledgeCategoryMenus,
+      getState: getKnowledgeDirectoryViewState,
+      chooseCategory: chooseKnowledgeCategory,
+      setQuery: value => { knowledgeSearchQuery.value = value; highlightedKnowledgeSuggestion.value = -1 },
+      setHighlightedSuggestion: value => { highlightedKnowledgeSuggestion.value = value },
+      chooseSuggestion: handleKnowledgeAutocompleteSelect,
+      onSearchKeydown: onKnowledgeSearchKeydown,
+      setVisibleCount: () => { knowledgeVisibleCount.value = knowledgePageSize },
+      ensureListFilled: ensureKnowledgeListFilled,
+      navigate,
+    })
+    updateKnowledgeDirectoryView()
+  }).catch((error: unknown) => {
+    if (sequence !== knowledgeDirectoryMountSequence || host !== knowledgeDirectoryHost.value) return
+    host.textContent = '知识广场加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '知识广场加载失败', '知识广场')
+  })
+}, { flush: 'post' })
+watch([knowledgeCategory, knowledgeSubcategory, knowledgeSearchQuery, highlightedKnowledgeSuggestion, knowledgeFilteredItems, visibleDirectoryContentItems, publicContentLoading, publicContentError], updateKnowledgeDirectoryView, { deep: true })
 onUpdated(ensureKnowledgeListFilled)
 
 function closeMenu() { menuOpen.value = false }
@@ -798,6 +837,9 @@ onBeforeUnmount(() => {
   homePageMountSequence += 1
   homePageView?.dispose()
   homePageView = null
+  knowledgeDirectoryMountSequence += 1
+  knowledgeDirectoryView?.dispose()
+  knowledgeDirectoryView = null
   directoryOverviewMountSequence += 1
   directoryOverviewView?.dispose()
   directoryOverviewView = null
@@ -910,71 +952,11 @@ onBeforeUnmount(() => {
 
     <div v-else-if="route === '/'" ref="homePageHost"></div>
 
+    <div v-else-if="route === '/knowledge'" ref="knowledgeDirectoryHost"></div>
+
     <div v-else-if="route === '/homestays' || route === '/software-tools'" ref="directoryOverviewHost"></div>
 
-    <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge', 'education-resource-directory-page': route === '/education-resources' }">
-      <section v-if="route !== '/knowledge' && route !== '/education-resources'" class="directory-hero">
-        <a class="directory-back-link" href="/" @click.prevent="navigate('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回首页</a>
-        <p class="eyebrow">{{ currentDirectoryPage.eyebrow }}</p>
-        <h1>{{ currentDirectoryPage.title }}<span>.</span></h1>
-        <h2>{{ currentDirectoryPage.subtitle }}</h2>
-        <p class="directory-description">{{ currentDirectoryPage.description }}</p>
-      </section>
-      <section v-if="route !== '/knowledge' && route !== '/education-resources'" class="directory-section">
-        <div class="directory-section-heading"><div><p class="eyebrow">BROWSE BY CATEGORY</p><h2>按主题探索</h2></div><span>{{ String(currentDirectoryTiles.length).padStart(2, '0') }} 个分类</span></div>
-        <div class="directory-tile-grid row g-3">
-          <article v-for="tile in currentDirectoryTiles" :key="tile.number" class="directory-tile col-12 md:col-6 xl:col-3">
-            <div class="directory-tile-top"><span>{{ tile.number }}</span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></div>
-            <h3>{{ tile.title }}</h3>
-            <p>{{ tile.description }}</p>
-            <div class="tag-list"><span v-for="tag in tile.tags" :key="tag">{{ tag }}</span></div>
-          </article>
-        </div>
-      </section>
-      <section v-if="route === '/knowledge'" class="directory-published-section knowledge-filter-section">
-        <div class="knowledge-toolbar" aria-label="文章筛选与搜索">
-          <div class="knowledge-toolbar-controls">
-            <nav class="knowledge-category-nav" aria-label="知识分类">
-              <button v-for="category in knowledgeCategoryMenus" :key="category.value" type="button" class="knowledge-category-button" :class="{ 'is-active': knowledgeCategory === category.value }" :aria-pressed="knowledgeCategory === category.value" @click="chooseKnowledgeCategory(category.value)">{{ category.label }}</button>
-            </nav>
-            <div v-if="knowledgeCategory !== 'recent' && knowledgeCategoryMenus.find(category => category.value === knowledgeCategory)?.children.length" class="knowledge-subcategory-nav" aria-label="子分类">
-              <button type="button" class="knowledge-subcategory-button" :class="{ 'is-active': !knowledgeSubcategory }" :aria-pressed="!knowledgeSubcategory" @click="chooseKnowledgeCategory(knowledgeCategory)">全部</button>
-              <button v-for="child in knowledgeCategoryMenus.find(category => category.value === knowledgeCategory)?.children || []" :key="child" type="button" class="knowledge-subcategory-button" :class="{ 'is-active': knowledgeSubcategory === child }" :aria-pressed="knowledgeSubcategory === child" @click="chooseKnowledgeCategory(knowledgeCategory, child)">{{ child }}</button>
-            </div>
-            <div class="knowledge-search-wrap">
-              <label class="knowledge-search-form knowledge-autocomplete">
-                <span class="knowledge-search-icon bi bi-search" aria-hidden="true"></span>
-                <input class="form-control" v-model="knowledgeSearchQuery" type="search" placeholder="搜索文章…" aria-label="模糊搜索知识文章" autocomplete="off" @input="knowledgeVisibleCount = knowledgePageSize; highlightedKnowledgeSuggestion = -1" @keydown="onKnowledgeSearchKeydown" />
-                <button v-if="knowledgeSearchQuery" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="knowledgeSearchQuery = ''; knowledgeVisibleCount = knowledgePageSize; highlightedKnowledgeSuggestion = -1"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
-              </label>
-              <div v-if="knowledgeSearchQuery.trim() && knowledgeSearchSuggestions.length" class="knowledge-autocomplete-popper" role="listbox" aria-label="搜索建议">
-                <button v-for="(item, index) in knowledgeSearchSuggestions" :key="item.kind + ':' + item.label" type="button" role="option" :aria-selected="highlightedKnowledgeSuggestion === index" class="knowledge-autocomplete-option" :class="{ highlighted: highlightedKnowledgeSuggestion === index }" @mouseenter="highlightedKnowledgeSuggestion = index" @click="handleKnowledgeAutocompleteSelect({ value: item.label, kind: item.kind })">
-                  <span class="knowledge-suggestion-kind">{{ item.kind === 'theme' ? '主题' : '文章' }}</span>
-                  <span class="knowledge-suggestion-copy"><strong>{{ item.label }}</strong><small v-if="'summary' in item && item.summary">{{ item.summary }}</small></span>
-                  <span class="knowledge-suggestion-arrow" aria-hidden="true"><i class="bi bi-arrow-up-right"></i></span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section v-if="route === '/knowledge'" class="directory-published-section knowledge-results-section">
-        <div class="directory-section-heading knowledge-results-heading"><div><p class="eyebrow">KNOWLEDGE LIBRARY</p><h2>文章列表</h2></div><span>{{ knowledgeFilteredItems.length }} 篇文章</span></div>
-        <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
-        <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
-        <div v-else-if="knowledgeFilteredItems.length" class="knowledge-infinite-list">
-          <a v-for="(item, index) in visibleDirectoryContentItems" :key="item.id" class="knowledge-list-item" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
-            <span class="knowledge-list-index">{{ String(index + 1).padStart(2, '0') }}</span>
-            <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.summary">{{ item.summary }}</span></span>
-            <time>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</time>
-            <span class="knowledge-list-arrow" aria-hidden="true"><i class="bi bi-arrow-up-right"></i></span>
-          </a>
-          <p class="knowledge-list-status">{{ visibleDirectoryContentItems.length < knowledgeFilteredItems.length ? '向下滚动加载更多' : `已显示全部 ${knowledgeFilteredItems.length} 篇文章` }}</p>
-        </div>
-        <p v-else-if="knowledgeSearchQuery.trim()" class="directory-empty">没有找到匹配“{{ knowledgeSearchQuery.trim() }}”的文章。试试其他关键词或选择下方主题。</p>
-        <p v-else-if="knowledgeCategory !== 'recent'" class="directory-empty">当前分类暂时没有匹配的文章。现有文章尚未单独标注分类，筛选暂按标题和摘要中的主题词匹配。</p>
-        <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
-      </section>
+    <main v-else-if="isPublicDirectoryPage" class="directory-page education-resource-directory-page">
       <section v-if="route === '/education-resources'" class="directory-published-section knowledge-filter-section education-resource-filter-section">
         <div class="education-resource-heading"><p class="eyebrow">LEARNING LIBRARY</p><h1>教育资源<span>.</span></h1><p>按资源类型与适用年级筛选，快速找到需要的学习资料。</p></div>
         <div class="knowledge-toolbar" aria-label="教育资源筛选与搜索"><div class="knowledge-toolbar-controls">
@@ -1028,19 +1010,6 @@ onBeforeUnmount(() => {
           </section>
         </div>
       </section>
-      <section v-if="route === '/software-tools'" class="directory-published-section">
-        <div class="directory-section-heading"><div><p class="eyebrow">RECENTLY ADDED</p><h2>{{ directoryContentHeading }}</h2></div><span>{{ directoryContentItems.length }} 条</span></div>
-        <p v-if="publicContentLoading && !publicContents.length" class="directory-empty">正在读取已发布内容…</p>
-        <p v-else-if="publicContentError" class="directory-empty">{{ publicContentError }}</p>
-        <div v-else-if="directoryContentItems.length" class="published-content-grid row g-3">
-          <a v-for="(item, index) in directoryContentItems" :key="item.id" class="published-content-card col-12 md:col-6 xl:col-4" :href="`/content/${item.slug}`" @click.prevent="navigate(`/content/${item.slug}`)">
-            <div class="published-content-meta"><span class="published-content-type">{{ (item.tags?.length ? item.tags.join(' · ') : contentTypeLabels[item.contentType]) }}</span><span>{{ item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '已发布' }}</span></div>
-            <div class="published-content-main"><span class="published-content-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="published-content-copy"><h3>{{ item.title }}</h3><p>{{ item.summary || '打开查看完整内容。' }}</p><span class="published-content-link">查看详情 <i class="bi bi-arrow-up-right" aria-hidden="true"></i></span></div></div>
-          </a>
-        </div>
-        <p v-else class="directory-empty">这里暂时还没有已发布的内容。内容发布后会自动显示在这里。</p>
-      </section>
-      <section v-if="route === '/homestays'" class="directory-published-section directory-coming-soon"><p class="eyebrow">LISTINGS COMING SOON</p><h2>房源内容正在整理中</h2><p>后续将在这里展示民宿图片、所在位置、价格、设施说明、入住规则及联系预订方式。</p></section>
     </main>
 
     <main v-else-if="isAuthPage" class="route-main">

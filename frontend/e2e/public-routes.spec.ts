@@ -51,6 +51,37 @@ test('public root route renders the application shell', async ({ page }) => {
   await expect(page.locator('#explore')).toBeInViewport()
 })
 
+test('knowledge directory filters categories and searches published articles in native DOM', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'not signed in' }) }))
+  await page.route('**/api/public/content*', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [
+      { id: 'article-1', title: 'FreeBSD 系统维护', slug: 'freebsd-notes', contentType: 'article', tags: ['网络维护'], parentCategory: '网络', childCategory: '网络维护', summary: 'FreeBSD 网络与服务维护', publishedAt: '2026-10-01T00:00:00Z' },
+      { id: 'article-2', title: 'Python 编程实践', slug: 'python-notes', contentType: 'article', tags: ['Python'], parentCategory: '编程', childCategory: 'Python', summary: 'Python 开发经验', publishedAt: '2026-09-01T00:00:00Z' },
+    ] }),
+  }))
+  await page.goto('/knowledge')
+  await expect(page.getByRole('heading', { name: '文章列表' })).toBeVisible()
+  await expect(page.locator('.knowledge-list-item')).toHaveCount(2)
+
+  const search = page.getByRole('searchbox', { name: '模糊搜索知识文章' })
+  await search.fill('FreeBSD')
+  await expect(page.locator('.knowledge-list-item')).toHaveCount(1)
+  await expect(page.locator('.knowledge-list-item strong')).toHaveText('FreeBSD 系统维护')
+  await expect(page.getByRole('option', { name: /FreeBSD 系统维护/ })).toBeVisible()
+  await page.getByRole('button', { name: '清除搜索' }).click()
+  await expect(page.locator('.knowledge-list-item')).toHaveCount(2)
+
+  await page.getByRole('button', { name: '编程', exact: true }).click()
+  await expect(page).toHaveURL(/category=programming/)
+  await expect(page.locator('.knowledge-list-item')).toHaveCount(1)
+  await expect(page.locator('.knowledge-list-item strong')).toHaveText('Python 编程实践')
+  await page.getByRole('button', { name: 'Python', exact: true }).click()
+  await expect(page).toHaveURL(/subcategory=Python/)
+  await expect(page.locator('.knowledge-list-item strong')).toHaveText('Python 编程实践')
+})
+
 test('software tools and homestay directory overviews render native content', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'not signed in' }) }))
   await page.route('**/api/public/content', route => route.fulfill({
