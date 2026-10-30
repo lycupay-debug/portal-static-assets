@@ -167,7 +167,7 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 | C event core | Protocol unit tests plus live kqueue socket tests for 64-client cap, framing, timeout, ACK, SIGTERM cleanup and restart | No long-duration soak or production-load benchmark yet |
 | Go/C integration | Native integration test launches C, receives/ACKs pushes, restarts C and verifies Go reconnect | CI native coverage is platform-runner-specific; not a cross-platform kqueue guarantee |
 | Public gateway | Caddy config validation; local-origin checks for routes, headers, internal endpoint isolation, registration closure and upload 404 | External Cloudflare edge behavior should be rechecked after any DNS/proxy policy change |
-| Deployment | Development backup and `pg_restore -l`; isolated dev runtime and Caddy configuration; public Cloudflare DNS path checks | Formal production release not performed; full database restore has not yet been rehearsed |
+| Deployment | Development backup and `pg_restore -l`; isolated dev runtime/Caddy checks; public Cloudflare DNS path checks; isolated custom-format restore drill with ownership normalization and runtime-role privilege verification | Formal production release not performed; production restore remains a separate pre-release gate |
 
 ### Open work before declaring phase 2 complete
 
