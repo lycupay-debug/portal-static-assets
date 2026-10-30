@@ -35,7 +35,10 @@ func enqueueFileCleanup(ctx context.Context, tx *sql.Tx, kind, filename string) 
 	if err != nil {
 		return "", fmt.Errorf("encode file cleanup event: %w", err)
 	}
-	eventID := randomUUID()
+	eventID, err := newUUID()
+	if err != nil {
+		return "", fmt.Errorf("generate file cleanup event identifier: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO portal.event_inbox(event_id,event_type,payload) VALUES($1::uuid,$2,$3::jsonb)`,
 		eventID, fileCleanupEventType, string(payload)); err != nil {

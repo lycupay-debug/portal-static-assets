@@ -1,17 +1,14 @@
 package main
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +48,12 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "图片保存失败。", nil)
 		return
 	}
-	name := randomUUID() + "." + ext
+	id, err := newUUID()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "图片文件标识生成失败，请稍后重试。", nil)
+		return
+	}
+	name := id + "." + ext
 	if err = writeManagedFile(a.uploadDir, name, data, 0640); err != nil {
 		writeError(w, 500, "图片保存失败。", nil)
 		return
@@ -127,14 +129,4 @@ func validImageSignature(m string, b []byte) bool {
 		return len(b) >= 12 && strings.Contains(string(b[4:12]), "avif")
 	}
 	return false
-}
-func randomUUID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	s := hex.EncodeToString(b)
-	return s[:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:]
 }

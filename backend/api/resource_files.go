@@ -132,7 +132,11 @@ func (a *portalAPI) storeResourceFile(data []byte, filename string) (string, err
 		return "", nil
 	}
 	ext := strings.ToLower(filepath.Ext(filename))
-	name := randomUUID() + ext
+	id, err := newUUID()
+	if err != nil {
+		return "", fmt.Errorf("generate resource file identifier: %w", err)
+	}
+	name := id + ext
 	if err := os.MkdirAll(a.resourceDir, 0750); err != nil {
 		return "", err
 	}

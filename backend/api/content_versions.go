@@ -82,7 +82,11 @@ func (a *portalAPI) restoreVersion(w http.ResponseWriter, r *http.Request, u *po
 	}
 	var eventID any
 	if cur["status"] == "published" {
-		eid := randomUUID()
+		eid, err := newUUID()
+		if err != nil {
+			a.dbError(w, err, "生成恢复事件标识失败。")
+			return
+		}
 		payload, _ := json.Marshal(map[string]any{"title": snap["title"], "slug": snap["slug"], "content_type": snap["contentType"], "tags": tags, "visibility": vis, "summary": snap["summary"], "body": snap["body"]})
 		_, err = tx.ExecContext(r.Context(), `INSERT INTO portal.event_inbox(event_id,event_type,payload) VALUES($1::uuid,'portal.content.validate',$2::jsonb)`, eid, string(payload))
 		if err != nil {

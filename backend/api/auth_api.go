@@ -196,7 +196,12 @@ func (a *portalAPI) auth(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"user": u})
 	case path == "/auth/logout" && r.Method == http.MethodPost:
 		if token := readSessionToken(r); token != "" {
-			_, _ = a.db.ExecContext(r.Context(), "DELETE FROM portal.portal_auth_sessions WHERE token_hash=$1", tokenHash(token))
+			if _, err := a.db.ExecContext(r.Context(), "DELETE FROM portal.portal_auth_sessions WHERE token_hash=$1", tokenHash(token)); err != nil {
+				fmt.Fprintf(os.Stderr, "portal_api_error operation=%q error=%v\n", "logout session revocation", err)
+				clearSessionCookie(w)
+				writeError(w, http.StatusServiceUnavailable, "退出登录状态未能确认，请稍后重试。", nil)
+				return
+			}
 		}
 		clearSessionCookie(w)
 		writeJSON(w, 200, map[string]any{"ok": true})

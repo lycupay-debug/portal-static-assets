@@ -471,7 +471,11 @@ func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *po
 		a.dbError(w, err, "发布失败。")
 		return
 	}
-	eid := randomUUID()
+	eid, err := newUUID()
+	if err != nil {
+		a.dbError(w, err, "生成发布事件标识失败。")
+		return
+	}
 	payload, _ := json.Marshal(map[string]any{"title": title, "slug": slug, "content_type": typ, "tags": tags, "visibility": vis, "summary": summary, "body": body})
 	if _, err = tx.ExecContext(r.Context(), `INSERT INTO portal.event_inbox(event_id,event_type,payload) VALUES($1::uuid,'portal.content.validate',$2::jsonb)`, eid, string(payload)); err != nil {
 		a.dbError(w, err, "发布事件登记失败。")
