@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -53,6 +54,16 @@ func (a *portalAPI) restoreVersion(w http.ResponseWriter, r *http.Request, u *po
 	var snap map[string]any
 	if err = json.Unmarshal(snapshotRaw, &snap); err != nil {
 		writeError(w, 400, "历史版本数据未通过校验，无法恢复。", nil)
+		return
+	}
+	oldBody, _ := cur["body"].(string)
+	newBody, _ := snap["body"].(string)
+	if err := lockContentImageReferences(r.Context(), tx, oldBody, newBody); err != nil {
+		if errors.Is(err, errManagedImageNotRegistered) {
+			writeError(w, 400, "历史版本引用的图片已不可用，无法恢复。", nil)
+		} else {
+			a.dbError(w, err, "校验历史版本图片引用失败。")
+		}
 		return
 	}
 	if err = saveContentVersion(r.Context(), tx, cur, u.ID); err != nil {

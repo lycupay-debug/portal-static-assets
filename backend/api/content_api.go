@@ -75,9 +75,27 @@ func (a *portalAPI) content(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "请至少选择一个知识广场标签。", nil)
 			return
 		}
-		var newID string
-		err := a.db.QueryRowContext(r.Context(), `INSERT INTO portal.portal_content(author_id,title,slug,content_type,tags,parent_category,child_category,summary,body,visibility) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING content_id::text`, u.ID, values["title"], values["slug"], values["contentType"], values["tags"], values["parentCategory"], values["childCategory"], values["summary"], values["body"], values["visibility"]).Scan(&newID)
+		tx, err := a.db.BeginTx(r.Context(), nil)
 		if err != nil {
+			a.dbError(w, err, "内容保存失败。")
+			return
+		}
+		defer tx.Rollback()
+		body, _ := values["body"].(string)
+		if err := lockContentImageReferences(r.Context(), tx, "", body); err != nil {
+			if errors.Is(err, errManagedImageNotRegistered) {
+				writeError(w, 400, "正文包含不可用的图片引用。", nil)
+			} else {
+				a.dbError(w, err, "校验正文图片引用失败。")
+			}
+			return
+		}
+		var newID string
+		if err := tx.QueryRowContext(r.Context(), `INSERT INTO portal.portal_content(author_id,title,slug,content_type,tags,parent_category,child_category,summary,body,visibility) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING content_id::text`, u.ID, values["title"], values["slug"], values["contentType"], values["tags"], values["parentCategory"], values["childCategory"], values["summary"], values["body"], values["visibility"]).Scan(&newID); err != nil {
+			a.dbError(w, err, "内容保存失败。")
+			return
+		}
+		if err := tx.Commit(); err != nil {
 			a.dbError(w, err, "内容保存失败。")
 			return
 		}
@@ -166,18 +184,10 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		}
 		// Collect only app-managed image URLs in this content. Legacy files that
 		// are not referenced here are deliberately left untouched.
-		imageMatches := uploadedImageURLPattern.FindAllStringSubmatch(deletedBody, -1)
-		imageNames := make([]string, 0, len(imageMatches))
-		seenImages := make(map[string]struct{}, len(imageMatches))
-		for _, match := range imageMatches {
-			if len(match) != 2 || !uploadedImageName.MatchString(match[1]) {
-				continue
-			}
-			if _, exists := seenImages[match[1]]; exists {
-				continue
-			}
-			seenImages[match[1]] = struct{}{}
-			imageNames = append(imageNames, match[1])
+		imageNames := managedImageNames(deletedBody)
+		if err := lockManagedImageNames(ctx, tx, imageNames); err != nil {
+			a.dbError(w, err, "锁定图片引用关系失败，永久删除事务已取消。")
+			return
 		}
 		// Remove the content and image registrations atomically. An image is
 		// eligible for cleanup only when no remaining content (including trash)
@@ -188,8 +198,9 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 		}
 		cleanupEventIDs := make([]string, 0, len(imageNames))
 		for _, name := range imageNames {
+			// Restorable snapshots are live references just like the current body.
 			var referenced bool
-			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE position($1 in body)>0)`, "/uploads/"+name).Scan(&referenced); err != nil {
+			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM portal.portal_content WHERE position($1 in body)>0) OR EXISTS(SELECT 1 FROM portal.portal_content_versions WHERE position($1 in COALESCE(snapshot->>'body',''))>0)`, "/uploads/"+name).Scan(&referenced); err != nil {
 				a.dbError(w, err, "核验图片引用关系失败，永久删除事务已取消。")
 				return
 			}
@@ -361,6 +372,17 @@ func (a *portalAPI) patchContent(w http.ResponseWriter, r *http.Request, u *port
 		return
 	}
 
+	if newBody, ok := v["body"].(string); ok {
+		oldBody, _ := cur["body"].(string)
+		if err := lockContentImageReferences(r.Context(), tx, oldBody, newBody); err != nil {
+			if errors.Is(err, errManagedImageNotRegistered) {
+				writeError(w, 400, "正文包含不可用的图片引用。", nil)
+			} else {
+				a.dbError(w, err, "校验正文图片引用失败。")
+			}
+			return
+		}
+	}
 	if err = saveContentVersion(r.Context(), tx, cur, u.ID); err != nil {
 		a.dbError(w, err, "保存历史版本失败。")
 		return
@@ -434,6 +456,14 @@ func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *po
 	_, errs := validateContentInput(in, false)
 	if len(errs) > 0 {
 		writeError(w, 400, errs[0], errs)
+		return
+	}
+	if err := lockContentImageReferences(r.Context(), tx, body, body); err != nil {
+		if errors.Is(err, errManagedImageNotRegistered) {
+			writeError(w, 400, "正文包含不可用的图片引用，无法发布。", nil)
+		} else {
+			a.dbError(w, err, "校验正文图片引用失败。")
+		}
 		return
 	}
 	_, err = tx.ExecContext(r.Context(), `UPDATE portal.portal_content SET status='published',published_at=now(),updated_at=now() WHERE content_id=$1 AND author_id=$2`, id, u.ID)

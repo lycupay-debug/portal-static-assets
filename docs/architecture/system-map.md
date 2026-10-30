@@ -92,7 +92,7 @@ flowchart TD
 | Process and HTTP entry | `main.go`, `portal_api.go`, `http_helpers.go` | Process lifecycle, HTTP server, database pool, route dispatch, shared response/JSON helpers |
 | Authentication | `auth_api.go`, `rate_limit.go` | Session lookup, cookie lifecycle, login/register/logout, client-IP rate limiting |
 | RBAC | `rbac_api.go`, `user_role_management.go`, `role_permission_management.go` | Super-admin-gated role and permission administration |
-| Content | `content_api.go`, `content_validation.go`, `content_input_validation.go`, `content_versions.go` | Owner-scoped content CRUD, publish/unpublish, validation, versions, trash |
+| Content | `content_api.go`, `content_validation.go`, `content_input_validation.go`, `content_versions.go`, `image_references.go` | Owner-scoped content CRUD, publish/unpublish, validation, versions, trash, managed-image reference locks |
 | Resources/files | `resource_api.go`, `resource_files.go`, `image_api.go`, `managed_files.go`, `file_cleanup.go` | Owner-scoped teaching resources, uploads, previews/downloads, confined filesystem access, durable cleanup events |
 | Public read paths | `public_api.go` | Public content/resources, search, article interactions |
 | Compliance | `compliance_api.go`, `compliance_assets.go`, `compliance_catalog.go`, `compliance_evidence_verification.go` | License/asset records, evidence verification, review state and audit |
@@ -118,6 +118,7 @@ flowchart TD
 3. Public read endpoints select only published/public records. Private file/image access is owner-gated; public uploaded images require a reference from published public content.
 4. Managed filenames are single path components. `os.Root`-based open/write/remove operations prevent traversal outside the configured directory. Uploaded files are not served directly by Caddy.
 5. Permanent deletion commits database changes and a cleanup event together; the event processor removes the managed file. A missed IPC wakeup is recovered by PostgreSQL polling.
+6. Content create/update/version restore and permanent image deletion acquire the same PostgreSQL transaction advisory lock per managed filename, in sorted order. New bodies must reference a registered image. Cleanup checks both current `portal_content.body` and every restorable `portal_content_versions.snapshot.body`; an image with any remaining reference is retained.
 
 ### Durable event lifecycle
 
@@ -151,6 +152,7 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 - The Go API and C event core run as `personalportal`, not root. The C Unix socket is mode `0600`; C does not listen on TCP.
 - Runtime database role is least-privilege `personal_portal_app`; schema ownership is separated into non-login `personal_portal_owner`.
 - User-facing content/resource access is owner-scoped in SQL. Super-admin controls are server-enforced; frontend role visibility is not a security control.
+- Managed image references are serialized by PostgreSQL transaction advisory locks across content creation/update/version restore and permanent deletion. Cleanup must account for current bodies and restorable historical snapshots before removing image registration or files.
 - Uploaded image and resource paths are confined by `os.Root`. Caddy must proxy uploads to Go, never `file_server` the managed upload directory.
 - The privileged command-task executor and its database tables/permission have been retired by migration 031. No root worker or command-execution API is part of the current architecture.
 - Public registration is disabled in the current development runtime. Development and production databases, binaries, paths and Caddy templates remain separate.
@@ -161,7 +163,7 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 |---|---|---|
 | Frontend native views/state | 103/103 Node/jsdom tests; TypeScript check and Vite build | Not a substitute for visual/accessibility checks across every browser/assistive technology |
 | Go contracts | `go test -race`, `go vet`; JSON/rate-limit/IPC bound tests | Race tests do not prove production traffic behavior |
-| PostgreSQL | Full migrations 001–031 on disposable DB; integration tests for RBAC read/write matrix, content/resource ownership, image privacy/public reference, event leases | Restore drill and sustained production-like load are separate work |
+| PostgreSQL | Full migrations 001–031 on disposable DB; integration tests for RBAC read/write matrix, content/resource ownership, image privacy/public reference, historical-version image retention, both advisory-lock race orderings, resource replacement cleanup, event leases | Restore drill and sustained production-like load are separate work |
 | C event core | Protocol unit tests plus live kqueue socket tests for 64-client cap, framing, timeout, ACK, SIGTERM cleanup and restart | No long-duration soak or production-load benchmark yet |
 | Go/C integration | Native integration test launches C, receives/ACKs pushes, restarts C and verifies Go reconnect | CI native coverage is platform-runner-specific; not a cross-platform kqueue guarantee |
 | Public gateway | Caddy config validation; local-origin checks for routes, headers, internal endpoint isolation, registration closure and upload 404 | External Cloudflare edge behavior should be rechecked after any DNS/proxy policy change |
@@ -169,10 +171,10 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 
 ### Open work before declaring phase 2 complete
 
-1. Run the new development deployment script end-to-end and verify real image upload, private owner-only access, public referenced-image access, resource download and cleanup against the public development hostname.
+1. Complete authenticated browser flows against the public development hostname: image upload, private owner-only access, public referenced-image access, teaching-resource download and cleanup. Public unauthenticated routing and health gates are verified; this authenticated live-browser pass remains open.
 2. Finish the remaining backend authorization/error-path audit and decide whether large domain files should be split based on call-graph and test boundaries, not line count alone.
-3. Review content/resource concurrent-update and file-cleanup consistency with deterministic PostgreSQL tests; resolve only reproduced orphan/lost-update cases.
-4. Complete the repository-wide dependency/data-flow map and risk register in Notion, then reconcile this document against the final source tree.
+3. Completed: deterministic PostgreSQL tests cover historical-version image retention, both concurrent create/delete lock orderings, and resource replacement cleanup. Reopen only if new evidence identifies another orphan/lost-update case.
+4. The repository-wide architecture/data-flow map is recorded in this document; complete the separate risk register in Notion and reconcile it against the final source tree.
 5. Complete second-stage acceptance checks and a documented recovery drill before any separate production-release decision.
 
 The development deployment does not mark phase 2 complete and does not authorize a production release.
