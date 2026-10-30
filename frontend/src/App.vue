@@ -589,6 +589,33 @@ const directoryContentItems = computed(() => {
   return contentType ? publicContents.value.filter((item) => item.contentType === contentType) : []
 })
 const directoryContentHeading = computed(() => route.value === '/knowledge' ? '最新文章' : route.value === '/education-resources' ? '已发布的学习资料' : '已发布的工具')
+const directoryOverviewHost = ref<HTMLElement | null>(null)
+let directoryOverviewMountSequence = 0
+let directoryOverviewView: { update: (state: { items: typeof directoryContentItems.value; loading: boolean; error: string }) => void; dispose: () => void } | null = null
+function updateDirectoryOverviewView() {
+  directoryOverviewView?.update({ items: directoryContentItems.value, loading: publicContentLoading.value, error: publicContentError.value })
+}
+watch([directoryOverviewHost, route], ([host, path]) => {
+  const sequence = ++directoryOverviewMountSequence
+  directoryOverviewView?.dispose()
+  directoryOverviewView = null
+  if (!host || (path !== '/homestays' && path !== '/software-tools')) return
+  void import('./views/publicDirectoryOverviewView').then(module => {
+    if (sequence !== directoryOverviewMountSequence || host !== directoryOverviewHost.value) return
+    directoryOverviewView = module.mountPublicDirectoryOverview(host, {
+      page: directoryPages[path]!,
+      tiles: directoryTiles[path] || [],
+      contentTypeLabel: path === '/software-tools' ? contentTypeLabels.tool : '',
+      navigate,
+    })
+    updateDirectoryOverviewView()
+  }).catch((error: unknown) => {
+    if (sequence !== directoryOverviewMountSequence || host !== directoryOverviewHost.value) return
+    host.textContent = '目录页面加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '目录页面加载失败', '资源目录')
+  })
+}, { flush: 'post' })
+watch([directoryContentItems, publicContentLoading, publicContentError], updateDirectoryOverviewView)
 
 const knowledgeDirectory = createKnowledgeDirectoryController(route, directoryContentItems, filteredEducationResources, navigate, {
   createValue: createVueValue,
@@ -771,6 +798,9 @@ onBeforeUnmount(() => {
   homePageMountSequence += 1
   homePageView?.dispose()
   homePageView = null
+  directoryOverviewMountSequence += 1
+  directoryOverviewView?.dispose()
+  directoryOverviewView = null
   publicArticleMountSequence += 1
   publicArticleView?.dispose()
   publicArticleView = null
@@ -879,6 +909,8 @@ onBeforeUnmount(() => {
     </main>
 
     <div v-else-if="route === '/'" ref="homePageHost"></div>
+
+    <div v-else-if="route === '/homestays' || route === '/software-tools'" ref="directoryOverviewHost"></div>
 
     <main v-else-if="isPublicDirectoryPage" class="directory-page" :class="{ 'knowledge-directory-page': route === '/knowledge', 'education-resource-directory-page': route === '/education-resources' }">
       <section v-if="route !== '/knowledge' && route !== '/education-resources'" class="directory-hero">

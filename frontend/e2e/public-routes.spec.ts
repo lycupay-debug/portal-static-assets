@@ -50,6 +50,28 @@ test('public root route renders the application shell', async ({ page }) => {
   await expect(page.locator('#explore')).toBeInViewport()
 })
 
+test('software tools and homestay directory overviews render native content', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'not signed in' }) }))
+  await page.route('**/api/public/content', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [{
+      id: 'tool-fixture', title: 'Native tool fixture', slug: 'native-tool-fixture', contentType: 'tool',
+      tags: ['效率工具'], summary: 'Tool directory summary', publishedAt: '2026-10-01T00:00:00Z',
+    }] }),
+  }))
+  await page.goto('/software-tools')
+  await expect(page.getByRole('heading', { name: '软件工具.' })).toBeVisible()
+  await expect(page.locator('.directory-tile')).toHaveCount(4)
+  await expect(page.getByRole('heading', { name: 'Native tool fixture' })).toBeVisible()
+  await expect(page.getByText('Tool directory summary')).toBeVisible()
+
+  await page.goto('/homestays')
+  await expect(page.getByRole('heading', { name: '民宿房源.' })).toBeVisible()
+  await expect(page.locator('.directory-tile')).toHaveCount(4)
+  await expect(page.getByRole('heading', { name: '房源内容正在整理中' })).toBeVisible()
+})
+
 test('public article route renders native content, interactions and share dialog', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'not signed in' }) }))
   await page.route('**/api/public/content/native-article', route => route.fulfill({
