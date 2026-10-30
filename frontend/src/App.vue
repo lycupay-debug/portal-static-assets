@@ -27,7 +27,7 @@ import { createAccountTableModel } from './state/accountTableModel'
 import { createPortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
 import { createProtectedRouteGuard } from './composables/useProtectedRouteGuard'
 import { createRetryableLazyLoader } from './utils/retryableLazyLoader'
-import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
+import { accountGroups } from './navigation/accountNavigation'
 import { routeSections, sectionRoutes } from './navigation/portalRoutes'
 import { createPortalNavigationController } from './navigation/portalNavigationController'
 import { directoryPages, directoryTiles } from './config/publicDirectories'
@@ -150,11 +150,58 @@ const filteredAccountGroups = computed(() => {
     .filter((group) => group.label.toLocaleLowerCase().includes(keyword) || group.items.length > 0)
 })
 const activeAccountItem = computed(() => accountItems.find((item) => item.id === activeAccountSection.value))
+const accountIdentityHost = ref<HTMLElement | null>(null)
+let accountIdentityMountSequence = 0
+let accountIdentityView: { update: (state: { section: 'overview' | 'profile' | 'security'; loading: boolean; busy: boolean; user: typeof user.value }) => void; dispose: () => void } | null = null
+function updateAccountIdentityView() {
+  const sequence = ++accountIdentityMountSequence
+  const host = accountIdentityHost.value
+  const section = activeAccountSection.value
+  if (!host || (section !== 'overview' && section !== 'profile' && section !== 'security')) {
+    accountIdentityView?.dispose(); accountIdentityView = null; return
+  }
+  const state: { section: 'overview' | 'profile' | 'security'; loading: boolean; busy: boolean; user: typeof user.value } = { section, loading: authLoading.value, busy: authBusy.value, user: user.value }
+  if (!accountIdentityView) {
+    void import('./views/accountIdentityView').then(module => {
+      if (sequence !== accountIdentityMountSequence || host !== accountIdentityHost.value) return
+      accountIdentityView = module.mountAccountIdentityView(host, { getState: () => ({ section: activeAccountSection.value as 'overview' | 'profile' | 'security', loading: authLoading.value, busy: authBusy.value, user: user.value }), logout })
+    }).catch((error: unknown) => {
+      if (sequence !== accountIdentityMountSequence || host !== accountIdentityHost.value) return
+      host.textContent = '账户信息加载失败，请刷新页面后重试。'
+      portalNotify.error(error instanceof Error ? error.message : '账户信息加载失败', '账户中心')
+    })
+    return
+  }
+  accountIdentityView.update(state)
+}
+watch([accountIdentityHost, activeAccountSection, user, authLoading, authBusy], updateAccountIdentityView, { deep: true, flush: 'post' })
 function toggleAccountGroup(groupId: string) {
   expandedAccountGroups.value = expandedAccountGroups.value.includes(groupId)
     ? expandedAccountGroups.value.filter((id) => id !== groupId)
     : [...expandedAccountGroups.value, groupId]
 }
+const accountSidebarHost = ref<HTMLElement | null>(null)
+let accountSidebarView: { update: (state: { groups: typeof filteredAccountGroups.value; active: string; expanded: string[] }) => void; dispose: () => void } | null = null
+let accountSidebarMountSequence = 0
+function updateAccountSidebarView() {
+  const sequence = ++accountSidebarMountSequence
+  const host = accountSidebarHost.value
+  if (!host) { accountSidebarView?.dispose(); accountSidebarView = null; return }
+  const state = { groups: filteredAccountGroups.value, active: activeSidebarButton.value, expanded: expandedAccountGroups.value }
+  if (!accountSidebarView) {
+    void import('./views/accountSidebarView').then(module => {
+      if (sequence !== accountSidebarMountSequence || host !== accountSidebarHost.value) return
+      accountSidebarView = module.mountAccountSidebarView(host, { getState: () => ({ groups: filteredAccountGroups.value, active: activeSidebarButton.value, expanded: expandedAccountGroups.value }), toggleGroup: toggleAccountGroup, selectSection: selectAccountSection, navigate })
+    }).catch((error: unknown) => {
+      if (host !== accountSidebarHost.value) return
+      host.textContent = '账户导航加载失败，请刷新页面后重试。'
+      portalNotify.error(error instanceof Error ? error.message : '账户导航加载失败', '账户中心')
+    })
+    return
+  }
+  accountSidebarView.update(state)
+}
+watch([accountSidebarHost, filteredAccountGroups, activeSidebarButton, expandedAccountGroups], updateAccountSidebarView, { deep: true, flush: 'post' })
 
 
 
@@ -877,6 +924,12 @@ onBeforeUnmount(() => {
   homePageMountSequence += 1
   homePageView?.dispose()
   homePageView = null
+  accountSidebarMountSequence += 1
+  accountSidebarView?.dispose()
+  accountSidebarView = null
+  accountIdentityMountSequence += 1
+  accountIdentityView?.dispose()
+  accountIdentityView = null
   educationResourceDirectoryMountSequence += 1
   educationResourceDirectoryView?.dispose()
   educationResourceDirectoryView = null
@@ -1015,76 +1068,11 @@ onBeforeUnmount(() => {
 
     <main v-else-if="isAccountPage" class="account-layout">
 
-      <aside class="account-sidebar">
-        <div v-for="group in filteredAccountGroups" :key="group.id" class="account-nav-group">
-          <button
-            type="button"
-            class="account-sidebar-item account-group-toggle"
-            :class="{ 'is-active': activeSidebarButton === group.id }"
-            :aria-expanded="expandedAccountGroups.includes(group.id)"
-            @click="activeSidebarButton = group.id; toggleAccountGroup(group.id)"
-          >
-            <span :class="['sidebar-group-icon', 'bi', accountGroupIcon(group.id)]" aria-hidden="true"></span>{{ group.label }}
-          </button>
-          <div v-show="accountNavQuery.trim() || expandedAccountGroups.includes(group.id)" class="account-sidebar-collapse">
-            <button
-              v-for="item in group.items"
-              :key="item.id"
-              type="button"
-              class="account-sidebar-item account-sidebar-subitem"
-              :class="{ 'is-active': activeSidebarButton === item.id }"
-              @click="selectAccountSection(item.id)"
-            >
-              <span class="sidebar-item-dot"></span>{{ item.label }}
-            </button>
-          </div>
-        </div>
-        <p v-if="accountNavQuery.trim() && !filteredAccountGroups.length" class="account-search-empty">没有找到匹配的入口</p>
-        <a class="account-sidebar-home" href="/" @click.prevent="navigate('/')">返回首页</a>
-      </aside>
+      <aside ref="accountSidebarHost" class="account-sidebar"></aside>
 
       <section class="account-content" :class="{ 'account-content-table-mode': !!activeTableDefinition }">
-        <template v-if="activeAccountSection === 'overview'">
-          <h1 class="account-page-title">账户概览</h1>
-          <p class="auth-intro">查看你的账户状态与基础信息。</p>
-          <div v-if="authLoading" class="account-loading">正在读取账户信息…</div>
-          <div v-else-if="user" class="account-details">
-            <div class="account-summary-card">
-              <div class="account-avatar">{{ (user.displayName || user.email).slice(0, 1).toUpperCase() }}</div>
-              <div><strong class="account-summary-name">{{ user.displayName || '未设置昵称' }}</strong><span class="account-summary-email">{{ user.email }}</span></div>
-              <span class="account-status"><i></i> 已登录</span>
-            </div>
-            <div class="account-field"><span>账户昵称</span><strong>{{ user.displayName || '未设置' }}</strong></div>
-            <div class="account-field"><span>注册时间</span><strong>{{ new Date(user.createdAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) }}</strong></div>
-            <button class="btn button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出登录' }}</button>
-          </div>
-        </template>
-
-        <template v-else-if="activeAccountSection === 'profile'">
-          <h1 class="account-page-title">个人资料</h1>
-          <p class="auth-intro">当前账户的基本资料。</p>
-          <div v-if="authLoading" class="account-loading">正在读取账户信息…</div>
-          <div v-else-if="user" class="account-details">
-            <div class="account-summary-card">
-              <div class="account-avatar">{{ (user.displayName || user.email).slice(0, 1).toUpperCase() }}</div>
-              <div><strong class="account-summary-name">{{ user.displayName || '未设置昵称' }}</strong><span class="account-summary-email">{{ user.email }}</span></div>
-            </div>
-            <div class="account-field"><span>昵称</span><strong>{{ user.displayName || '未设置' }}</strong></div>
-            <div class="account-field"><span>登录邮箱</span><strong>{{ user.email }}</strong></div>
-            <div class="account-field"><span>注册时间</span><strong>{{ new Date(user.createdAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) }}</strong></div>
-          </div>
-        </template>
-
-        <template v-else-if="activeAccountSection === 'security'">
-          <h1 class="account-page-title">登录与安全</h1>
-          <p class="auth-intro">账户登录状态和会话管理。</p>
-          <div v-if="authLoading" class="account-loading">正在读取账户信息…</div>
-          <div v-else-if="user" class="account-details">
-            <div class="security-info-row"><span class="security-info-icon bi bi-shield-check" aria-hidden="true"></span><div><strong>账户已验证登录</strong><p>当前浏览器持有安全会话。</p></div></div>
-            <div class="account-field"><span>登录邮箱</span><strong>{{ user.email }}</strong></div>
-            <div class="account-field"><span>会话有效期</span><strong>系统自动管理</strong></div>
-            <button class="btn button button-primary auth-submit" type="button" :disabled="authBusy" @click="logout">{{ authBusy ? '正在退出…' : '退出当前登录' }}</button>
-          </div>
+        <template v-if="activeAccountSection === 'overview' || activeAccountSection === 'profile' || activeAccountSection === 'security'">
+          <div ref="accountIdentityHost"></div>
         </template>
 
         <template v-else-if="activeAccountSection === 'copyright-compliance'">

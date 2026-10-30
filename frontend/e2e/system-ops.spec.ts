@@ -18,6 +18,23 @@ test.beforeEach(async ({ page }) => {
   }))
 })
 
+test('account sidebar and identity pages render through native DOM', async ({ page }) => {
+  await page.goto('/account')
+  await expect(page.getByRole('heading', { name: '账户概览' })).toBeVisible()
+  await expect(page.getByText('E2E Admin')).toBeVisible()
+  await expect(page.getByText('e2e-admin@example.test')).toBeVisible()
+  await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible()
+
+  await page.getByRole('button', { name: '个人资料' }).click()
+  await expect(page.getByRole('heading', { name: '个人资料' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '退出登录' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: '登录与安全' }).click()
+  await expect(page.getByRole('heading', { name: '登录与安全' })).toBeVisible()
+  await expect(page.getByText('账户已验证登录')).toBeVisible()
+  await expect(page.getByRole('button', { name: '退出当前登录' })).toBeEnabled()
+})
+
 test('protected system warnings route mounts the native warnings view', async ({ page }) => {
   await page.route('**/api/system-ops/warnings', route => route.fulfill({
     status: 200,
