@@ -35,6 +35,38 @@ test('account sidebar and identity pages render through native DOM', async ({ pa
   await expect(page.getByRole('button', { name: '退出当前登录' })).toBeEnabled()
 })
 
+test('content management table renders native rows, details and trash navigation', async ({ page }) => {
+  await page.route('**/api/content**', route => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith('/trash')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) })
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [{
+        id: 'content-e2e', title: 'Native DOM table content for E2E', slug: 'native-dom-table-e2e',
+        contentType: 'article', status: 'published', visibility: 'public', tags: ['E2E', 'Native DOM'],
+        summary: 'Account table native view fixture', body: 'A long body is not rendered in this table cell.',
+        updatedAt: '2026-10-30T00:00:00Z', likeCount: 7, favoriteCount: 3,
+      }] }),
+    })
+  })
+  await page.goto('/account/content-management')
+  await expect(page.getByRole('heading', { name: '内容列表' })).toBeVisible()
+  await expect(page.locator('.virtual-table-row')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '下架' })).toBeVisible()
+
+  await page.locator('.table-cell-preview').first().click()
+  await expect(page.getByRole('dialog', { name: '内容标题' })).toBeVisible()
+  await expect(page.getByRole('dialog').locator('p')).toHaveText('Native DOM table content for E2E')
+  await page.getByRole('button', { name: '关闭' }).click()
+
+  await page.getByRole('button', { name: '回收站' }).click()
+  await expect(page.getByRole('button', { name: '返回内容列表' })).toBeVisible()
+  await expect(page.getByText('回收站为空。已删除内容可以恢复，也可以永久删除。')).toBeVisible()
+  await page.getByRole('button', { name: '返回内容列表' }).click()
+  await expect(page.locator('.virtual-table-row')).toHaveCount(1)
+})
+
 test('protected system warnings route mounts the native warnings view', async ({ page }) => {
   await page.route('**/api/system-ops/warnings', route => route.fulfill({
     status: 200,

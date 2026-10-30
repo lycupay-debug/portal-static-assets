@@ -588,6 +588,79 @@ function cancelContentEditor() {
 function editContent(id: string) {
   window.location.assign('/content-management/' + encodeURIComponent(id))
 }
+const accountTableViewHost = ref<HTMLElement | null>(null)
+let accountTableViewMountSequence = 0
+let accountTableView: { update: (state: ReturnType<typeof getAccountTableViewState>) => void; dispose: () => void } | null = null
+function getAccountTableViewState() {
+  return {
+    section: activeAccountSection.value,
+    itemLabel: activeAccountItem.value?.label || '',
+    itemDescription: activeAccountItem.value?.description || '',
+    definition: activeTableDefinition.value,
+    versionsContentId: versionsContentId.value,
+    versionsContentTitle: versionsContentTitle.value,
+    versions: contentVersions.value,
+    contentBusy: contentBusy.value,
+    contentLoading: contentLoading.value,
+    resourceBusy: resourceBusy.value,
+    records: filteredTableRecords.value,
+    visibleRecords: visibleTableRecords.value,
+    columnTemplate: tableColumnTemplate.value,
+    topSpace: virtualTableTopSpace.value,
+    bottomSpace: virtualTableBottomSpace.value,
+    scrollTop: tableScrollTop.value,
+    query: tableQuery.value,
+    contentViewMode: contentViewMode.value,
+    resourceViewMode: resourceViewMode.value,
+    selectedCell: selectedTableCell.value,
+  }
+}
+function updateAccountTableView() {
+  const sequence = ++accountTableViewMountSequence
+  const host = accountTableViewHost.value
+  if (!host) { accountTableView?.dispose(); accountTableView = null; return }
+  const state = getAccountTableViewState()
+  if (!accountTableView) {
+    void import('./views/accountTableView').then(module => {
+      if (sequence !== accountTableViewMountSequence || host !== accountTableViewHost.value) return
+      accountTableView = module.mountAccountTableView(host, {
+        getState: getAccountTableViewState,
+        setQuery: value => { tableQuery.value = value; tableScrollTop.value = 0 },
+        setScrollTop: value => { tableScrollTop.value = value },
+        setScrollElement: element => { virtualTableScrollElement.value = element; observeVirtualTableWidth() },
+        createContent: openNewContent,
+        switchContentView,
+        createResource: openResourceDialog,
+        switchResourceView,
+        resourceHasUrl: id => Boolean(teachingResources.value.find(resource => resource.id === id)?.url),
+        openResource: openResourceDetails,
+        editResource: openResourceEditById,
+        downloadResource: downloadTeachingResource,
+        changeResource: changeTeachingResource,
+        editContent,
+        openVersions: openContentVersions,
+        changeContentStatus,
+        deleteContent,
+        restoreContent: restoreDeletedContent,
+        permanentlyDeleteContent,
+        restoreVersion: restoreContentVersion,
+        backToContentList: () => { versionsContentId.value = null },
+        openCell: openTableCell,
+        closeCell: () => { selectedTableCell.value = null },
+        cellValue: tableCellValue,
+        cellPreview: tableCellPreview,
+        contentStatusLabel: status => contentStatusLabels[status as keyof typeof contentStatusLabels] || status,
+      })
+    }).catch((error: unknown) => {
+      if (sequence !== accountTableViewMountSequence || host !== accountTableViewHost.value) return
+      host.textContent = '账户业务视图加载失败，请刷新页面后重试。'
+      portalNotify.error(error instanceof Error ? error.message : '账户业务视图加载失败', '账户中心')
+    })
+    return
+  }
+  accountTableView.update(state)
+}
+watch([accountTableViewHost, activeAccountSection, activeAccountItem, activeTableDefinition, versionsContentId, versionsContentTitle, contentVersions, contentBusy, contentLoading, resourceBusy, filteredTableRecords, visibleTableRecords, tableColumnTemplate, virtualTableTopSpace, virtualTableBottomSpace, tableQuery, contentViewMode, resourceViewMode, selectedTableCell], updateAccountTableView, { deep: true, flush: 'post' })
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
@@ -925,6 +998,9 @@ onBeforeUnmount(() => {
   homePageMountSequence += 1
   homePageView?.dispose()
   homePageView = null
+  accountTableViewMountSequence += 1
+  accountTableView?.dispose()
+  accountTableView = null
   accountSidebarMountSequence += 1
   accountSidebarView?.dispose()
   accountSidebarView = null
@@ -1090,76 +1166,7 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else>
-          <h1 v-if="activeAccountSection !== 'content-management' && !activeTableDefinition" class="account-page-title">{{ activeAccountItem?.label || '业务中心' }}</h1>
-          <p v-if="activeAccountSection !== 'content-management'" class="auth-intro">{{ activeAccountItem?.description || '管理你的业务内容与工作入口。' }}</p>
-          <section v-if="activeAccountSection === 'content-management' && versionsContentId" class="content-editor-panel content-versions-panel">
-            <div class="content-editor-heading">
-              <div><h2>版本历史</h2><p>“{{ versionsContentTitle }}” · 每次有效编辑前自动保存快照，最多显示最近 100 个版本；恢复只替换内容字段，保留当前发布状态。</p></div>
-              <button type="button" class="btn content-secondary-button" :disabled="contentBusy" @click="versionsContentId = null">返回内容列表</button>
-            </div>
-            <div v-if="contentVersions.length" class="content-version-list">
-              <div v-for="version in contentVersions" :key="version.versionId" class="content-version-row">
-                <div><strong>版本 {{ version.versionNumber }} · {{ version.title }}</strong><p>{{ new Date(version.createdAt).toLocaleString('zh-CN') }} · {{ version.slug }} · {{ contentStatusLabels[version.status] || version.status }}</p></div>
-                <button type="button" class="btn content-secondary-button" :disabled="contentBusy" @click="restoreContentVersion(version)">恢复此版本</button>
-              </div>
-            </div>
-            <div v-else class="virtual-table-empty"><strong>暂无历史版本</strong><p>保存第一次有效修改后，这里会出现可恢复的历史版本。</p></div>
-          </section>
-          <section v-else-if="activeTableDefinition" class="virtual-table-panel" style="margin-right: unset; margin-left: 0px;">
-            <div class="virtual-table-toolbar">
-              <div class="virtual-table-heading"><h2>{{ activeTableDefinition.title }}</h2><span class="virtual-table-count">{{ contentLoading && activeAccountSection === 'content-management' ? '正在加载…' : filteredTableRecords.length + ' 条记录' }}</span></div>
-              <div class="content-toolbar-actions">
-                <input v-model="tableQuery" name="tableSearch" class="form-control virtual-table-search" type="search" placeholder="搜索表格内容…" aria-label="搜索表格内容" @input="tableScrollTop = 0" />
-                <template v-if="activeAccountSection === 'content-management'">
-                  <button type="button" class="btn content-secondary-button" @click="switchContentView(contentViewMode === 'active' ? 'trash' : 'active')">{{ contentViewMode === 'active' ? '回收站' : '返回内容列表' }}</button>
-                  <button v-if="contentViewMode === 'active'" type="button" class="btn content-primary-button" @click="openNewContent">新建内容</button>
-                </template>
-                <template v-else-if="activeAccountSection === 'teaching-resources'">
-                  <button type="button" class="btn content-secondary-button" :disabled="resourceBusy" @click="switchResourceView">{{ resourceViewMode === 'active' ? '回收站' : '返回资源列表' }}</button>
-                  <button v-if="resourceViewMode === 'active'" type="button" class="btn content-primary-button" @click="openResourceDialog">创建资源</button>
-                </template>
-              </div>
-            </div>
-            <div ref="virtualTableScrollElement" class="virtual-table-scroll" :style="{ '--table-columns': tableColumnTemplate }" @scroll="onVirtualTableScroll">
-              <div class="virtual-table-header" role="row">
-                <span v-for="column in activeTableDefinition.columns" :key="column.key" role="columnheader">{{ column.label }}</span>
-              </div>
-              <div v-if="filteredTableRecords.length" class="virtual-table-body" role="rowgroup">
-                <div class="virtual-table-spacer" :style="{ height: virtualTableTopSpace + 'px' }"></div>
-                <div v-for="(record, index) in visibleTableRecords" :key="String(record.id ?? (virtualTableStart + index))" class="virtual-table-row" role="row" :class="{ 'resource-clickable-row': activeAccountSection === 'teaching-resources' }" :tabindex="activeAccountSection === 'teaching-resources' ? 0 : undefined" @click="activeAccountSection === 'teaching-resources' && openResourceDetails(String(record.id))" @keydown.enter="activeAccountSection === 'teaching-resources' && openResourceDetails(String(record.id))">
-                  <template v-for="column in activeTableDefinition.columns" :key="column.key">
-                    <div v-if="column.key === 'actions' && (activeAccountSection === 'content-management' || activeAccountSection === 'teaching-resources')" class="content-row-actions" role="cell" @click.stop>
-                      <template v-if="activeAccountSection === 'teaching-resources'">
-                        <template v-if="resourceViewMode === 'trash'">
-                          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'restore')">恢复</button>
-                          <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'permanent')">永久删除</button>
-                        </template>
-                        <template v-else>
-                          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="openResourceEditById(String(record.id))">编辑</button>
-                          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="resourceBusy" @click="downloadTeachingResource(String(record.id))">{{ teachingResources.find((item) => item.id === String(record.id))?.url ? '打开链接' : '下载' }}</button>
-                          <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="resourceBusy" @click="changeTeachingResource(String(record.id), 'trash')">删除</button>
-                        </template>
-                      </template>
-                      <template v-else-if="contentViewMode === 'trash'">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="contentBusy" @click="restoreDeletedContent(String(record.id))">恢复</button>
-                        <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="contentBusy" @click="permanentlyDeleteContent(String(record.id))">永久删除</button>
-                      </template>
-                      <template v-else>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="contentBusy" @click="editContent(String(record.id))">编辑</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="contentBusy" @click="openContentVersions(String(record.id))">版本</button>
-                        <button v-if="contentItems.find((item) => item.id === String(record.id))?.status !== 'published'" type="button" class="btn btn-sm btn-outline-secondary" :disabled="contentBusy" @click="changeContentStatus(String(record.id), 'publish')">发布</button>
-                        <button v-else type="button" class="btn btn-sm btn-outline-secondary" :disabled="contentBusy" @click="changeContentStatus(String(record.id), 'unpublish')">下架</button>
-                        <button type="button" class="btn btn-sm btn-outline-danger content-danger-action" :disabled="contentBusy" @click="deleteContent(String(record.id))">删除</button>
-                      </template>
-                    </div>
-                    <span v-else role="cell"><template v-if="activeAccountSection === 'teaching-resources'">{{ tableCellValue(record, column.key) }}</template><button v-else type="button" class="table-cell-preview" :title="Array.from(tableCellValue(record, column.key)).length > 10 ? '点击查看完整内容' : undefined" @click="openTableCell(column.label, tableCellValue(record, column.key))">{{ tableCellPreview(tableCellValue(record, column.key)) }}</button></span>
-                  </template>
-                </div>
-                <div class="virtual-table-spacer" :style="{ height: virtualTableBottomSpace + 'px' }"></div>
-              </div>
-              <div v-else class="virtual-table-empty"><i class="virtual-table-empty-icon bi bi-journal-text" aria-hidden="true"></i><strong>{{ contentLoading && activeAccountSection === 'content-management' ? '正在读取内容' : tableQuery ? '没有匹配的记录' : '暂无数据' }}</strong><p>{{ contentLoading && activeAccountSection === 'content-management' ? '正在从数据库读取内容列表。' : tableQuery ? '尝试更换搜索关键词。' : activeAccountSection === 'content-management' ? (contentViewMode === 'trash' ? '回收站为空。已删除内容可以恢复，也可以永久删除。' : '创建第一篇内容，保存为草稿后再发布。') : activeAccountSection === 'teaching-resources' ? (resourceViewMode === 'trash' ? '资源回收站为空。' : '创建第一份教学资源，支持 PPT、MP3、PDF、Word 等文件。') : activeTableDefinition.note }}</p></div>
-            </div>
-          </section>
+          <div ref="accountTableViewHost"></div>
         </template>
       </section>
     </main>
@@ -1167,14 +1174,6 @@ onBeforeUnmount(() => {
     <main v-else class="route-main"><section class="auth-panel glass-panel"><p class="eyebrow">PAGE NOT FOUND</p><h1>页面不存在</h1><a class="btn btn-dark button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section></main>
 
     <div v-if="resourceDialogOpen" ref="teachingResourceEditorHost"></div>
-
-    <div v-if="selectedTableCell" class="table-cell-detail-backdrop" @click.self="selectedTableCell = null" @keydown.esc="selectedTableCell = null">
-      <section class="table-cell-detail" role="dialog" aria-modal="true" :aria-label="selectedTableCell.label">
-        <div class="table-cell-detail-heading"><h2>{{ selectedTableCell.label }}</h2><button type="button" aria-label="关闭" @click="selectedTableCell = null"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
-        <p>{{ selectedTableCell.value }}</p>
-        <button type="button" class="btn content-primary-button" @click="selectedTableCell = null">关闭</button>
-      </section>
-    </div>
 
     <div ref="teachingResourceDrawerHost"></div>
 
