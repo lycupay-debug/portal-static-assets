@@ -71,7 +71,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if ! grep -Fq 'handle /uploads/* {' "$repo/deploy/freebsd/Caddyfile.dev-public" || \
-   ! grep -Fq 'redir /api{uri} 308' "$repo/deploy/freebsd/Caddyfile.dev-public" || \
+   ! grep -Fq 'redir https://{http.request.host}/api{uri} 308' "$repo/deploy/freebsd/Caddyfile.dev-public" || \
    ! grep -Fq 'handle /api/uploads/* {' "$repo/deploy/freebsd/Caddyfile.dev-public" || \
    ! grep -Fq 'uri strip_prefix /api' "$repo/deploy/freebsd/Caddyfile.dev-public" || \
    ! grep -Fq 'reverse_proxy 127.0.0.1:8082 {' "$repo/deploy/freebsd/Caddyfile.dev-public"; then

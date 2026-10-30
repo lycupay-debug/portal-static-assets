@@ -32,7 +32,7 @@ www.lycupaynotion.top {
 
 	# Legacy content URLs redirect under /api so the Path=/api session cookie is sent.
 	handle /uploads/* {
-		redir /api{uri} 308
+		redir https://{http.request.host}/api{uri} 308
 	}
 
 	# Strip only the public API prefix; Go receives /uploads/<filename> for authorization.

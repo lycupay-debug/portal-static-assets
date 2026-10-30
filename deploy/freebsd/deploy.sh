@@ -72,7 +72,7 @@ for directive in \
   'trusted_proxies_strict' \
   'client_ip_headers CF-Connecting-IP' \
   'handle /uploads/* {' \
-  'redir /api{uri} 308' \
+  'redir https://{http.request.host}/api{uri} 308' \
   'handle /api/uploads/* {' \
   'uri strip_prefix /api' \
   'reverse_proxy 127.0.0.1:8081 {' \
