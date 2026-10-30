@@ -279,8 +279,8 @@ const {
   dialog: knowledgeTagDialog,
   draft: knowledgeTagDraft,
   expandedGroups: expandedKnowledgeTagGroups,
-  selectedCount: selectedKnowledgeTagCount,
-  draftCount: knowledgeTagDraftCount,
+  selectedCount: selectedKnowledgeTagCountValue,
+  draftCount: knowledgeTagDraftCountValue,
   isSelected: isKnowledgeTagSelected,
   open: openKnowledgeTagDialog,
   close: closeKnowledgeTagDialog,
@@ -293,6 +293,8 @@ const {
   createValue: createVueValue,
   afterRender: () => nextTick(),
 })
+const selectedKnowledgeTagCount = computed(() => selectedKnowledgeTagCountValue.value)
+const knowledgeTagDraftCount = computed(() => knowledgeTagDraftCountValue.value)
 const publicContents = ref<PublicContentCard[]>([])
 const publicTeachingResources = ref<PublicTeachingResource[]>([])
 const educationResourceLoading = ref(false)
@@ -508,16 +510,14 @@ const filteredSections = computed(() => {
 const isRegister = computed(() => route.value === '/register')
 const isAuthPage = computed(() => route.value === '/login' || route.value === '/register')
 const isPublicContentPage = computed(() => /^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(route.value))
-const {
-  legalSlug,
-  publishedLegalDocuments,
-  legalDocument,
-  legalDocumentHtml,
-  legalDocumentLoading,
-  legalDocumentError,
-  loadPublishedLegalDocuments,
-  loadLegalDocument,
-} = createLegalDocumentsController(route, { createValue: createVueValue })
+const legalDocumentsController = createLegalDocumentsController(route, { createValue: createVueValue })
+const legalSlug = computed(() => legalDocumentsController.legalSlug.value)
+const publishedLegalDocuments = legalDocumentsController.publishedLegalDocuments as Ref<typeof legalDocumentsController.publishedLegalDocuments.value>
+const legalDocument = legalDocumentsController.legalDocument as Ref<typeof legalDocumentsController.legalDocument.value>
+const legalDocumentHtml = legalDocumentsController.legalDocumentHtml as Ref<string>
+const legalDocumentLoading = legalDocumentsController.legalDocumentLoading as Ref<boolean>
+const legalDocumentError = legalDocumentsController.legalDocumentError as Ref<string>
+const { loadPublishedLegalDocuments, loadLegalDocument } = legalDocumentsController
 const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
 const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
 const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
