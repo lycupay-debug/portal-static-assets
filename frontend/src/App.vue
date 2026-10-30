@@ -26,8 +26,6 @@ import { tableCellPreview, tableCellValue } from './utils/accountTablePresentati
 import { createAccountTableModel } from './state/accountTableModel'
 import { createPortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
 import { createProtectedRouteGuard } from './composables/useProtectedRouteGuard'
-import { formatResourceFileSize } from './utils/resourceFiles'
-import { resourceFileIcon } from './utils/resourceIcons'
 import { createRetryableLazyLoader } from './utils/retryableLazyLoader'
 import { accountGroups, accountGroupIcon } from './navigation/accountNavigation'
 import { routeSections, sectionRoutes } from './navigation/portalRoutes'
@@ -311,6 +309,48 @@ const filteredEducationResources = computed(() => filterEducationResources(
   educationResourceSearch.value,
 ))
 const visibleEducationResources = computed(() => filteredEducationResources.value.slice(0, knowledgeVisibleCount.value))
+const educationResourceDirectoryHost = ref<HTMLElement | null>(null)
+let educationResourceDirectoryMountSequence = 0
+let educationResourceDirectoryView: { update: (state: { category: string; grade: string; search: string; types: string[]; grades: string[]; resources: typeof filteredEducationResources.value; visibleResources: typeof visibleEducationResources.value; loading: boolean; error: string; selected: typeof selectedEducationResource.value }) => void; dispose: () => void } | null = null
+function getEducationResourceDirectoryState() {
+  return {
+    category: educationResourceCategory.value,
+    grade: educationResourceGrade.value,
+    search: educationResourceSearch.value,
+    types: educationResourceTypes,
+    grades: educationResourceGrades,
+    resources: filteredEducationResources.value,
+    visibleResources: visibleEducationResources.value,
+    loading: educationResourceLoading.value,
+    error: educationResourceError.value,
+    selected: selectedEducationResource.value,
+  }
+}
+function updateEducationResourceDirectoryView() { educationResourceDirectoryView?.update(getEducationResourceDirectoryState()) }
+watch([educationResourceDirectoryHost, route], ([host, path]) => {
+  const sequence = ++educationResourceDirectoryMountSequence
+  educationResourceDirectoryView?.dispose()
+  educationResourceDirectoryView = null
+  if (!host || path !== '/education-resources') return
+  void import('./views/educationResourceDirectoryView').then(module => {
+    if (sequence !== educationResourceDirectoryMountSequence || host !== educationResourceDirectoryHost.value) return
+    educationResourceDirectoryView = module.mountEducationResourceDirectoryView(host, {
+      getState: getEducationResourceDirectoryState,
+      setCategory: value => { educationResourceCategory.value = value; knowledgeVisibleCount.value = knowledgePageSize },
+      setGrade: value => { educationResourceGrade.value = value; knowledgeVisibleCount.value = knowledgePageSize },
+      setSearch: value => { educationResourceSearch.value = value },
+      resetVisible: () => { knowledgeVisibleCount.value = knowledgePageSize },
+      selectResource: value => { selectedEducationResource.value = value },
+      ensureListFilled: ensureKnowledgeListFilled,
+    })
+    updateEducationResourceDirectoryView()
+  }).catch((error: unknown) => {
+    if (sequence !== educationResourceDirectoryMountSequence || host !== educationResourceDirectoryHost.value) return
+    host.textContent = '教育资源页面加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '教育资源页面加载失败', '教育资源')
+  })
+}, { flush: 'post' })
+watch([educationResourceCategory, educationResourceGrade, educationResourceSearch, filteredEducationResources, visibleEducationResources, educationResourceLoading, educationResourceError, selectedEducationResource], updateEducationResourceDirectoryView, { deep: true })
 
 const publicArticle = ref<PublicContent | null>(null)
 const publicArticleHtml = ref('')
@@ -837,6 +877,9 @@ onBeforeUnmount(() => {
   homePageMountSequence += 1
   homePageView?.dispose()
   homePageView = null
+  educationResourceDirectoryMountSequence += 1
+  educationResourceDirectoryView?.dispose()
+  educationResourceDirectoryView = null
   knowledgeDirectoryMountSequence += 1
   knowledgeDirectoryView?.dispose()
   knowledgeDirectoryView = null
@@ -956,61 +999,7 @@ onBeforeUnmount(() => {
 
     <div v-else-if="route === '/homestays' || route === '/software-tools'" ref="directoryOverviewHost"></div>
 
-    <main v-else-if="isPublicDirectoryPage" class="directory-page education-resource-directory-page">
-      <section v-if="route === '/education-resources'" class="directory-published-section knowledge-filter-section education-resource-filter-section">
-        <div class="education-resource-heading"><p class="eyebrow">LEARNING LIBRARY</p><h1>教育资源<span>.</span></h1><p>按资源类型与适用年级筛选，快速找到需要的学习资料。</p></div>
-        <div class="knowledge-toolbar" aria-label="教育资源筛选与搜索"><div class="knowledge-toolbar-controls">
-          <nav class="knowledge-category-nav" aria-label="资源类型">
-            <button v-for="category in educationResourceTypes" :key="category" type="button" class="knowledge-category-button" :class="{ 'is-active': educationResourceCategory === category }" :aria-pressed="educationResourceCategory === category" @click="educationResourceCategory = category; knowledgeVisibleCount = knowledgePageSize">{{ category }}</button>
-          </nav>
-          <nav class="knowledge-subcategory-nav" aria-label="适用年级">
-            <button v-for="grade in educationResourceGrades" :key="grade" type="button" class="knowledge-subcategory-button" :class="{ 'is-active': educationResourceGrade === grade }" :aria-pressed="educationResourceGrade === grade" @click="educationResourceGrade = grade; knowledgeVisibleCount = knowledgePageSize">{{ grade }}</button>
-          </nav>
-          <div class="knowledge-search-wrap"><label class="knowledge-search-form knowledge-autocomplete"><span class="knowledge-search-icon bi bi-search" aria-hidden="true"></span><input class="form-control" v-model="educationResourceSearch" type="search" placeholder="搜索资源名称、说明或文件名…" aria-label="模糊搜索教育资源" autocomplete="off" @input="knowledgeVisibleCount = knowledgePageSize" /><button v-if="educationResourceSearch" type="button" class="knowledge-search-clear" aria-label="清除搜索" @click="educationResourceSearch = ''; knowledgeVisibleCount = knowledgePageSize"><i class="bi bi-x-lg" aria-hidden="true"></i></button></label></div>
-        </div></div>
-      </section>
-      <section v-if="route === '/education-resources'" class="directory-published-section knowledge-results-section education-resource-results-section">
-        <div class="directory-section-heading knowledge-results-heading"><div><p class="eyebrow">PUBLIC LEARNING MATERIALS</p><h2>资源列表</h2></div><span>{{ filteredEducationResources.length }} 份资源</span></div>
-        <p v-if="educationResourceLoading && !publicTeachingResources.length" class="directory-empty">正在读取公开教育资源…</p>
-        <p v-else-if="educationResourceError" class="directory-empty">{{ educationResourceError }}</p>
-        <div v-else-if="filteredEducationResources.length" class="knowledge-infinite-list">
-          <a v-for="item in visibleEducationResources" :key="item.id" class="knowledge-list-item education-resource-list-item" href="#resource-detail" :aria-label="`${item.title}，查看资源详情`" @click.prevent="selectedEducationResource = item">
-            <span class="education-resource-file-icon" aria-hidden="true"><i :class="['bi', resourceFileIcon(item.filename, item.url)]"></i></span>
-            <span class="knowledge-list-copy"><strong>{{ item.title }}</strong><span v-if="item.description">{{ item.description }}</span><span class="education-resource-meta"><b>{{ item.type }}</b><b>{{ item.grade || '不限定年级' }}</b><span class="education-resource-filename">{{ item.filename || (item.url ? '在线资源' : '学习资料') }}</span></span></span>
-            <time>{{ new Date(item.updatedAt || item.createdAt).toLocaleDateString('zh-CN') }}</time><span class="knowledge-list-arrow" aria-hidden="true"><i class="bi bi-arrow-up-right"></i></span>
-          </a>
-          <p class="knowledge-list-status">{{ visibleEducationResources.length < filteredEducationResources.length ? '向下滚动加载更多' : `已显示全部 ${filteredEducationResources.length} 份资源` }}</p>
-        </div>
-        <p v-else-if="educationResourceSearch.trim() || educationResourceCategory !== '全部资源' || educationResourceGrade !== '全部年级'" class="directory-empty">没有找到符合条件的公开资源。请调整筛选条件或搜索关键词。</p>
-        <p v-else class="directory-empty">目前还没有公开的教育资源。登录后在“教学资源”中创建资源，并勾选“公开展示”，资源就会显示在这里。</p>
-        <div v-if="selectedEducationResource" class="share-dialog-backdrop education-resource-detail-backdrop" @click.self="selectedEducationResource = null" @keydown.esc.stop.prevent="selectedEducationResource = null">
-          <section class="share-dialog education-resource-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="education-resource-detail-title" @click.stop>
-            <button type="button" class="education-resource-detail-close" aria-label="关闭资源详情" @click="selectedEducationResource = null"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
-            <span class="share-dialog-eyebrow">LEARNING RESOURCE</span>
-            <h2 id="education-resource-detail-title">{{ selectedEducationResource.title }}</h2>
-            <p v-if="selectedEducationResource.description" class="education-resource-detail-description">{{ selectedEducationResource.description }}</p>
-            <p v-else class="education-resource-detail-description education-resource-detail-empty-description">此资源暂无补充说明。</p>
-            <dl class="education-resource-detail-meta">
-              <div><dt>资源类型</dt><dd>{{ selectedEducationResource.type || '未分类' }}</dd></div>
-              <div><dt>适用年级</dt><dd>{{ selectedEducationResource.grade || '不限定年级' }}</dd></div>
-              <div v-if="selectedEducationResource.filename"><dt>文件名称</dt><dd>{{ selectedEducationResource.filename }}</dd></div>
-              <div v-if="selectedEducationResource.fileSize != null"><dt>文件大小</dt><dd>{{ formatResourceFileSize(selectedEducationResource.fileSize) }}</dd></div>
-              <div v-if="selectedEducationResource.url"><dt>在线链接</dt><dd><a class="education-resource-detail-url" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer">{{ selectedEducationResource.url }}</a></dd></div>
-              <div><dt>更新时间</dt><dd>{{ new Date(selectedEducationResource.updatedAt || selectedEducationResource.createdAt).toLocaleDateString('zh-CN') }}</dd></div>
-            </dl>
-            <div v-if="selectedEducationResource.filename?.toLowerCase().endsWith('.mp3') && selectedEducationResource.downloadUrl" class="education-resource-audio-preview">
-              <label :for="'education-resource-audio-' + selectedEducationResource.id">MP3 音频预览</label>
-              <audio :id="'education-resource-audio-' + selectedEducationResource.id" controls preload="metadata" :src="selectedEducationResource.downloadUrl.replace(/\/download$/, '/preview')">当前浏览器不支持音频播放，请使用下载功能。</audio>
-            </div>
-            <p v-if="!selectedEducationResource.url && !selectedEducationResource.downloadUrl" class="education-resource-detail-warning">该资源当前没有可访问的文件或链接，请联系资源发布者。</p>
-            <div class="education-resource-detail-actions">
-              <a v-if="selectedEducationResource.url" class="education-resource-detail-action education-resource-detail-open" :href="selectedEducationResource.url" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> 打开链接</a>
-              <a v-if="selectedEducationResource.downloadUrl" class="education-resource-detail-action education-resource-detail-download" :href="selectedEducationResource.downloadUrl"><i class="bi bi-download" aria-hidden="true"></i> 下载文件</a>
-            </div>
-          </section>
-        </div>
-      </section>
-    </main>
+    <div v-else-if="route === '/education-resources'" ref="educationResourceDirectoryHost"></div>
 
     <main v-else-if="isAuthPage" class="route-main">
       <div ref="authPageHost"></div>

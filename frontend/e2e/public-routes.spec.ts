@@ -82,6 +82,36 @@ test('knowledge directory filters categories and searches published articles in 
   await expect(page.locator('.knowledge-list-item strong')).toHaveText('Python 编程实践')
 })
 
+test('education resource directory filters results and opens a safe native detail dialog', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'not signed in' }) }))
+  await page.route('**/api/public/resources*', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [{
+      id: 'resource-1', title: '英语听力练习', description: '高一英语听力材料', type: '听力材料', grade: '高一',
+      filename: 'lesson.mp3', fileSize: 2048, url: 'https://resources.example.test/lesson',
+      downloadUrl: '/api/public/resources/resource-1/download', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z',
+    }] }),
+  }))
+  await page.goto('/education-resources')
+  await expect(page.getByRole('heading', { name: '教育资源.' })).toBeVisible()
+  await expect(page.locator('.education-resource-list-item')).toHaveCount(1)
+  await page.getByRole('button', { name: '课件', exact: true }).click()
+  await expect(page.getByText('没有找到符合条件的公开资源。请调整筛选条件或搜索关键词。')).toBeVisible()
+  await page.getByRole('button', { name: '全部资源', exact: true }).click()
+  await page.getByRole('button', { name: '高一', exact: true }).click()
+  await expect(page.locator('.education-resource-list-item')).toHaveCount(1)
+  await page.getByRole('searchbox', { name: '模糊搜索教育资源' }).fill('英语')
+  await expect(page.locator('.education-resource-list-item')).toHaveCount(1)
+  await page.getByRole('link', { name: '英语听力练习，查看资源详情' }).click()
+  await expect(page.getByRole('dialog', { name: '英语听力练习' })).toBeVisible()
+  await expect(page.getByText('MP3 音频预览')).toBeVisible()
+  await expect(page.locator('.education-resource-detail-url')).toHaveAttribute('href', 'https://resources.example.test/lesson')
+  await expect(page.locator('.education-resource-detail-download')).toHaveAttribute('href', '/api/public/resources/resource-1/download')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: '英语听力练习' })).toHaveCount(0)
+})
+
 test('software tools and homestay directory overviews render native content', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'not signed in' }) }))
   await page.route('**/api/public/content', route => route.fulfill({
