@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // This file exercises pure backend contracts and HTTP boundary behavior without
@@ -224,6 +225,46 @@ func TestAddComplianceReviewRejectsRemovedCopyrightReviewType(t *testing.T) {
 	api.addComplianceReview(recorder, request, &portalUser{ID: "admin", Email: "admin@example.invalid"}, assetID)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+}
+
+func TestRateLimitMapCapacityBoundsMemory(t *testing.T) {
+	now := time.Now()
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	request.RemoteAddr = "192.0.2.1:1234"
+
+	full := &portalAPI{rate: make(map[string]rateEntry, maxRateLimitEntries)}
+	for i := 0; i < maxRateLimitEntries; i++ {
+		full.rate["active-"+string(rune(i+1))] = rateEntry{count: 1, until: now.Add(time.Minute)}
+	}
+	recorder := httptest.NewRecorder()
+	if !full.rateLimited(recorder, request) {
+		t.Fatal("new client key should be rejected when the active key map is full")
+	}
+	if recorder.Code != http.StatusTooManyRequests || recorder.Header().Get("Retry-After") != "60" {
+		t.Fatalf("capacity response = status %d retry-after %q", recorder.Code, recorder.Header().Get("Retry-After"))
+	}
+	if got := len(full.rate); got != maxRateLimitEntries {
+		t.Fatalf("rate map grew to %d entries, want cap %d", got, maxRateLimitEntries)
+	}
+
+	withExpired := &portalAPI{rate: make(map[string]rateEntry, maxRateLimitEntries)}
+	for i := 0; i < maxRateLimitEntries; i++ {
+		until := now.Add(time.Minute)
+		if i == 0 {
+			until = now.Add(-time.Second)
+		}
+		withExpired.rate["entry-"+string(rune(i+1))] = rateEntry{count: 1, until: until}
+	}
+	recorder = httptest.NewRecorder()
+	if withExpired.rateLimited(recorder, request) {
+		t.Fatalf("expired entry should be reclaimed to admit a new client: %s", recorder.Body.String())
+	}
+	if got := len(withExpired.rate); got != maxRateLimitEntries {
+		t.Fatalf("rate map size after expired-entry reclamation = %d, want %d", got, maxRateLimitEntries)
+	}
+	if _, ok := withExpired.rate["192.0.2.1:/auth/login"]; !ok {
+		t.Fatal("new client key was not recorded after expired-entry reclamation")
 	}
 }
 

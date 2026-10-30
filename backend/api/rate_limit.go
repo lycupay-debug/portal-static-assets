@@ -32,12 +32,30 @@ func rateLimitClientIP(r *http.Request) string {
 	return host
 }
 
+// Bound attacker-controlled client/path keys; reclaim expired entries before refusing new keys.
+const maxRateLimitEntries = 10000
+
 func (a *portalAPI) rateLimited(w http.ResponseWriter, r *http.Request) bool {
 	key := rateLimitClientIP(r) + ":" + r.URL.Path
 	now := time.Now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	v := a.rate[key]
+	if a.rate == nil {
+		a.rate = make(map[string]rateEntry)
+	}
+	v, exists := a.rate[key]
+	if !exists && len(a.rate) >= maxRateLimitEntries {
+		for k, entry := range a.rate {
+			if !now.Before(entry.until) {
+				delete(a.rate, k)
+			}
+		}
+		if len(a.rate) >= maxRateLimitEntries {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, 429, "系统繁忙，请稍后再试。", nil)
+			return true
+		}
+	}
 	if !now.Before(v.until) {
 		v = rateEntry{until: now.Add(15 * time.Minute)}
 	}
