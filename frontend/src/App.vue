@@ -397,7 +397,7 @@ watch([educationResourceDirectoryHost, route], ([host, path]) => {
     portalNotify.error(error instanceof Error ? error.message : '教育资源页面加载失败', '教育资源')
   })
 }, { flush: 'post' })
-watch([educationResourceCategory, educationResourceGrade, educationResourceSearch, filteredEducationResources, visibleEducationResources, educationResourceLoading, educationResourceError, selectedEducationResource], updateEducationResourceDirectoryView, { deep: true })
+watch([educationResourceCategory, educationResourceGrade, educationResourceSearch, filteredEducationResources, educationResourceLoading, educationResourceError, selectedEducationResource], updateEducationResourceDirectoryView, { deep: true })
 
 const publicArticle = ref<PublicContent | null>(null)
 const publicArticleHtml = ref('')
@@ -707,6 +707,7 @@ const knowledgeDirectory = createKnowledgeDirectoryController(route, directoryCo
   document,
 })
 const knowledgeVisibleCount = knowledgeDirectory.knowledgeVisibleCount as Ref<number>
+watch(knowledgeVisibleCount, updateEducationResourceDirectoryView)
 const knowledgeCategory = knowledgeDirectory.knowledgeCategory as Ref<string>
 const knowledgeSubcategory = knowledgeDirectory.knowledgeSubcategory as Ref<string>
 const knowledgeSearchQuery = knowledgeDirectory.knowledgeSearchQuery as Ref<string>
