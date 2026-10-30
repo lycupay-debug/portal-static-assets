@@ -1,5 +1,7 @@
 # Frontend refactor design — 2026-10-29
 
+> Historical design record for the Vue-era frontend dependency refactor. The first-stage Vue removal was completed on 2026-10-30 at `c31036badc52f58f251dde7f04958bb3ee55caef`; sections below describe the earlier implementation and experiments, not the current framework-free source tree. Use the current root README and second-stage Notion record for the active architecture baseline.
+
 ## Goal
 
 Improve frontend module boundaries and make reusable dependencies independently cacheable through the existing `https://assets.lycupaynotion.top` static-resource service, without public CDNs, a new runtime service, or production changes.

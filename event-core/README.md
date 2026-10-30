@@ -17,12 +17,12 @@ FreeBSD 原生 C 事件服务的最小可运行版本。使用 kqueue / kevent �
 在 FreeBSD 主机上运行：
 
 ```sh
-cd /opt/personal-portal/event-core
+cd /opt/portal-static-assets/event-core
 make clean all
 make test
 ```
 
-C 测试覆盖：PING、STATUS、EVENT 元数据校验、SUBSCRIBE/PUBLISH 推送、ACK 与错误 ACK、有界 FIFO 顺序、未知命令、v1 拒绝、请求 ID、嵌入 NUL、超长请求、24 个并发客户端，以及 SIGTERM 退出。Go 集成测试还会编译临时 C 核心进程，验证核心真实重启后订阅客户端能够重连并再次收到推送。
+当前 C 协议单元测试（`make test`）覆盖：请求 ID 与事件 ID/type 校验、PING、STATUS、EVENT、未知命令、v1 拒绝、SUBSCRIBE/PUBLISH、错配 ACK、成功 ACK、单个未确认推送后的 FIFO 顺序，以及 32 项 FIFO 上限。测试通过 `PP_IPC_TESTING` 替换 kqueue 注册，不启动真实 socket/event loop。当前尚未覆盖嵌入 NUL、超长网络帧、多个真实并发客户端、慢写入、超时、SIGTERM 清理或真实核心重启/Go 重连；Go 当前也没有这些场景的集成测试。
 
 ## 本地协议 v2
 

@@ -1,42 +1,49 @@
-# vue-ts-validation
+# Frontend architecture and development
 
-This template should help get you started developing with Vue 3 in Vite.
+This directory contains the portal's framework-free TypeScript/DOM frontend. Vue SFCs, the Vue runtime, the Vue Vite plugin, and Vue-specific type checking have been removed in the first refactor stage.
 
-## Recommended IDE Setup
+## Runtime architecture
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+- `src/main.ts` is the browser entry point and imports the ordered CSS layers.
+- `src/portalApplication.ts` creates and owns the portal application lifecycle.
+- `src/navigation/` resolves locations, routes, and navigation transitions.
+- `src/state/` contains framework-independent reactive state and state contracts; `@preact/signals-core` is the small reactive primitive.
+- `src/composables/` contains focused data-loading and action workflows. The directory name is historical terminology; modules do not depend on Vue.
+- `src/views/` and `src/components/` render standard DOM nodes and own explicit mount/dispose lifecycles.
+- `src/api/` contains the same-origin Go API client and generated OpenAPI types.
+- `src/utils/` contains pure or narrowly scoped helpers, including Markdown and resource validation.
+- Tiptap Core / ProseMirror remain for rich-text editing. The Vue adapter is not used.
 
-## Recommended Browser Setup
+The Go API remains the only business and authorization authority. Frontend route guards and hidden controls are usability features, not security boundaries.
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+## Development
 
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
+Requirements: Node.js 24 and npm.
 
 ```sh
-npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
-npm run dev
-```
-
-### Type-Check, Compile and Minify for Production
-
-```sh
+npm ci
+npm test
+npm run type-check
+npm run api:lint
+npm run api:check
 npm run build
+npm run check:static-assets
 ```
+
+The build runs frontend behavior tests, TypeScript project checks, Vite production bundling, and bundle-budget checks. Static-origin packaging checks are separate:
+
+```sh
+npm run build:static-origin
+npm run package:static-origin
+```
+
+## Test strategy and limits
+
+- `test/` contains Node.js/jsdom behavior and lifecycle tests.
+- `e2e/` contains Playwright Chromium browser workflows.
+- Unit/jsdom tests do not prove live API integration or real-browser behavior. Report E2E and production checks separately.
+- Tests must assert user-visible behavior, state ownership, error paths, and disposal effects; do not add source-only assertions as a substitute when a behavior test is practical.
+
+## Refactor rules
+
+Before changing a module, trace its callers, dependencies, state ownership, asynchronous work, DOM listeners, cleanup, API contracts, and tests. Preserve public behavior unless the change explicitly targets it. New or substantially refactored files must document responsibilities, dependencies, collaborators, side effects, and important boundaries. Follow the repository's AI engineering standard and the current second-stage Notion record.

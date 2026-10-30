@@ -114,15 +114,18 @@ jobs:
       - name: Static checks
         working-directory: backend
         run: go vet ./...
+      - name: Backend contract and race tests
+        working-directory: backend
+        run: go test -race ./...
 
   event-core:
     name: C event core checks
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile event core
+      - name: Compile and test event core protocol
         working-directory: event-core
-        run: make clean all
+        run: make clean test all
 
   compliance-and-deploy-policy:
     name: Compliance and deployment policy checks

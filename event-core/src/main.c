@@ -68,9 +68,18 @@ set_nonblocking(int fd)
 static int
 change_event(uintptr_t ident, int16_t filter, uint16_t flags, void *udata)
 {
+#ifdef PP_IPC_TESTING
+    /* Protocol tests exercise state transitions without opening a kqueue. */
+    (void)ident;
+    (void)filter;
+    (void)flags;
+    (void)udata;
+    return 0;
+#else
     struct kevent event;
     EV_SET(&event, ident, filter, flags, 0, 0, udata);
     return kevent(kq, &event, 1, NULL, 0, NULL);
+#endif
 }
 
 static void

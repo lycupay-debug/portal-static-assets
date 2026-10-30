@@ -2,7 +2,7 @@
 
 ## 当前架构决策（2026-10-30）：移除 Vue，保留后端职责边界
 
-前端技术方向已从 Vue 3 组件体系调整为 **原生 TypeScript 模块 + 标准 DOM API + HTML/CSS**。这是逐步迁移，不表示全部 Vue 已移除；在迁移完成并验证前，现有 Vue SFC 仍属于待迁移的历史实现。CSS 应先评估并尽量复用，不为迁移而重写视觉系统。Tiptap 3 / ProseMirror 必须单独验证其对 Vue 的依赖、可替代接入方式、编辑器功能与 bundle 影响；未验证前不得假定可以直接保留或直接删除。
+第一阶段 Vue 移除已完成并通过当前仓库验证：`frontend/src/` 不再包含 Vue SFC，Vue runtime、Vue Vite 插件及 Vue 类型检查依赖已移除。前端现为 **原生 TypeScript 模块 + 标准 DOM API + HTML/CSS**，以 `@preact/signals-core` 提供轻量响应式状态；Tiptap Core / ProseMirror 保留，Vue adapter 已移除。当前基线为 2026-10-30 的 `main` 提交 `c31036badc52f58f251dde7f04958bb3ee55caef`。后续第二阶段审查全栈模块边界、业务契约、安全、数据库、C IPC 与验证体系；CSS 以证据驱动渐进整理，不做无关视觉重写。
 
 **职责边界固定，具体实现允许重构。** Go 继续负责唯一业务 API 与后端业务规则；PostgreSQL 继续作为业务/事件持久化事实源；C 继续负责 FreeBSD 原生事件驱动核心及受限元数据通知，不接管业务 payload、业务规则或持久化；Caddy 继续负责 TLS、静态资源、路由、反向代理、可信代理与安全响应头。上述层的代码、模块、配置和内部实现均可在遵守职责边界、协议/数据兼容性、安全要求和验证流程的前提下重构。不得把“职责不可变”误解为“代码/配置冻结”；也不得因重构而把某层的职责转移给另一层。
 
@@ -49,7 +49,7 @@ npm run build
 
 ## 当前状态
 
-当前架构目标为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 事件收件箱/租约/重试/结果与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。CI 覆盖 OpenAPI 生成契约、全量迁移、Go race tests、C IPC FIFO/ACK/错误 ACK 与并发测试。生产部署使用 deploy/freebsd/deploy.sh，包含备份、迁移、健康检查与可回滚发布。
+当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-30 已将 Go `go test -race ./...` 和 C `make test` 加入 CI：FreeBSD 开发机实测 Go 单元测试、竞态检测、`go vet`、C 协议测试和生产目标编译均通过；GitHub Actions 对本次修改的远端执行结果尚待提交后核验。Go 当前测试为纯函数/HTTP 边界测试，不是 PostgreSQL 集成测试；C 当前测试验证协议解析与订阅 ACK/FIFO 状态，不覆盖真实 kqueue 并发、信号退出或服务重启。数据库迁移集成验证和真实 FreeBSD 端到端验证仍需单独记录。部署脚本仅作为受控部署工具；第二阶段开发工作不代表生产部署授权。
 
 ---
 
@@ -57,7 +57,7 @@ npm run build
 
 > 本文件是本项目的长期架构约束与运维执行基线。所有后续开发、修复、测试、提交和部署都必须遵循本文；如果实现、旧文档或临时方案与本文冲突，先核实事实，再更新文档和代码，不得悄悄引入第二套规则。
 >
-> 适用仓库：`lycupay-debug/personal-portal`；生产主机：FreeBSD 15.1-RELEASE-p4 amd64；生产目录：`/opt/personal-portal`；生产站点：`https://www.lycupaynotion.top/`。
+> 当前源码仓库：`lycupay-debug/portal-static-assets`；当前开发工作区：FreeBSD `/opt/portal-static-assets`。该仓库与既有生产部署目录分离；此处记录的开发提交、构建产物和验证结果不等于生产发布。生产拓扑和生产操作必须按独立审批流程核对。
 
 ## 1. 不可随意改变的架构原则
 
@@ -168,7 +168,7 @@ PostgreSQL（portal schema）
 ## 5. PostgreSQL 与 SQL 迁移规范（优先级 P2）
 
 - 数据库：`personal_portal`；业务 schema：`portal`；应用角色：`personal_portal_app`。不得访问 n8n 或 Host MCP 的数据库/凭据。
-- 迁移目录：`backend/migrations/`，编号文件是唯一迁移顺序；`portal.schema_migrations` 记录应用版本。当前已存在 `001` 至 `028` 迁移，新增迁移从下一个序号开始，不得改写已经应用到生产的历史迁移。
+- 迁移目录：`backend/migrations/`，编号文件是唯一迁移顺序；`portal.schema_migrations` 记录应用版本。当前仓库包含 `001` 至 `030` 共 30 个迁移文件。新增迁移从 `031` 开始；不得改写已经应用到任何共享环境的历史迁移。
 - 应用启动不自动执行 DDL。生产迁移通过 `deploy/freebsd/migrate.sh` 显式运行，先做完整 PostgreSQL dump，再按版本顺序应用。
 - 每个迁移必须具备明确的事务语义：自带 `BEGIN/COMMIT` 的文件自行管理；不带显式事务的迁移由 `psql --single-transaction` 包裹。迁移失败必须停止，不得继续应用后续版本。
 - 迁移必须检查主键、外键、唯一约束、`NOT NULL`、检查约束、必要索引和并发访问成本。索引要服务于实际查询与租约领取模式，不盲目增加。
@@ -246,21 +246,21 @@ git status --short --branch
 
 ## 9. 已完成的实施与验证记录
 
-以下状态截至本文件更新时，来自仓库代码、CI 和生产主机的实际检查；后续提交应继续更新此表，不得把规划写成已完成。
+以下表格保留既有 `personal-portal` 项目的历史实施与生产运维记录，主要用于追溯原架构决策。表中仓库、生产主机、部署日期和旧 CI 结果不代表当前 `portal-static-assets` 仓库的实时状态；第二阶段的当前基线与验证结果以本页顶部更新及 Notion《检查源码重构（第二阶段）》为准。
 
 | 项目 | 当前状态 | 证据/范围 |
 |---|---|---|
 | Go-only 生产业务后端 | 已实施 | Go API 处理业务；旧 Node API 不在正常生产流量路径，部署后已禁用旧认证服务 |
-| 原生 TypeScript + DOM（迁移中） | 进行中 | 通知模块已迁移；其余 Vue SFC、路由、状态所有权、生命周期、构建插件与测试体系仍需逐项迁移和验证 |
+| 原生 TypeScript + DOM（第一阶段） | 已完成 | 当前 `main` 提交 `c31036badc52f58f251dde7f04958bb3ee55caef`；Vue SFC 为 0，Vue runtime / 插件 / vue-tsc 依赖已移除；当前前端行为测试 106 项通过，类型检查与构建通过（2026-10-30 FreeBSD 开发工作区实测） |
 | OpenAPI 共享契约 | 已实施 | `api/openapi.yaml`；生成 TypeScript 类型；lint 和生成漂移检查纳入 CI |
-| PostgreSQL 版本化迁移 | 已实施至 028 | `backend/migrations/001`–`028`；新增命令任务队列与执行器心跳；CI 空库按序迁移；迁移事务策略测试 |
-| Go 事件接收、分发、租约、处理和恢复 | 已实现基础能力 | Go/PostgreSQL 为持久事实源；测试覆盖重复唤醒、处理并发、租约/崩溃恢复等路径 |
-| C IPC v2 | 已实施 | 版本化帧、request ID、ACK、有界 FIFO、超时、重连、错误/重复 ACK 测试 |
+| PostgreSQL 版本化迁移 | 历史生产记录截至 028；当前源码已有 030 | 当前仓库 `backend/migrations/001`–`030`；本轮只核对文件和脚本，尚未运行独立数据库集成迁移测试 |
+| Go 事件接收、分发、租约、处理和恢复 | 实现存在；当前仓库自动化验证不完整 | 本轮新增纯函数/HTTP 边界单元测试；PostgreSQL 事务、租约并发、崩溃恢复和真实 C 核心重启仍无当前 CI 集成测试证据 |
+| C IPC v2 | 协议实现存在；局部单元测试已补充 | 当前 `make test` 覆盖请求/事件标识校验、PING/STATUS/EVENT、v1 拒绝、未知命令、订阅推送、错配/成功 ACK、FIFO 顺序和 32 项上限；真实 socket/kqueue、并发客户端、超时、信号退出与重启恢复未由该测试覆盖 |
 | C 核心资源边界 | 已实施 | C 只处理事件元数据通知，不处理业务 payload |
 | 部署与恢复策略 | 已实施 | 备份、迁移、健康检查、手动回滚；开发期默认不自动回滚；隔离沙箱回滚演练 |
 | 系统运行模式与任务执行 | 已部署；执行器心跳正常；专用 PostgreSQL 集成测试通过 | `/account/system-ops/policy`；`portal.system_execution_policy`、`portal.command_tasks`、`portal.command_executor_heartbeat`；审批/执行审计；SSH_MCP 任务只登记、不代执行 |
 | 安全响应头与 Cloudflare 代理信任 | 已部署并验证 | 生产 Caddyfile 与仓库配置一致；本机及公网检查响应头；内部路由边界测试通过 |
-| 最新架构/部署 CI | 已通过 | `f7e8aba`：`https://github.com/lycupay-debug/personal-portal/actions/runs/38876797502` |
+| 历史架构/部署 CI | 历史记录 | `f7e8aba`：`https://github.com/lycupay-debug/personal-portal/actions/runs/38876797502`；该 run 属于旧 `personal-portal` 仓库，不作为当前 `portal-static-assets` 的 CI 证据 |
 | 最新生产部署 | 已完成 | 2026-10-16 UTC；部署脚本输出 stamp `20261016T085236Z`；发布后 health-check 通过 |
 | 数据库备份 | 已生成且可读取 | `/var/backups/personal-portal/pre-go-cutover-20261016T085236Z.dump`；`pg_restore -l` 可读取目录清单 |
 
