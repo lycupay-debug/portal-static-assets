@@ -649,6 +649,23 @@ const { loadSession, submitAuth, logout } = createPortalAuthentication({
   notifySuccess: (message, title) => portalNotify.success(message, title),
   notifyError: (message, title) => portalNotify.error(message, title),
 })
+const authPageHost = ref<HTMLElement | null>(null)
+let disposeAuthPage: (() => void) | null = null
+let authPageMountSequence = 0
+watch([authPageHost, route], ([host, path]) => {
+  const sequence = ++authPageMountSequence
+  disposeAuthPage?.()
+  disposeAuthPage = null
+  if (!host || (path !== '/login' && path !== '/register')) return
+  void import('./views/authPageView').then(module => {
+    if (sequence !== authPageMountSequence || host !== authPageHost.value) return
+    disposeAuthPage = module.mountAuthPage(host, { isRegister: path === '/register', authForm, authBusy, submitAuth, navigate }).dispose
+  }).catch((error: unknown) => {
+    if (sequence !== authPageMountSequence || host !== authPageHost.value) return
+    host.textContent = '登录界面加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '登录界面加载失败', '账户')
+  })
+}, { flush: 'post' })
 portalNavigation = createPortalNavigationController({
   browser: window,
   document,
@@ -687,6 +704,9 @@ onMounted(() => {
   void portalNavigation?.start()
 })
 onBeforeUnmount(() => {
+  authPageMountSequence += 1
+  disposeAuthPage?.()
+  disposeAuthPage = null
   contentEditorMountSequence += 1
   nativeContentEditor?.dispose()
   nativeContentEditor = null
@@ -949,21 +969,7 @@ onBeforeUnmount(() => {
     </main>
 
     <main v-else-if="isAuthPage" class="route-main">
-      <section class="auth-panel glass-panel">
-        <p class="eyebrow"><span class="status-dot"></span> PLATFORM ACCOUNT</p>
-        <h1>{{ isRegister ? '创建你的账户' : '欢迎回来' }}</h1>
-        <p class="auth-intro">{{ isRegister ? '注册后即可进入个人中心。你的账户信息将安全保存。' : '登录后进入个人中心，管理你的账户信息。' }}</p>
-        <form class="auth-form" @submit.prevent="submitAuth">
-          <label v-if="isRegister" class="field-label">昵称 <input class="form-control" v-model="authForm.displayName" name="displayName" type="text" autocomplete="nickname" maxlength="60" placeholder="怎么称呼你" /></label>
-          <label class="field-label">邮箱地址 <input class="form-control" v-model="authForm.email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com" /></label>
-          <label class="field-label">密码 <input class="form-control" v-model="authForm.password" name="password" type="password" :autocomplete="isRegister ? 'new-password' : 'current-password'" :minlength="isRegister ? 10 : 1" maxlength="72" required :placeholder="isRegister ? '至少 10 个字符' : '输入你的密码'" /></label>
-          <p v-if="isRegister" class="field-help">密码长度为 10–72 个字符。请勿重复使用其他网站的密码。</p>
-          <button class="btn button button-primary auth-submit" type="submit" :disabled="authBusy">{{ authBusy ? '正在处理…' : (isRegister ? '创建账户' : '登录') }}</button>
-        </form>
-        <p v-if="isRegister" class="auth-switch">已经有账户？ <a href="/login" @click.prevent="navigate('/login')">立即登录</a></p>
-        <p v-else class="auth-switch">还没有账户？ <a href="/register" @click.prevent="navigate('/register')">立即注册</a></p>
-        <a class="back-home" href="/" @click.prevent="navigate('/')"><i class="bi bi-arrow-left" aria-hidden="true"></i> 返回首页</a>
-      </section>
+      <div ref="authPageHost"></div>
     </main>
 
     <main v-else-if="isPublicContentPage" class="public-content-page">
