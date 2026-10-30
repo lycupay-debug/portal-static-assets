@@ -6,23 +6,24 @@ Boundaries: avoid embedding reusable business workflows here; browser lifecycle 
 while extracted composables own independently testable state transitions and side effects.
 -->
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch, type Ref } from 'vue'
 import { apiRequest } from './api/client'
-import { useKnowledgeDirectory } from './composables/useKnowledgeDirectory'
-import { useDebouncedValue } from './composables/useDebouncedValue'
+import { createKnowledgeDirectoryController } from './state/knowledgeDirectory'
+import { createDebouncedValue } from './state/debouncedValue'
 import { mountVirtualizedSelect, type VirtualizedSelectOption } from './components/virtualizedSelect'
 import { mountNotificationHost } from './components/notificationHost'
 import { mountTeachingResourceDrawer } from './components/teachingResourceDrawer'
 import { portalNotify } from './utils/notification'
 import { taxonomyChildOptions } from './utils/taxonomy'
 import { knowledgeTagOptions, taxonomyParentNames as knowledgeTaxonomyParentNames } from './utils/knowledgeTags'
-import { useKnowledgeTagSelection } from './composables/useKnowledgeTagSelection'
-import { useScrollRestoration } from './composables/useScrollRestoration'
+import { createKnowledgeTagSelection } from './state/knowledgeTagSelection'
+import type { MutableValue } from './state/valueContracts'
+import { createScrollRestoration } from './state/scrollRestoration'
 import { createPublicArticleActions } from './composables/usePublicArticleActions'
-import { useLegalDocuments } from './composables/useLegalDocuments'
+import { createLegalDocumentsController } from './state/legalDocuments'
 import { filterEducationResources } from './utils/resourceFiltering'
 import { tableCellPreview, tableCellValue } from './utils/accountTablePresentation'
-import { useAccountTable } from './composables/useAccountTable'
+import { createAccountTableModel } from './state/accountTableModel'
 import { createPortalAuthentication, type PortalUser } from './composables/usePortalAuthentication'
 import { createProtectedRouteGuard } from './composables/useProtectedRouteGuard'
 import { formatResourceFileSize } from './utils/resourceFiles'
@@ -37,6 +38,8 @@ import { homeSections } from './config/homeSections'
 import { knowledgeCategoryMenus } from './config/knowledgeCategories'
 import { knowledgeFuzzyMatch } from './utils/knowledgeSearch'
 import type { Content as APIContent, ContentVersion as APIContentVersion, TeachingResource as APITeachingResource } from './api/generated'
+
+const createVueValue = <T>(initial: T): MutableValue<T> => ref(initial) as MutableValue<T>
 
 const taxonomyParentNames = knowledgeTaxonomyParentNames
 const visibilityOptions: VirtualizedSelectOption[] = [{ label: '仅自己可见', value: 'private' }, { label: '公开', value: 'public' }]
@@ -159,8 +162,9 @@ function toggleAccountGroup(groupId: string) {
 
 
 const tableQuery = ref('')
-const debouncedTableQuery = useDebouncedValue(tableQuery, 150)
-watch(debouncedTableQuery, (query) => {
+const tableQueryDebounce = createDebouncedValue(tableQuery, 150, { createValue: createVueValue, subscribe: (source, listener) => watch(source as never, listener) })
+const debouncedTableQuery = tableQueryDebounce.value
+watch(debouncedTableQuery as typeof tableQuery, (query) => {
   if (activeAccountSection.value === 'content-management') void loadContentList(query)
   else if (activeAccountSection.value === 'teaching-resources') void loadTeachingResources(query)
 })
@@ -285,7 +289,10 @@ const {
   clearDraft: clearKnowledgeTags,
   removeSelected: removeSelectedKnowledgeTag,
   clearSelected: clearSelectedKnowledgeTags,
-} = useKnowledgeTagSelection(contentForm, contentBusy)
+} = createKnowledgeTagSelection(contentForm, contentBusy, {
+  createValue: createVueValue,
+  afterRender: () => nextTick(),
+})
 const publicContents = ref<PublicContentCard[]>([])
 const publicTeachingResources = ref<PublicTeachingResource[]>([])
 const educationResourceLoading = ref(false)
@@ -312,26 +319,18 @@ const publicInteractionBusy = ref(false)
 const shareDialogOpen = ref(false)
 const shareUrl = ref('')
 watch(publicContentError, (message) => { if (message) portalNotify.error(message, '内容读取失败') }, { flush: 'sync' })
-const {
-  activeTableDefinition,
-  filteredTableRecords,
-  virtualTableStart,
-  visibleTableRecords,
-  tableColumnTemplate,
-  virtualTableTopSpace,
-  virtualTableBottomSpace,
-} = useAccountTable({
-  activeAccountSection,
-  contentViewMode,
-  contentItems,
-  contentTrashItems,
-  resourceViewMode,
-  teachingResources,
-  teachingResourceTrash,
-  debouncedTableQuery,
-  tableScrollTop,
-  virtualTableViewportWidth,
+const accountTableModel = createAccountTableModel({
+  activeAccountSection, contentViewMode, contentItems, contentTrashItems, resourceViewMode,
+  teachingResources, teachingResourceTrash, debouncedTableQuery, tableScrollTop, virtualTableViewportWidth,
+  screenWidth: () => window.innerWidth,
 })
+const activeTableDefinition = computed(() => accountTableModel.activeTableDefinition.value)
+const filteredTableRecords = computed(() => accountTableModel.filteredTableRecords.value)
+const virtualTableStart = computed(() => accountTableModel.virtualTableStart.value)
+const visibleTableRecords = computed(() => accountTableModel.visibleTableRecords.value)
+const tableColumnTemplate = computed(() => accountTableModel.tableColumnTemplate.value)
+const virtualTableTopSpace = computed(() => accountTableModel.virtualTableTopSpace.value)
+const virtualTableBottomSpace = computed(() => accountTableModel.virtualTableBottomSpace.value)
 function openTableCell(label: string, value: string) {
   selectedTableCell.value = { label, value }
 }
@@ -518,7 +517,7 @@ const {
   legalDocumentError,
   loadPublishedLegalDocuments,
   loadLegalDocument,
-} = useLegalDocuments(route)
+} = createLegalDocumentsController(route, { createValue: createVueValue })
 const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
 const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
 const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
@@ -528,31 +527,29 @@ const directoryContentItems = computed(() => {
 })
 const directoryContentHeading = computed(() => route.value === '/knowledge' ? '最新文章' : route.value === '/education-resources' ? '已发布的学习资料' : '已发布的工具')
 
+const knowledgeDirectory = createKnowledgeDirectoryController(route, directoryContentItems, filteredEducationResources, navigate, {
+  createValue: createVueValue,
+  browser: window,
+  document,
+})
+const knowledgeVisibleCount = knowledgeDirectory.knowledgeVisibleCount as Ref<number>
+const knowledgeCategory = knowledgeDirectory.knowledgeCategory as Ref<string>
+const knowledgeSubcategory = knowledgeDirectory.knowledgeSubcategory as Ref<string>
+const knowledgeSearchQuery = knowledgeDirectory.knowledgeSearchQuery as Ref<string>
+const highlightedKnowledgeSuggestion = knowledgeDirectory.highlightedKnowledgeSuggestion as Ref<number>
 const {
-  knowledgeVisibleCount,
-  knowledgePageSize,
-  knowledgeCategory,
-  knowledgeSubcategory,
-  knowledgeSearchQuery,
-  highlightedKnowledgeSuggestion,
-  knowledgeFilteredItems,
-  knowledgeSearchSuggestions,
-  visibleDirectoryContentItems,
-  selectedKnowledgeCategoryLabel,
-  chooseKnowledgeSuggestion,
-  queryKnowledgeSearch,
-  handleKnowledgeAutocompleteSelect,
-  onKnowledgeSearchKeydown,
-  submitKnowledgeSearch,
-  selectKnowledgeCategory,
-  chooseKnowledgeCategory,
-  scrollKnowledgeCategories,
-  loadMoreKnowledge,
-  onKnowledgePageScroll,
-} = useKnowledgeDirectory(route, directoryContentItems, filteredEducationResources, navigate)
+  knowledgePageSize, chooseKnowledgeSuggestion, queryKnowledgeSearch, handleKnowledgeAutocompleteSelect,
+  onKnowledgeSearchKeydown, submitKnowledgeSearch, selectKnowledgeCategory, chooseKnowledgeCategory,
+  scrollKnowledgeCategories, loadMoreKnowledge, onKnowledgePageScroll, ensureKnowledgeListFilled,
+} = knowledgeDirectory
+const knowledgeFilteredItems = computed(() => knowledgeDirectory.knowledgeFilteredItems.value)
+const knowledgeSearchSuggestions = computed(() => knowledgeDirectory.knowledgeSearchSuggestions.value)
+const visibleDirectoryContentItems = computed(() => knowledgeDirectory.visibleDirectoryContentItems.value)
+const selectedKnowledgeCategoryLabel = computed(() => knowledgeDirectory.selectedKnowledgeCategoryLabel.value)
+onUpdated(ensureKnowledgeListFilled)
 
 function closeMenu() { menuOpen.value = false }
-const { saveScrollPosition, restoreScrollPosition } = useScrollRestoration(route)
+const { saveScrollPosition, restoreScrollPosition } = createScrollRestoration(route, { browser: window, document, storage: sessionStorage, afterRender: () => nextTick() })
 function onScrollCapture() { saveScrollPosition(); onKnowledgePageScroll() }
 type PublicDirectoryLoader = ReturnType<typeof import('./composables/loadPublicDirectoryData').createPublicDirectoryLoader>
 const getPublicDirectoryLoader = createRetryableLazyLoader<PublicDirectoryLoader>(() =>
@@ -568,8 +565,10 @@ const getPublicDirectoryLoader = createRetryableLazyLoader<PublicDirectoryLoader
     isContentViewCurrent: () => route.value === '/' || route.value === '/knowledge' || (isPublicDirectoryPage.value && route.value !== '/education-resources'),
   })),
 )
-const debouncedKnowledgeSearchQuery = useDebouncedValue(knowledgeSearchQuery, 220)
-const debouncedEducationResourceSearchQuery = useDebouncedValue(educationResourceSearch, 220)
+const knowledgeSearchDebounce = createDebouncedValue(knowledgeSearchQuery, 220, { createValue: createVueValue, subscribe: (source, listener) => watch(source as never, listener) })
+const debouncedKnowledgeSearchQuery = knowledgeSearchDebounce.value
+const educationResourceSearchDebounce = createDebouncedValue(educationResourceSearch, 220, { createValue: createVueValue, subscribe: (source, listener) => watch(source as never, listener) })
+const debouncedEducationResourceSearchQuery = educationResourceSearchDebounce.value
 let navigationSequence = 0
 function loadPublicContents(searchTerm = '') {
   return getPublicDirectoryLoader().then(loader => loader.loadPublicContents(searchTerm)).catch((error: unknown) => {
@@ -583,11 +582,11 @@ function loadPublicTeachingResources(searchTerm = '') {
     educationResourceLoading.value = false
   })
 }
-watch(debouncedKnowledgeSearchQuery, (query) => {
+watch(debouncedKnowledgeSearchQuery as typeof tableQuery, (query) => {
   if (route.value !== '/knowledge') return
   void loadPublicContents(query)
 })
-watch(debouncedEducationResourceSearchQuery, (query) => {
+watch(debouncedEducationResourceSearchQuery as typeof tableQuery, (query) => {
   if (route.value !== '/education-resources') return
   void loadPublicTeachingResources(query)
 })
@@ -713,6 +712,9 @@ onBeforeUnmount(() => {
   portalNavigation?.dispose()
   portalNavigation = null
   tableResizeObserver?.disconnect()
+  tableQueryDebounce.dispose()
+  knowledgeSearchDebounce.dispose()
+  educationResourceSearchDebounce.dispose()
 })
 </script>
 
