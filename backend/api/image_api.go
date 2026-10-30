@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -59,10 +60,23 @@ func (a *portalAPI) uploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sum := sha256.Sum256(data)
-	_, err = a.db.ExecContext(r.Context(), `INSERT INTO portal.uploaded_images(filename,uploader_id,mime_type,sha256,file_size_bytes) VALUES($1,$2::uuid,$3,$4,$5)`, name, u.ID, mime, hex.EncodeToString(sum[:]), len(data))
+	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		_ = removeManagedFile(a.uploadDir, name)
+		a.dbError(w, err, "开始图片登记事务失败。")
+		return
+	}
+	if _, err = tx.ExecContext(r.Context(), `INSERT INTO portal.uploaded_images(filename,uploader_id,mime_type,sha256,file_size_bytes) VALUES($1,$2::uuid,$3,$4,$5)`, name, u.ID, mime, hex.EncodeToString(sum[:]), len(data)); err != nil {
+		_ = tx.Rollback()
+		_ = removeManagedFile(a.uploadDir, name)
 		a.dbError(w, err, "图片登记失败。")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		// A failed COMMIT can have an ambiguous outcome. Preserve the file so a
+		// committed uploaded_images row can never point to a file we just removed.
+		fmt.Fprintf(os.Stderr, "portal_api_error operation=%q error=%v\n", "image registration commit", err)
+		writeError(w, http.StatusServiceUnavailable, "图片登记结果暂时无法确认，文件已保留，请刷新后核验。", nil)
 		return
 	}
 	writeJSON(w, 201, map[string]any{"url": "/api/uploads/" + name, "mime": mime, "size": len(data), "public": false})

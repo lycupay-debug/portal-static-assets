@@ -162,12 +162,12 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 | Boundary | Current automated evidence | Remaining limit |
 |---|---|---|
 | Frontend native views/state | 103/103 Node/jsdom tests; TypeScript check and Vite build | Not a substitute for visual/accessibility checks across every browser/assistive technology |
-| Go contracts | `go test -race`, `go vet`; JSON/rate-limit/IPC bound tests | Race tests do not prove production traffic behavior |
+| Go contracts | `go test -race`, `go vet`; JSON/rate-limit/IPC bounds, definite file-insert failure cleanup, and ambiguous image/resource create commit preservation tests | Race tests do not prove production traffic behavior; preserved files after a genuinely rolled-back ambiguous commit still require reconciliation |
 | PostgreSQL | Full migrations 001–031 on disposable DB; integration tests for RBAC read/write matrix, content/resource ownership, image privacy/public reference, historical-version image retention, both advisory-lock race orderings, resource replacement cleanup, event leases | Restore drill and sustained production-like load are separate work |
 | C event core | Protocol unit tests plus live kqueue socket tests for 64-client cap, framing, timeout, ACK, SIGTERM cleanup and restart | No long-duration soak or production-load benchmark yet |
 | Go/C integration | Native integration test launches C, receives/ACKs pushes, restarts C and verifies Go reconnect | CI native coverage is platform-runner-specific; not a cross-platform kqueue guarantee |
 | Public gateway | Caddy config validation; local-origin checks for routes, headers, internal endpoint isolation, registration closure and upload 404 | External Cloudflare edge behavior should be rechecked after any DNS/proxy policy change |
-| Deployment | Development backup and `pg_restore -l`; isolated dev runtime and Caddy configuration | Formal production release not performed; full database restore has not yet been rehearsed |
+| Deployment | Development backup and `pg_restore -l`; isolated dev runtime and Caddy configuration; public Cloudflare DNS path checks | Formal production release not performed; full database restore has not yet been rehearsed |
 
 ### Open work before declaring phase 2 complete
 

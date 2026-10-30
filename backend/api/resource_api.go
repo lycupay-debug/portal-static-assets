@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -98,12 +99,28 @@ func (a *portalAPI) resources(w http.ResponseWriter, r *http.Request) {
 			urlAny = strings.TrimSpace(b.URL)
 		}
 		var resourceID string
-		err = a.db.QueryRowContext(r.Context(), `INSERT INTO portal.teaching_resources(owner_id,title,description,resource_type,grade,is_public,resource_url,original_filename,stored_filename,mime_type,file_size) VALUES($1,$2,$3,$4,$5,COALESCE($6,FALSE),$7,$8,$9,$10,$11) RETURNING resource_id::text`, u.ID, strings.TrimSpace(b.Title), strings.TrimSpace(b.Description), resourceType(b.Type), nullableString(resourceGrade(b.Grade)), b.IsPublic, urlAny, filenameAny, storedAny, mimeAny, fileSize).Scan(&resourceID)
+		tx, err := a.db.BeginTx(r.Context(), nil)
 		if err != nil {
 			if stored != "" {
 				_ = removeManagedFile(a.resourceDir, stored)
 			}
+			a.dbError(w, err, "开始资源保存事务失败。")
+			return
+		}
+		err = tx.QueryRowContext(r.Context(), `INSERT INTO portal.teaching_resources(owner_id,title,description,resource_type,grade,is_public,resource_url,original_filename,stored_filename,mime_type,file_size) VALUES($1,$2,$3,$4,$5,COALESCE($6,FALSE),$7,$8,$9,$10,$11) RETURNING resource_id::text`, u.ID, strings.TrimSpace(b.Title), strings.TrimSpace(b.Description), resourceType(b.Type), nullableString(resourceGrade(b.Grade)), b.IsPublic, urlAny, filenameAny, storedAny, mimeAny, fileSize).Scan(&resourceID)
+		if err != nil {
+			_ = tx.Rollback()
+			if stored != "" {
+				_ = removeManagedFile(a.resourceDir, stored)
+			}
 			a.dbError(w, err, "资源保存失败。")
+			return
+		}
+		if err = tx.Commit(); err != nil {
+			// A failed COMMIT can have an ambiguous outcome. Keep the managed file
+			// until the database row can be reconciled; never create a broken row.
+			fmt.Fprintf(os.Stderr, "portal_api_error operation=%q resource_id=%q error=%v\n", "resource create commit", resourceID, err)
+			writeError(w, http.StatusServiceUnavailable, "资源保存结果暂时无法确认，文件已保留，请刷新资源列表核验。", nil)
 			return
 		}
 		item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
