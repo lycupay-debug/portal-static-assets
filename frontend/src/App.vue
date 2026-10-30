@@ -540,6 +540,35 @@ watch([legalPageHost, legalSlug], ([host, slug]) => {
   })
 }, { flush: 'post' })
 watch([legalDocument, legalDocumentHtml, legalDocumentLoading, legalDocumentError], updateLegalPageView, { deep: true })
+const publicArticleHost = ref<HTMLElement | null>(null)
+let publicArticleMountSequence = 0
+let publicArticleView: { update: (state: { article: typeof publicArticle.value; html: string; loading: boolean; error: string; busy: boolean; loggedIn: boolean; shareOpen: boolean; shareUrl: string }) => void; dispose: () => void } | null = null
+function updatePublicArticleView() {
+  publicArticleView?.update({ article: publicArticle.value, html: publicArticleHtml.value, loading: publicContentLoading.value, error: publicContentError.value, busy: publicInteractionBusy.value, loggedIn: Boolean(user.value), shareOpen: shareDialogOpen.value, shareUrl: shareUrl.value })
+}
+watch([publicArticleHost, route], ([host, path]) => {
+  const sequence = ++publicArticleMountSequence
+  publicArticleView?.dispose()
+  publicArticleView = null
+  if (!host || !/^\/content\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path)) return
+  void import('./views/publicArticleView').then(module => {
+    if (sequence !== publicArticleMountSequence || host !== publicArticleHost.value) return
+    publicArticleView = module.mountPublicArticleView(host, {
+      contentTypeLabels,
+      toggleInteraction: togglePublicInteraction,
+      shareArticle: sharePublicArticle,
+      copyShareUrl,
+      closeShare: () => { shareDialogOpen.value = false },
+      navigate,
+    })
+    updatePublicArticleView()
+  }).catch((error: unknown) => {
+    if (sequence !== publicArticleMountSequence || host !== publicArticleHost.value) return
+    host.textContent = '文章界面加载失败，请刷新页面后重试。'
+    portalNotify.error(error instanceof Error ? error.message : '文章界面加载失败', '公开内容')
+  })
+}, { flush: 'post' })
+watch([publicArticle, publicArticleHtml, publicContentLoading, publicContentError, publicInteractionBusy, user, shareDialogOpen, shareUrl], updatePublicArticleView, { deep: true })
 const isPublicDirectoryPage = computed(() => Object.prototype.hasOwnProperty.call(directoryPages, route.value))
 const currentDirectoryPage = computed(() => directoryPages[route.value] || directoryPages['/knowledge']!)
 const currentDirectoryTiles = computed(() => directoryTiles[route.value] || [])
@@ -727,6 +756,9 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   authPageMountSequence += 1
+  publicArticleMountSequence += 1
+  publicArticleView?.dispose()
+  publicArticleView = null
   legalPageMountSequence += 1
   legalPageView?.dispose()
   legalPageView = null
@@ -998,47 +1030,7 @@ onBeforeUnmount(() => {
     </main>
 
     <main v-else-if="isPublicContentPage" class="public-content-page">
-      <section v-if="publicContentLoading" class="public-content-state">正在读取内容…</section>
-      <section v-else-if="publicArticle" class="public-article-layout">
-        <article class="public-article">
-          <header class="public-article-route-header" aria-label="文章信息">
-            <span class="public-article-route-type">{{ publicArticle.tags?.length ? publicArticle.tags.join(' · ') : contentTypeLabels[publicArticle.contentType] }}</span>
-            <span v-if="publicArticle.publishedAt" class="public-article-route-date">{{ new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') }}</span>
-          </header>
-          <h1>{{ publicArticle.title }}</h1>
-          <p v-if="publicArticle.summary" class="public-article-summary">{{ publicArticle.summary }}</p>
-          <div class="public-article-body markdown-rendered" v-html="publicArticleHtml"></div>
-        </article>
-        <aside class="public-article-sidebar" aria-label="作者信息与文章操作">
-          <section class="public-author-card">
-            <div class="public-author-avatar" aria-hidden="true">{{ (publicArticle.authorName || '作者').slice(0, 1) }}</div>
-            <div class="public-author-heading"><span>本文作者</span><strong>{{ publicArticle.authorName || '平台作者' }}</strong></div>
-            <p>持续整理经验、知识与实践记录。</p>
-            <div class="public-author-meta">发布于 {{ publicArticle.publishedAt ? new Date(publicArticle.publishedAt).toLocaleDateString('zh-CN') : '近期' }}</div>
-          </section>
-          <section class="public-article-actions" aria-label="文章互动">
-            <button type="button" :class="['public-article-action', { active: publicArticle.viewerLiked }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerLiked" @click="togglePublicInteraction('like')"><span class="public-action-symbol bi bi-heart-fill" aria-hidden="true"></span><span>{{ publicArticle.viewerLiked ? '已点赞' : '点赞' }}</span><strong>{{ publicArticle.likeCount || 0 }}</strong></button>
-            <button type="button" :class="['public-article-action', { active: publicArticle.viewerFavorited }]" :disabled="publicInteractionBusy" :aria-pressed="publicArticle.viewerFavorited" @click="togglePublicInteraction('favorite')"><span class="public-action-symbol bi bi-star-fill" aria-hidden="true"></span><span>{{ publicArticle.viewerFavorited ? '已收藏' : '收藏' }}</span><strong>{{ publicArticle.favoriteCount || 0 }}</strong></button>
-            <button type="button" class="public-article-action" @click="sharePublicArticle"><span class="public-action-symbol bi bi-share" aria-hidden="true"></span><span>转发 / 分享</span></button>
-          </section>
-          <p class="public-article-login-hint" v-if="!user">登录后可点赞和收藏文章。</p>
-        </aside>
-      </section>
-      <section v-else class="public-content-state"><h1>内容暂不可用</h1><p>{{ publicContentError || '内容不存在或尚未公开。' }}</p><a class="btn btn-dark button button-primary" href="/" @click.prevent="navigate('/')">返回首页</a></section>
-      <div v-if="shareDialogOpen" class="share-dialog-backdrop" @click.self="shareDialogOpen = false" @keydown.esc="shareDialogOpen = false">
-        <section class="share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
-          <button type="button" class="share-dialog-close" aria-label="关闭分享窗口" @click="shareDialogOpen = false"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
-          <span class="share-dialog-eyebrow">SHARE ARTICLE</span>
-          <h2 id="share-dialog-title">分享这篇文章</h2>
-          <p>复制下方链接，发送给需要阅读的人。</p>
-          <label class="share-dialog-label" for="share-dialog-url">文章链接</label>
-          <input id="share-dialog-url" class="form-control share-dialog-url" type="text" :value="shareUrl" readonly @focus="($event.target as HTMLInputElement).select()" />
-          <div class="share-dialog-actions">
-            <button type="button" class="share-dialog-cancel" @click="shareDialogOpen = false">取消</button>
-            <button type="button" class="share-dialog-copy" @click="copyShareUrl"><span aria-hidden="true">▢</span> 复制链接</button>
-          </div>
-        </section>
-      </div>
+      <div ref="publicArticleHost"></div>
     </main>
 
     <main v-else-if="legalSlug" class="legal-document-page">
