@@ -191,6 +191,10 @@ jobs:
       - name: Shell syntax checks
         run: |
           find deploy/freebsd scripts/ops -type f \( -name '*.sh' -o -name 'deploy.sh' -o -name 'rollback.sh' \) -print0 | xargs -0 -n1 sh -n
+          sh -n scripts/audit-managed-files.sh
+          sh -n scripts/test-audit-managed-files.sh
+      - name: Verify read-only managed-file audit tool
+        run: sh scripts/test-audit-managed-files.sh
       - name: Verify production and development upload routing boundaries
         run: |
           grep -Fq 'handle /uploads/* {' deploy/freebsd/Caddyfile
