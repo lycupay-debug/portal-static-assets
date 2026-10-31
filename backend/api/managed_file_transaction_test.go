@@ -1,4 +1,4 @@
-// managed_file_transaction_test.go verifies managed files survive ambiguous commits and are removed on definite insert failures.
+// managed_file_transaction_test.go verifies managed files survive ambiguous commits and are removed on definite database write failures.
 
 package main
 
@@ -21,6 +21,7 @@ import (
 
 type managedFileTestConnector struct {
 	insertErr error
+	updateErr error
 	commitErr error
 }
 
@@ -70,6 +71,11 @@ func (c *managedFileTestConn) QueryContext(_ context.Context, query string, _ []
 			columns: []string{"resource_id"},
 			values:  []driver.Value{"00000000-0000-4000-8000-000000000002"},
 		}, nil
+	case strings.Contains(query, "SELECT stored_filename,original_filename FROM portal.teaching_resources"):
+		return &managedFileTestRows{
+			columns: []string{"stored_filename", "original_filename"},
+			values:  []driver.Value{nil, nil},
+		}, nil
 	default:
 		return nil, errors.New("unexpected query in managed-file test driver")
 	}
@@ -79,6 +85,12 @@ func (c *managedFileTestConn) ExecContext(_ context.Context, query string, _ []d
 	if strings.Contains(query, "INSERT INTO portal.uploaded_images") {
 		if c.config.insertErr != nil {
 			return nil, c.config.insertErr
+		}
+		return driver.RowsAffected(1), nil
+	}
+	if strings.Contains(query, "UPDATE portal.teaching_resources SET title=") {
+		if c.config.updateErr != nil {
+			return nil, c.config.updateErr
 		}
 		return driver.RowsAffected(1), nil
 	}
@@ -200,6 +212,61 @@ func TestResourceCreatePreservesFileWhenCommitOutcomeIsUnknown(t *testing.T) {
 	}
 	if info, err := os.Stat(filepath.Join(dir, entries[0].Name())); err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("preserved resource is not a regular file: info=%v err=%v", info, err)
+	}
+}
+
+func TestResourcePatchPreservesFileWhenCommitOutcomeIsUnknown(t *testing.T) {
+	config := &managedFileTestConnector{commitErr: errors.New("simulated connection loss during COMMIT")}
+	db := openManagedFileTestDB(t, config)
+	dir := t.TempDir()
+	api := &portalAPI{db: db, resourceDir: dir, searchCache: newSearchResultCache()}
+	fileBytes := []byte("%PDF-1.7\nambiguous patch commit")
+	body, err := json.Marshal(map[string]string{
+		"title": "Patched resource", "description": "", "type": "其他", "grade": "",
+		"filename": "patched.pdf", "data": base64.StdEncoding.EncodeToString(fileBytes),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := managedFileTestRequest(api, http.MethodPatch, "/resources/00000000-0000-4000-8000-000000000003", string(body))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("resource patch status = %d body=%s; want 503 for ambiguous commit", response.Code, response.Body.String())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("resource file count after ambiguous patch commit = %d, want 1 preserved file", len(entries))
+	}
+	if info, err := os.Stat(filepath.Join(dir, entries[0].Name())); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("preserved patched resource is not a regular file: info=%v err=%v", info, err)
+	}
+}
+
+func TestResourcePatchRemovesFileWhenUpdateFails(t *testing.T) {
+	config := &managedFileTestConnector{updateErr: errors.New("simulated resource update failure")}
+	db := openManagedFileTestDB(t, config)
+	dir := t.TempDir()
+	api := &portalAPI{db: db, resourceDir: dir, searchCache: newSearchResultCache()}
+	fileBytes := []byte("%PDF-1.7\nfailed patch update")
+	body, err := json.Marshal(map[string]string{
+		"title": "Failed patch", "description": "", "type": "其他", "grade": "",
+		"filename": "failed-patch.pdf", "data": base64.StdEncoding.EncodeToString(fileBytes),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := managedFileTestRequest(api, http.MethodPatch, "/resources/00000000-0000-4000-8000-000000000003", string(body))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("resource patch status = %d body=%s; want 500 for failed update", response.Code, response.Body.String())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("resource file count after failed patch update = %d, want 0", len(entries))
 	}
 }
 

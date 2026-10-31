@@ -391,7 +391,8 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 		// A commit error can have an ambiguous outcome. Preserve the new file so
 		// a possibly committed row never points to a file removed by this process.
 		keepNewStored = true
-		a.dbError(w, err, "资源更新事务提交失败；请检查数据库状态和清理队列。")
+		fmt.Fprintf(os.Stderr, "portal_api_error operation=%q resource_id=%q error=%v\n", "resource update commit", id, err)
+		writeError(w, http.StatusServiceUnavailable, "资源更新结果暂时无法确认，新文件已保留，请检查资源记录和清理队列。", nil)
 		return
 	}
 	keepNewStored = true
