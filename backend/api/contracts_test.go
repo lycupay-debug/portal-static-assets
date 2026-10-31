@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // This file exercises pure backend contracts and HTTP boundary behavior without
@@ -292,6 +295,52 @@ func TestRateLimitClientIPTrustBoundary(t *testing.T) {
 			}
 			if got := rateLimitClientIP(request); got != test.want {
 				t.Fatalf("rateLimitClientIP() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestIsPostgresUniqueViolation classifies only typed PostgreSQL unique-constraint errors.
+func TestIsPostgresUniqueViolation(t *testing.T) {
+	unique := &pgconn.PgError{Code: "23505", Message: "duplicate key value violates unique constraint"}
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "typed unique violation", err: unique, want: true},
+		{name: "wrapped typed unique violation", err: fmt.Errorf("insert account: %w", unique), want: true},
+		{name: "foreign key violation", err: &pgconn.PgError{Code: "23503", Message: "foreign key violation"}, want: false},
+		{name: "untyped SQLSTATE text", err: errors.New("operation failed with SQLSTATE 23505"), want: false},
+		{name: "untyped duplicate text", err: errors.New("duplicate key value violates unique constraint"), want: false},
+		{name: "nil error", err: nil, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isPostgresUniqueViolation(test.err); got != test.want {
+				t.Fatalf("isPostgresUniqueViolation(%v) = %t, want %t", test.err, got, test.want)
+			}
+		})
+	}
+}
+
+// TestDBErrorMapsOnlyTypedUniqueViolationToConflict protects the shared HTTP error contract.
+func TestDBErrorMapsOnlyTypedUniqueViolationToConflict(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{name: "postgres unique violation", err: &pgconn.PgError{Code: "23505"}, wantStatus: http.StatusConflict},
+		{name: "wrapped postgres unique violation", err: fmt.Errorf("write failed: %w", &pgconn.PgError{Code: "23505"}), wantStatus: http.StatusConflict},
+		{name: "untyped duplicate message", err: errors.New("duplicate key"), wantStatus: http.StatusInternalServerError},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			(&portalAPI{}).dbError(recorder, test.err, "test operation")
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, test.wantStatus, recorder.Body.String())
 			}
 		})
 	}

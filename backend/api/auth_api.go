@@ -138,7 +138,7 @@ func (a *portalAPI) auth(w http.ResponseWriter, r *http.Request) {
 		var u portalUser
 		err = a.db.QueryRowContext(r.Context(), `INSERT INTO portal.portal_users(email,display_name,password_hash) VALUES($1,$2,$3) RETURNING user_id::text,email,display_name,created_at,is_admin`, b.Email, b.DisplayName, string(hash)).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &u.IsAdmin)
 		if err != nil {
-			if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505") {
+			if isPostgresUniqueViolation(err) {
 				writeError(w, 409, "该邮箱已注册，请直接登录。", nil)
 			} else {
 				writeError(w, 500, "服务暂时不可用，请稍后再试。", nil)

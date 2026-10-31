@@ -92,10 +92,10 @@ flowchart TD
 | Process and HTTP entry | `main.go`, `portal_api.go`, `http_helpers.go` | Process lifecycle, HTTP server, database pool, route dispatch, shared response/JSON helpers |
 | Authentication | `auth_api.go`, `rate_limit.go` | Session lookup, cookie lifecycle, login/register/logout, client-IP rate limiting |
 | RBAC | `rbac_api.go`, `user_role_management.go`, `role_permission_management.go` | Super-admin-gated role and permission administration |
-| Content | `content_api.go`, `content_validation.go`, `content_input_validation.go`, `content_versions.go`, `image_references.go` | Owner-scoped content CRUD, publish/unpublish, validation, versions, trash, managed-image reference locks |
-| Resources/files | `resource_api.go`, `resource_files.go`, `image_api.go`, `managed_files.go`, `file_cleanup.go` | Owner-scoped teaching resources, uploads, previews/downloads, confined filesystem access, durable cleanup events |
+| Content | `content_api.go`, `content_collection_api.go`, `content_item_api.go`, `content_write_api.go`, `content_validation.go`, `content_input_validation.go`, `content_versions.go`, `image_references.go` | Route dispatch; owner-scoped collection/item lifecycle; write/version/publish behavior; validation and managed-image reference locks |
+| Resources/files | `resource_api.go`, `resource_collection_api.go`, `resource_item_api.go`, `resource_update_api.go`, `resource_files.go`, `resource_search_sql.go`, `image_api.go`, `managed_files.go`, `file_cleanup.go` | Route dispatch; owner-scoped collection/item lifecycle; replacement transactions; uploads/downloads; confined filesystem access and durable cleanup events |
 | Public read paths | `public_api.go` | Public content/resources, search, article interactions |
-| Compliance | `compliance_api.go`, `compliance_assets.go`, `compliance_catalog.go`, `compliance_evidence_verification.go` | License/asset records, evidence verification, review state and audit |
+| Compliance | `compliance_api.go`, `compliance_assets.go`, `compliance_asset_evidence.go`, `compliance_asset_export.go`, `compliance_catalog.go`, `compliance_audit.go` | License/asset records, evidence creation/verification, review state, read-only export and transaction-scoped audit |
 | System operations | `system_ops.go`, `system_logs.go`, `metrics_api.go` | Read-only warnings/logs/streaming and database-derived metrics; no command-task execution |
 | Durable events | `event_ingress.go`, `event_dispatcher.go`, `event_processor.go`, `event_processor_store.go` | Event validation, PostgreSQL persistence, leases, dispatch, retries and handlers |
 | IPC client | `ipc_client.go` | Bounded IPC v2 requests, push acknowledgement and reconnect |
@@ -169,12 +169,13 @@ PostgreSQL is the durable source of truth. C carries only bounded event metadata
 | Public gateway | Caddy config validation; local-origin checks for routes, headers, internal endpoint isolation, registration closure and upload 404 | External Cloudflare edge behavior should be rechecked after any DNS/proxy policy change |
 | Deployment | Development backup and `pg_restore -l`; isolated dev runtime/Caddy checks; public Cloudflare DNS path checks; isolated custom-format restore drill with ownership normalization and runtime-role privilege verification | Formal production release not performed; production restore remains a separate pre-release gate |
 
-### Open work before declaring phase 2 complete
+### Current phase status and remaining limits
 
-1. Complete authenticated browser flows against the public development hostname: image upload, private owner-only access, public referenced-image access, teaching-resource download and cleanup. Public unauthenticated routing and health gates are verified; this authenticated live-browser pass remains open.
-2. Finish the remaining backend authorization/error-path audit and decide whether large domain files should be split based on call-graph and test boundaries, not line count alone.
-3. Completed: deterministic PostgreSQL tests cover historical-version image retention, both concurrent create/delete lock orderings, and resource replacement cleanup. Reopen only if new evidence identifies another orphan/lost-update case.
-4. The repository-wide architecture/data-flow map is recorded in this document; complete the separate risk register in Notion and reconcile it against the final source tree.
-5. Complete second-stage acceptance checks and a documented recovery drill before any separate production-release decision.
+- **Second stage — completed (2026-10-31):** source baseline, risk register, browser acceptance, PostgreSQL recovery drill, event-core soak, full-stack checks and development deployment were recorded in Notion. R-003 and R-008 were closed only on the owner's explicit manual acceptance; no unprovided device/step details are inferred.
+- **Third stage — completed (2026-10-31):** resource, content and compliance handler responsibilities were separated into collection/item/write/evidence/export/audit modules. GitHub Actions Run #76 completed with 6/6 jobs successful; commit `acdc7b3d3016cc261efd0672d9fd834f2595c58a` was deployed to the isolated development runtime.
+- **Fourth stage — in progress:** review complete request/data flows, cross-module dependencies, transaction/response boundaries and error classification. Current focused candidates are typed PostgreSQL SQLSTATE classification and avoiding a post-commit response read in content publishing; these are being tested before development deployment.
+- **R-001 remains mitigated, not closed:** managed-file audit is read-only; unregistered files must be reconciled against database, events, logs and backups before any manual recovery action. Never auto-delete on audit output alone.
+- **R-006 and R-007 remain monitored:** recheck Cloudflare edge behavior after gateway/DNS policy changes and keep first-screen CSS within the measured bundle budget.
+- Frontend visual/accessibility coverage across every browser and assistive technology, production-load capacity evidence, and production restore/release are separate limits. Development evidence is not a production guarantee.
 
-The development deployment does not mark phase 2 complete and does not authorize a production release.
+The development deployment does not authorize a production release. Production database, binaries and Caddy routing remain outside this phase's change scope.

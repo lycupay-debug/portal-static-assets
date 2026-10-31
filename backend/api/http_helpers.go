@@ -7,8 +7,9 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -41,9 +42,15 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) erro
 }
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
 
+// isPostgresUniqueViolation uses PostgreSQL's typed SQLSTATE rather than driver-dependent error text.
+func isPostgresUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
 func (a *portalAPI) dbError(w http.ResponseWriter, err error, message string) {
 	fmt.Fprintf(os.Stderr, "portal_api_error operation=%q error=%v\n", message, err)
-	if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {
+	if isPostgresUniqueViolation(err) {
 		writeError(w, 409, "别名或唯一字段已被使用，请检查后重试。", nil)
 		return
 	}

@@ -186,15 +186,18 @@ func (a *portalAPI) publishContent(w http.ResponseWriter, r *http.Request, u *po
 		a.dbError(w, err, "发布事件登记失败。")
 		return
 	}
+	// Read the response from the same transaction before COMMIT. A post-commit
+	// read failure would otherwise return HTTP 500 after the publish and event
+	// were already durable, leaving the client unsure whether retrying is safe.
+	item, err = oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1 AND c.author_id=$2) x`, id, u.ID)
+	if err != nil {
+		a.dbError(w, err, "读取发布结果失败，发布事务已取消。")
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		a.dbError(w, err, "发布失败。")
 		return
 	}
 	go a.notifyEvent(r.Context(), eid, "portal.content.validate")
-	item, err = oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, id)
-	if err != nil {
-		a.dbError(w, err, "读取发布结果失败。")
-		return
-	}
 	writeJSON(w, 200, map[string]any{"item": item, "eventId": eid})
 }
