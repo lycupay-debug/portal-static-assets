@@ -139,6 +139,11 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 			return
 		}
 	}
+	item, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2 AND deleted_at IS NULL) x`, id, u.ID)
+	if err != nil {
+		a.dbError(w, err, "读取资源更新结果失败，事务已取消。")
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		// A commit error can have an ambiguous outcome. Preserve the new file so
 		// a possibly committed row never points to a file removed by this process.
@@ -150,12 +155,6 @@ func (a *portalAPI) patchResource(w http.ResponseWriter, r *http.Request, u *por
 	keepNewStored = true
 	if cleanupEventID != "" {
 		go a.notifyEvent(r.Context(), cleanupEventID, fileCleanupEventType)
-	}
-
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, id)
-	if err != nil {
-		a.dbError(w, err, "资源已更新，但读取结果失败。")
-		return
 	}
 	writeJSON(w, 200, map[string]any{"item": item})
 }

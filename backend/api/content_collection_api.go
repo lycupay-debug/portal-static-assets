@@ -90,13 +90,13 @@ func (a *portalAPI) createContent(w http.ResponseWriter, r *http.Request, u *por
 		a.dbError(w, err, "内容保存失败。")
 		return
 	}
-	if err := tx.Commit(); err != nil {
-		a.dbError(w, err, "内容保存失败。")
+	item, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1 AND c.author_id=$2) x`, newID, u.ID)
+	if err != nil {
+		a.dbError(w, err, "读取内容保存结果失败，事务已取消。")
 		return
 	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, newID)
-	if err != nil {
-		a.dbError(w, err, "内容已保存，但读取结果失败。")
+	if err := tx.Commit(); err != nil {
+		a.dbError(w, err, "内容保存失败。")
 		return
 	}
 	writeJSON(w, 201, map[string]any{"item": item})

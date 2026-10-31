@@ -159,13 +159,13 @@ func (a *portalAPI) complianceReviewerUsers(w http.ResponseWriter, r *http.Reque
 		a.dbError(w, err, "无法记录审核人员权限审计。")
 		return
 	}
-	if err = tx.Commit(); err != nil {
-		a.dbError(w, err, "审核人员权限事务提交失败。")
+	item, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS "displayName",is_admin AS "isAdmin",is_copyright_reviewer AS "isCopyrightReviewer" FROM portal.portal_users WHERE user_id=$1::uuid) x`, id)
+	if err != nil {
+		a.dbError(w, err, "读取审核人员权限结果失败，事务已取消。")
 		return
 	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT user_id::text AS id,email,display_name AS "displayName",is_admin AS "isAdmin",is_copyright_reviewer AS "isCopyrightReviewer" FROM portal.portal_users WHERE user_id=$1::uuid) x`, id)
-	if err != nil {
-		a.dbError(w, err, "权限已更新，但无法读取更新结果。")
+	if err = tx.Commit(); err != nil {
+		a.dbError(w, err, "审核人员权限事务提交失败。")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})

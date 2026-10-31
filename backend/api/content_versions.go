@@ -95,17 +95,17 @@ func (a *portalAPI) restoreVersion(w http.ResponseWriter, r *http.Request, u *po
 		}
 		eventID = eid
 	}
+	item, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1 AND c.author_id=$2) x`, id, u.ID)
+	if err != nil {
+		a.dbError(w, err, "读取恢复结果失败，恢复事务已取消。")
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		a.dbError(w, err, "恢复版本失败。")
 		return
 	}
 	if eid, ok := eventID.(string); ok {
 		go a.notifyEvent(r.Context(), eid, "portal.content.validate")
-	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, id)
-	if err != nil {
-		a.dbError(w, err, "读取恢复结果失败。")
-		return
 	}
 	writeJSON(w, 200, map[string]any{"item": item, "eventId": eventID})
 }

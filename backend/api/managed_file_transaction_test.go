@@ -76,6 +76,11 @@ func (c *managedFileTestConn) QueryContext(_ context.Context, query string, _ []
 			columns: []string{"stored_filename", "original_filename"},
 			values:  []driver.Value{nil, nil},
 		}, nil
+	case strings.Contains(query, "SELECT to_jsonb(x)") && strings.Contains(query, "FROM portal.teaching_resources WHERE resource_id=$1"):
+		return &managedFileTestRows{
+			columns: []string{"json"},
+			values:  []driver.Value{[]byte(`{"id":"00000000-0000-4000-8000-000000000002","title":"Test resource","type":"其他"}`)},
+		}, nil
 	default:
 		return nil, errors.New("unexpected query in managed-file test driver")
 	}

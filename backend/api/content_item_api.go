@@ -133,7 +133,13 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 	}
 	if (action == "publish" || action == "unpublish") && r.Method == http.MethodPost {
 		if action == "unpublish" {
-			res, err := a.db.ExecContext(ctx, `UPDATE portal.portal_content SET status='unpublished',updated_at=now() WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NULL`, id, u.ID)
+			tx, err := a.db.BeginTx(ctx, nil)
+			if err != nil {
+				a.dbError(w, err, "取消发布失败。")
+				return
+			}
+			defer tx.Rollback()
+			res, err := tx.ExecContext(ctx, `UPDATE portal.portal_content SET status='unpublished',updated_at=now() WHERE content_id=$1 AND author_id=$2 AND deleted_at IS NULL`, id, u.ID)
 			if err != nil {
 				a.dbError(w, err, "取消发布失败。")
 				return
@@ -147,8 +153,12 @@ func (a *portalAPI) contentByID(w http.ResponseWriter, r *http.Request, u *porta
 				writeError(w, 404, "内容不存在或无权访问。", nil)
 				return
 			}
-			item, err := oneJSON(ctx, a.db, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1) x`, id)
+			item, err := oneJSON(ctx, tx, `SELECT to_jsonb(x) FROM (SELECT `+contentSelect+` FROM portal.portal_content c WHERE c.content_id=$1 AND c.author_id=$2) x`, id, u.ID)
 			if err != nil {
+				a.dbError(w, err, "读取取消发布结果失败，事务已取消。")
+				return
+			}
+			if err = tx.Commit(); err != nil {
 				a.dbError(w, err, "取消发布失败。")
 				return
 			}

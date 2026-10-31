@@ -109,16 +109,20 @@ func (a *portalAPI) createResource(w http.ResponseWriter, r *http.Request, u *po
 		a.dbError(w, err, "资源保存失败。")
 		return
 	}
+	item, err := oneJSON(r.Context(), tx, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1 AND owner_id=$2) x`, resourceID, u.ID)
+	if err != nil {
+		_ = tx.Rollback()
+		if stored != "" {
+			_ = removeManagedFile(a.resourceDir, stored)
+		}
+		a.dbError(w, err, "读取资源保存结果失败，事务已取消。")
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		// A failed COMMIT can have an ambiguous outcome. Keep the managed file
 		// until the database row can be reconciled; never create a broken row.
 		fmt.Fprintf(os.Stderr, "portal_api_error operation=%q resource_id=%q error=%v\n", "resource create commit", resourceID, err)
 		writeError(w, http.StatusServiceUnavailable, "资源保存结果暂时无法确认，文件已保留，请刷新资源列表核验。", nil)
-		return
-	}
-	item, err := oneJSON(r.Context(), a.db, `SELECT to_jsonb(x) FROM (SELECT resource_id::text AS "id",title,description,resource_type AS "type",grade AS "grade",is_public AS "isPublic",resource_url AS "url",original_filename AS "filename",mime_type AS "mimeType",file_size AS "fileSize",created_at AS "createdAt",updated_at AS "updatedAt" FROM portal.teaching_resources WHERE resource_id=$1) x`, resourceID)
-	if err != nil {
-		a.dbError(w, err, "资源已保存，但读取结果失败。")
 		return
 	}
 	writeJSON(w, 201, map[string]any{"item": item})
