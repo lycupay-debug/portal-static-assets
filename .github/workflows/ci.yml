@@ -167,6 +167,9 @@ jobs:
       - name: Compile and test event core protocol and live kqueue lifecycle
         working-directory: event-core
         run: make clean test all
+      - name: Smoke-test multi-subscriber soak harness
+        working-directory: event-core
+        run: make soak SOAK_DURATION=5 SOAK_SUBSCRIBERS=4 SOAK_RATE=5
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
@@ -187,7 +190,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Python syntax checks
-        run: python -m compileall -q scripts/compliance
+        run: |
+          python -m compileall -q scripts/compliance
+          python -m py_compile event-core/tests/soak_test.py
       - name: Shell syntax checks
         run: |
           find deploy/freebsd scripts/ops -type f \( -name '*.sh' -o -name 'deploy.sh' -o -name 'rollback.sh' \) -print0 | xargs -0 -n1 sh -n

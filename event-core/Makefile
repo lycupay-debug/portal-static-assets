@@ -9,7 +9,11 @@ TEST_TARGET = protocol-test
 SOURCES = src/main.c
 TEST_SOURCES = tests/protocol_test.c
 
-.PHONY: all test clean
+SOAK_DURATION ?= 300
+SOAK_SUBSCRIBERS ?= 16
+SOAK_RATE ?= 10
+
+.PHONY: all test soak clean
 
 all: $(TARGET)
 
@@ -22,6 +26,9 @@ $(TEST_TARGET): $(TEST_SOURCES) $(SOURCES) include/event_protocol.h
 test: $(TARGET) $(TEST_TARGET)
 	./$(TEST_TARGET)
 	python3 tests/integration_test.py ./$(TARGET)
+
+soak: $(TARGET)
+	python3 tests/soak_test.py ./$(TARGET) --duration $(SOAK_DURATION) --subscribers $(SOAK_SUBSCRIBERS) --rate $(SOAK_RATE)
 
 clean:
 	rm -f $(TARGET) $(TEST_TARGET)

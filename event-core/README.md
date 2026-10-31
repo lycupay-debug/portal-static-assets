@@ -29,6 +29,14 @@ make test
 
 GitHub Actions 的 macOS event-core job 另外执行 Go/C 集成测试：通过 `PORTAL_EVENT_CORE_BINARY` 启动真实 C 进程，由 Go `IPCClient` 完成推送/ACK，并验证 C 核心停止后订阅端重连、核心重启后继续收到事件。普通 Go 测试未提供该环境变量时会明确 skip 这项原生集成测试。该测试验证协议与进程生命周期，不代表已经完成生产负载或长时间稳定性测试。
 
+可选执行持续多订阅者压力测试（不会连接开发版正在运行的 socket；脚本会创建独立临时 socket 并在结束时清理）：
+
+```sh
+make soak SOAK_DURATION=240 SOAK_SUBSCRIBERS=16 SOAK_RATE=10
+```
+
+该测试对每次 PUBLISH 使用独立的一次性连接，持续统计每个订阅者的 ACK 数、日志可观测的最大队列深度、队列溢出、ACK 超时和进程 RSS；不属于默认 `make test` 或 CI 快速测试。
+
 ## 本地协议 v2
 
 每个请求一行，使用 ASCII 文本，以换行符结尾：

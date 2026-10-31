@@ -38,8 +38,17 @@ run_audit() {
 		"$AUDIT_SCRIPT"
 }
 
-# Orphan files are reported, not deleted; registered files all exist.
-output=$(run_audit)
+# Orphan files are integrity warnings, but are report-only and never deleted.
+if output=$(run_audit); then
+	printf '%s\n' 'FAIL: unregistered disk files did not fail the integrity audit' >&2
+	exit 1
+else
+	status=$?
+	[ "$status" -eq 2 ] || {
+		printf 'FAIL: orphan-file audit status=%s, want 2\n' "$status" >&2
+		exit 1
+	}
+fi
 printf '%s\n' "$output" | grep -q 'missing_registered_files=0 unregistered_disk_files=1'
 printf '%s\n' "$output" | grep -q 'image-orphan.png'
 printf '%s\n' "$output" | grep -q 'resource-orphan.pdf'

@@ -100,8 +100,9 @@ if [ "$nested_directory_count" -gt 0 ]; then
 fi
 
 missing_total=$(( $(wc -l < "$tmpdir/images.missing" | tr -d ' ') + $(wc -l < "$tmpdir/resources.missing" | tr -d ' ') ))
-if [ "$missing_total" -gt 0 ] || [ "$symlink_count" -gt 0 ] || [ "$nested_directory_count" -gt 0 ]; then
-	printf '\nREAD_ONLY_AUDIT_WARNING: investigate missing registrations or unexpected filesystem entries. No changes made.\n'
+unregistered_total=$(( $(wc -l < "$tmpdir/images.unregistered" | tr -d ' ') + $(wc -l < "$tmpdir/resources.unregistered" | tr -d ' ') ))
+if [ "$missing_total" -gt 0 ] || [ "$unregistered_total" -gt 0 ] || [ "$symlink_count" -gt 0 ] || [ "$nested_directory_count" -gt 0 ]; then
+	printf '\nREAD_ONLY_AUDIT_WARNING: investigate missing registrations, unregistered files, or unexpected filesystem entries. No changes made.\n'
 	exit 2
 fi
 
