@@ -6,13 +6,13 @@
 - GitHub 作为代码、版本和自动化检查的中心。
 - 生产环境优先运行静态前端文件与独立后端服务。
 
-## ADR-0002：前端技术栈
-- 状态：已验证基础构建
-- Vue 3 + TypeScript + Vite。
+## ADR-0002：前端技术栈（历史决策，已由 ADR-0010 取代）
+- 状态：已被后续决策取代；保留本节记录最初的 Vue 3 + TypeScript + Vite 选择。
+- 原决策使用 Vue 3 + TypeScript + Vite。
 - Node.js/npm 用于开发和构建；生产环境不要求常驻 Node.js。
 - 使用 `package-lock.json` 固定依赖解析结果；CI 使用 `npm ci`。
-- CI 必须执行 Vue/TypeScript 类型检查和生产构建。
-- 避免非必要的 UI 框架、状态管理库和开发插件。
+- 原 CI 门禁执行 Vue/TypeScript 类型检查和生产构建。
+- 后续第一阶段已移除 Vue runtime、SFC、Vue Vite 插件和 Vue 专属类型检查；当前前端技术栈以 ADR-0010 为准。
 
 ## ADR-0003：C 事件驱动核心
 - 状态：已实现并通过 IPC v2 自动化测试
@@ -24,7 +24,7 @@
 ## ADR-0004：后端语言
 - 状态：已决定并已在 FreeBSD 生产目标验证
 - Go 是唯一业务后端，使用 `net/http`、`database/sql`、pgx 和 Go bcrypt。认证、会话、内容、教学资源、错误格式、事务和事件生命周期均由 Go 负责。
-- Node.js 仅用于 Vue/Vite 前端开发与构建，不再承担生产业务 API；历史后端代码从仓库移除，紧急回滚副本存放在 `/opt/personal-portal-legacy-node`。
+- Node.js/npm 仅用于 Vite/TypeScript 前端开发、类型检查、测试和构建，不再承担生产业务 API；当前前端不依赖 Vue runtime 或 SFC。历史后端代码从仓库移除，紧急回滚副本存放在 `/opt/personal-portal-legacy-node`。
 - Go 与 C 通过版本化 Unix Domain Socket IPC v2 解耦；业务 payload 不进入 C 核心。
 
 ## ADR-0005：内容与存储
@@ -44,7 +44,7 @@
 
 
 ## ADR-0007：持久化事件接收
-- 状态：事件接收、分发、业务处理、租约恢复与基础故障注入测试已实现；生产业务处理器仍仅覆盖 `portal.content.validate`，新增业务类型需单独定义契约并验证。
+- 状态：事件接收、分发、业务处理、租约恢复与故障边界测试已实现；当前生产处理器包括 `portal.content.validate` 和 `portal.file.cleanup`，新增业务类型需单独定义契约并验证。
 - Go API 先验证并将业务事件写入 `portal.event_inbox`，成功提交后才返回接收成功。
 - 调用方提供 UUID `event_id` 作为幂等键；同 ID 同内容为重放，同 ID 不同内容返回冲突。
 - C IPC v2 只传递事件 ID/type 元数据，并为订阅推送提供 ACK 与容量为 32 的有界 FIFO；不承载业务 payload。事件持久化、租约、重试和处理结果由 PostgreSQL + Go 管理。
@@ -59,6 +59,12 @@
 - 可预期的输入错误（必填字段、格式、长度、未知字段或字段类型不符）返回 `valid=false` 和错误列表，不进入重试。仅处理器实际错误进入事件重试路径。
 - 私人/公开可见性仅作字段合法性校验；此事件不会发布内容、生成公开产物或改变任何公开索引。
 - 迁移 `005_event_processing_result.sql` 为事件收件箱添加结果字段。
+
+### 当前事件处理契约：`portal.file.cleanup`
+
+- 内容图片和教学资源的永久删除在同一 PostgreSQL 事务中写入 `portal.file.cleanup` 事件；业务记录删除与清理事件要么一起提交，要么一起回滚。
+- payload 仅包含受限的 `kind`（`upload_image` / `teaching_resource`）和 UUID 文件名；处理器再次校验 JSON 字段、文件名和绝对目录路径。
+- Go 处理器通过 `os.Root` 删除对应托管文件；文件不存在按幂等成功处理。失败进入 PostgreSQL 重试/最终失败状态，由系统告警和人工恢复流程处理。
 
 ## ADR-0008：系统运行模式与任务权限策略（已废弃）
 - 状态：2026-10-31 负责人决定彻底移除此功能；原始设计保留为历史决策记录，数据库清理由迁移 031 完成。
@@ -76,3 +82,11 @@
 - 命令通过绝对可执行路径与参数数组执行，不允许 Shell 拼接；进程组、超时、输出大小、取消请求、租约和审计均有边界。过期租约任务不自动重放，避免重复非幂等副作用。
 - `restart` 分类始终要求审批；命令特征会触发强制重分类。`ssh_mcp` 以及识别到 SSH_MCP/host-mcp 的命令只标记为人工处理，绝不由执行器代执行。
 - 稳定模式对低风险任务执行白名单校验；高风险审批后仍须匹配对应执行清单。开发者模式允许 root 运行用户授权范围内的 argv 命令，但不允许 Shell 字符串拼接。
+
+## ADR-0010：原生 TypeScript + DOM 前端
+- 状态：已实施（第一阶段）；第二阶段继续审查模块边界与生命周期。
+- 当前前端由原生 TypeScript 模块、标准 DOM API、HTML/CSS 构成；不使用 Vue runtime、Vue SFC、Vue Vite 插件或 Vue 专属类型检查工具。此决策正式取代 ADR-0002 的 Vue 3 方案，ADR-0002 保留为历史记录。
+- `@preact/signals-core` 仅提供轻量响应式状态原语，不引入 Preact UI runtime；`views/` 与 `components/` 拥有 DOM 节点、事件监听器和销毁责任，`composables/` 组织 API 工作流，`state/` 管理状态契约。
+- Vite 保留为开发/构建工具；Node.js/npm 仅用于依赖安装、测试、类型检查、OpenAPI 类型生成和静态资源构建，生产环境只提供静态构建产物。
+- Tiptap Core / ProseMirror 继续作为 Markdown 编辑器引擎；Vue adapter 已移除，编辑器按路由懒加载，不进入首屏 preload。
+- 当前验证基线：Node/jsdom 行为测试 103/103、TypeScript 类型检查、Vite 生产构建、OpenAPI lint/生成漂移检查、静态资源布局检查均通过。2026-10-31 FreeBSD 构建测得首屏 CSS gzip 82.26 KiB / 85 KiB 预算；继续监控，不以压缩体积为由拆散模块或进行无关视觉重写。

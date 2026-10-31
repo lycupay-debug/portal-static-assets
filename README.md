@@ -49,7 +49,7 @@ npm run build
 
 ## 当前状态
 
-当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-31 已新增迁移 031，完整移除特权命令任务执行器及其数据库对象；FreeBSD 隔离 PostgreSQL 集群已实测 001–031 共 31 个迁移全部通过。当前 Go 测试覆盖 RBAC 读写权限矩阵、认证数据库故障与错误凭据区分、未知账户的通用响应、登出撤销失败处理、安全 UUIDv4 与熵源失败、RBAC 权限矩阵及旧 is_admin 字段不能绕过合规权限、内容/资源所有权、图片私有与公开引用、API 图片地址与会话 Cookie 路径匹配、历史版本图片引用保留、内容新增引用与永久删除的两种并发锁顺序、托管文件路径隔离、图片/资源新建在数据库明确失败时的文件回收与提交结果不确定时的文件保留、只读托管文件完整性审计脚本及其故障/孤儿检测测试、资源并发替换与持久化清理、事件租约/重试及真实 Go/C IPC 重连；C 测试覆盖真实 kqueue socket、64 客户端上限、畸形/超长帧、空闲/ACK 超时、SUBSCRIBE/PUBLISH/ACK、SIGTERM 清理和同路径重启。前端当前 103/103 测试、类型检查、OpenAPI 检查和 bundle 预算通过。FreeBSD 本机不支持 Playwright；Chromium E2E 以 GitHub Actions 结果为准。当前公网门户是开发版，使用 `personal_portal_dev`，开发部署由 `deploy/freebsd/deploy-dev.sh` 执行；正式生产数据库、二进制和 Caddy 模板与开发版隔离。2026-10-31 已将开发版 custom-format PostgreSQL 备份恢复到独立临时数据库，核对关键表行数、迁移版本 31 和应用角色最小权限；生产恢复演练仍是正式发布前的独立门槛。开发部署不代表第二阶段完成或生产发布。
+当前实现基线为原生 TypeScript/DOM 前端、单一 Go 业务 API、PostgreSQL 持久化与 FreeBSD 原生 C `kqueue` 事件核心。C IPC v2 的 `PUBLISH` / `ACK` 只确认通知扇出与接收，不代表业务完成；Go 是业务 payload 的唯一处理者，PostgreSQL 是恢复依据。2026-10-31 已新增迁移 031，完整移除特权命令任务执行器及其数据库对象；FreeBSD 隔离 PostgreSQL 集群已实测 001–031 共 31 个迁移全部通过。当前 Go 测试覆盖 RBAC 读写权限矩阵、认证数据库故障与错误凭据区分、未知账户的通用响应、登出撤销失败处理、安全 UUIDv4 与熵源失败、RBAC 权限矩阵及旧 is_admin 字段不能绕过合规权限、内容/资源所有权、图片私有与公开引用、API 图片地址与会话 Cookie 路径匹配、历史版本图片引用保留、内容新增引用与永久删除的两种并发锁顺序、托管文件路径隔离、图片上传、资源新建及资源替换在提交结果不确定时的文件保留，以及数据库明确写入失败时的文件回收、只读托管文件完整性审计脚本及其故障/孤儿检测测试、资源并发替换与持久化清理、事件租约/重试及真实 Go/C IPC 重连；C 测试覆盖真实 kqueue socket、64 客户端上限、畸形/超长帧、空闲/ACK 超时、SUBSCRIBE/PUBLISH/ACK、SIGTERM 清理和同路径重启。前端当前 103/103 测试、类型检查、OpenAPI 检查和 bundle 预算通过。FreeBSD 本机不支持 Playwright；Chromium E2E 以 GitHub Actions 结果为准。当前公网门户是开发版，使用 `personal_portal_dev`，开发部署由 `deploy/freebsd/deploy-dev.sh` 执行；正式生产数据库、二进制和 Caddy 模板与开发版隔离。2026-10-31 已将开发版 custom-format PostgreSQL 备份恢复到独立临时数据库，核对关键表行数、迁移版本 31 和应用角色最小权限；生产恢复演练仍是正式发布前的独立门槛。开发部署不代表第二阶段完成或生产发布。
 
 ---
 
@@ -262,11 +262,11 @@ PORTAL_STATIC_ASSETS_DEV=1 ./deploy/freebsd/deploy-dev.sh
 | 项目 | 当前状态 | 证据/范围 |
 |---|---|---|
 | Go-only 生产业务后端 | 已实施 | Go API 处理业务；旧 Node API 不在正常生产流量路径，部署后已禁用旧认证服务 |
-| 原生 TypeScript + DOM（第一阶段） | 已完成 | 第一阶段完成提交 `c31036badc52f58f251dde7f04958bb3ee55caef`；Vue SFC 为 0，Vue runtime / 插件 / vue-tsc 依赖已移除；当前前端行为测试 106 项通过，类型检查与构建通过（2026-10-30 FreeBSD 开发工作区实测） |
+| 原生 TypeScript + DOM（第一阶段） | 已完成 | 第一阶段完成提交 `c31036badc52f58f251dde7f04958bb3ee55caef`；Vue SFC 为 0，Vue runtime / 插件 / vue-tsc 依赖已移除；第一阶段完成时前端行为测试 106 项通过；当前行为测试 103/103、类型检查与构建通过（2026-10-31 FreeBSD 开发工作区复测） |
 | OpenAPI 共享契约 | 已扩展 | `api/openapi.yaml` 覆盖现有客户端路由、admin/RBAC、compliance、public legal 和根路径上传图片读取；角色/权限及合规写入请求使用明确 schema；生成 TypeScript 类型并纳入 lint/CI 同步检查 |
 | PostgreSQL 版本化迁移 | 当前 001–031 全量空库回放通过 | `scripts/test-postgres-migrations.sh` 纳入 CI；FreeBSD 独立临时 PostgreSQL 集群实测 31 个迁移全部通过，验证 owner/runtime 分离、默认 user 角色触发器、禁止 runtime CREATE/TRUNCATE，以及命令执行器退役后的表/权限/事件清理；不触碰现有 PostgreSQL 服务或业务库 |
-| Go 事件接收、分发、租约、处理和恢复 | 单元与部分 PostgreSQL 集成测试已纳入 CI | 覆盖并发幂等接收、处理租约唯一领取/归属校验/重试/最终尝试过期、分发租约过期重领；真实进程崩溃恢复、Go/C IPC 重连与服务重启仍未覆盖 |
-| C IPC v2 | 协议实现存在；局部单元测试已补充 | 当前 `make test` 覆盖请求/事件标识校验、PING/STATUS/EVENT、v1 拒绝、未知命令、订阅推送、错配/成功 ACK、FIFO 顺序和 32 项上限；真实 socket/kqueue、并发客户端、超时、信号退出与重启恢复未由该测试覆盖 |
+| Go 事件接收、分发、租约、处理和恢复 | 单元与 PostgreSQL 集成测试已纳入 CI | 覆盖并发幂等接收、处理租约唯一领取/归属校验/重试/最终尝试过期、分发租约过期重领；真实 Go/C IPC 集成测试覆盖推送 ACK、C 核心重启与 Go 订阅重连；尚未对 Go API 整体进程崩溃执行独立故障注入，也未做生产负载演练 |
+| C IPC v2 | 协议与 FreeBSD 原生 kqueue 生命周期测试已纳入 CI | `make test` 执行协议单元测试和真实 socket/kqueue 集成测试，覆盖 64 客户端上限、帧校验、空闲/ACK 超时、SUBSCRIBE/PUBLISH/ACK、SIGTERM 清理与同路径重启；Go IPC 集成测试另行验证推送确认及 C 核心重启后的订阅重连 |
 | C 核心资源边界 | 已实施 | C 只处理事件元数据通知，不处理业务 payload |
 | 部署与恢复策略 | 已实施 | 备份、迁移、健康检查、手动回滚；开发期默认不自动回滚；隔离沙箱回滚演练 |
 | 特权命令任务执行器 | 已移除（2026-10-31） | Go root worker、developer/stable 模式、任务队列/API/UI/rc.d 服务已从当前源码移除；迁移 031 删除相关数据库对象与管理权限；系统运维仅保留只读告警/日志及独立 RBAC 权限管理 |
