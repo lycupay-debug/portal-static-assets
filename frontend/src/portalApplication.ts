@@ -30,6 +30,7 @@ import { routeSections, sectionRoutes } from './navigation/portalRoutes'
 import { createPortalNavigationController } from './navigation/portalNavigationController'
 import { directoryPages, directoryTiles } from './config/publicDirectories'
 import { mountSiteHeaderView } from './views/siteHeaderView'
+import { mountAccountSidebarView } from './views/accountSidebarView'
 import { mountSiteFooterView } from './views/siteFooterView'
 import { mountKnowledgeTagDialogView } from './views/knowledgeTagDialogView'
 import { mountContentSettingsView } from './views/contentSettingsView'
@@ -190,26 +191,22 @@ function toggleAccountGroup(groupId: string) {
 }
 const accountSidebarHost = ref<HTMLElement | null>(null)
 let accountSidebarView: { update: (state: { groups: typeof filteredAccountGroups.value; active: string; expanded: string[] }) => void; dispose: () => void } | null = null
-let accountSidebarMountSequence = 0
 function updateAccountSidebarView() {
-  const sequence = ++accountSidebarMountSequence
   const host = accountSidebarHost.value
   if (!host) { accountSidebarView?.dispose(); accountSidebarView = null; return }
   const state = { groups: filteredAccountGroups.value, active: activeSidebarButton.value, expanded: expandedAccountGroups.value }
   if (!accountSidebarView) {
-    void import('./views/accountSidebarView').then(module => {
-      if (sequence !== accountSidebarMountSequence || host !== accountSidebarHost.value) return
-      accountSidebarView = module.mountAccountSidebarView(host, { getState: () => ({ groups: filteredAccountGroups.value, active: activeSidebarButton.value, expanded: expandedAccountGroups.value }), toggleGroup: toggleAccountGroup, selectSection: selectAccountSection, navigate })
-    }).catch((error: unknown) => {
-      if (host !== accountSidebarHost.value) return
-      host.textContent = '账户导航加载失败，请刷新页面后重试。'
-      portalNotify.error(error instanceof Error ? error.message : '账户导航加载失败', '账户中心')
+    accountSidebarView = mountAccountSidebarView(host, {
+      getState: () => ({ groups: filteredAccountGroups.value, active: activeSidebarButton.value, expanded: expandedAccountGroups.value }),
+      toggleGroup: toggleAccountGroup,
+      selectSection: selectAccountSection,
+      navigate,
     })
     return
   }
   accountSidebarView.update(state)
 }
-watch([accountSidebarHost, filteredAccountGroups, activeSidebarButton, expandedAccountGroups], updateAccountSidebarView, { deep: true, flush: 'post' })
+watch([accountSidebarHost, filteredAccountGroups, activeSidebarButton, expandedAccountGroups], updateAccountSidebarView, { deep: true, flush: 'sync' })
 
 
 
@@ -1058,7 +1055,7 @@ watch([siteHeaderHost, menuOpen, user], () => {
   const state = { menuOpen: menuOpen.value, loggedIn: Boolean(user.value) }
   if (!siteHeaderView) siteHeaderView = mountSiteHeaderView(host, { getState: () => ({ menuOpen: menuOpen.value, loggedIn: Boolean(user.value) }), navigate, setMenuOpen: value => { menuOpen.value = value } })
   else siteHeaderView.update(state)
-}, { deep: true, flush: 'post' })
+}, { deep: true, flush: 'sync' })
 watch([siteFooterHost, publishedLegalDocuments], () => {
   const host = siteFooterHost.value
   if (!host) { siteFooterView?.dispose(); siteFooterView = null; return }
@@ -1115,7 +1112,6 @@ return () => {
     accountTableViewMountSequence += 1
     accountTableView?.dispose()
     accountTableView = null
-    accountSidebarMountSequence += 1
     accountSidebarView?.dispose()
     accountSidebarView = null
     accountIdentityMountSequence += 1
